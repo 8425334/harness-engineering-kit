@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""Check Java implementation classes stay small enough to force modular design.
+
+Counts effective logic lines (excluding blank lines, comments, package/import,
+variable definitions, and structural braces) for changed `*Impl.java` files.
+
+Java-only. Skip or replace if your project uses a different language.
+
+Copy to: docs/fitness/scripts/check_java_impl_size.py
+"""
+# {{CHECK_JAVA_IMPL_SIZE_TEMPLATE}}
+
+from __future__ import annotations
+
+import sys
+import subprocess
+import re
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+# Configure: max effective logic lines per implementation class.
+MAX_IMPL_LINES = {{MAX_IMPL_LINES}}  # e.g. 800
+EXCLUDED_PARTS = {"target", ".mvn", "node_modules"}
+IGNORED_CHANGED_NAMES = {".DS_Store"}
+IGNORED_CHANGED_PARTS = {"__pycache__"}
+
+
+def git_lines(args: list[str]) -> list[str]:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def changed_paths() -> set[Path]:
+    changed = set(git_lines(["diff", "--name-only", "--diff-filter=ACMR"]))
+    changed.update(git_lines(["diff", "--cached", "--name-only", "--diff-filter=ACMR"]))
+    changed.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
+    return {
+        PROJECT_ROOT / path
+        for path in changed
+        if not is_ignored_changed_path(path)
+    }
+
+
+def is_ignored_changed_path(path: str) -> bool:
+    parts = Path(path).parts
+    return (
+        Path(path).name in IGNORED_CHANGED_NAMES
+        or any(part in IGNORED_CHANGED_PARTS for part in parts)
+        or path.endswith(".pyc")
+    )
+
+
+def is_excluded(path: Path) -> bool:
+    rel = path.relative_to(PROJECT_ROOT)
+    # Configure: file name suffixes that are exempt from the size limit.
+    # Entry-point routing classes (Controllers) are typically exempt.
+    return any(part in EXCLUDED_PARTS for part in rel.parts) or path.name.endswith("Controller.java")
+
+
+def strip_comments_from_line(line: str, in_block_comment: bool) -> tuple[str, bool]:
+    result: list[str] = []
+    index = 0
+    in_string = False
+    in_char = False
+    escaped = False
+    while index < len(line):
+        current = line[index]
+        next_char = line[index + 1] if index + 1 < len(line) else ""
+
+        if in_block_comment:
+            if current == "*" and next_char == "/":
+                in_block_comment = False
+                index += 2
+            else:
+                index += 1
+            continue
+
+        if escaped:
+            result.append(current)
+            escaped = False
+            index += 1
+            continue
+
+        if current == "\\" and (in_string or in_char):
+            result.append(current)
+            escaped = True
+            index += 1
+            continue
+
+        if not in_char and current == '"':
+            in_string = not in_string
+            result.append(current)
+            index += 1
+            continue
+
+        if not in_string and current == "'":
+            in_char = not in_char
+            result.append(current)
+            index += 1
+            continue
+
+        if not in_string and not in_char and current == "/" and next_char == "/":
+            break
+
+        if not in_string and not in_char and current == "/" and next_char == "*":
+            in_block_comment = True
+            index += 2
+            continue
+
+        result.append(current)
+        index += 1
+
+    return "".join(result), in_block_comment
+
+
+def effective_java_line_count(text: str) -> int:
+    count = 0
+    in_block_comment = False
+    for line in text.splitlines():
+        code, in_block_comment = strip_comments_from_line(line, in_block_comment)
+        if is_effective_logic_line(code):
+            count += 1
+    return count
+
+
+def is_effective_logic_line(code: str) -> bool:
+    stripped = code.strip()
+    if not stripped:
+        return False
+    if re.fullmatch(r"[{}]+;?", stripped):
+        return False
+    if stripped.startswith(("package ", "import ")):
+        return False
+    return not is_variable_definition_line(stripped)
+
+
+def is_variable_definition_line(stripped: str) -> bool:
+    if not stripped.endswith(";"):
+        return False
+    match = re.match(
+        r"^(?:@\w+(?:\([^)]*\))?\s+)*"
+        r"(?:(?:public|protected|private|static|final|volatile|transient)\s+)*"
+        r"[\w.$]+(?:<[^;=]+>)?(?:\[\])?\s+\w+\s*(?:=.*)?;",
+        stripped,
+    )
+    return bool(match)
+
+
+def main() -> int:
+    violations: list[str] = []
+    for path in sorted(changed_paths()):
+        if not path.exists() or path.suffix != ".java" or not path.name.endswith("Impl.java"):
+            continue
+        if is_excluded(path):
+            continue
+        line_count = effective_java_line_count(path.read_text(encoding="utf-8"))
+        if line_count > MAX_IMPL_LINES:
+            violations.append(
+                f"{path.relative_to(PROJECT_ROOT)} has {line_count} effective lines, max {MAX_IMPL_LINES}"
+            )
+
+    if violations:
+        print("Java implementation size violations:")
+        for violation in violations[:100]:
+            print(f"  {violation}")
+        return 1
+
+    print("Java implementation size ok")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

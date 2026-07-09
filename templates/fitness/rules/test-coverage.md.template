@@ -1,0 +1,47 @@
+---
+dimension: test_coverage
+weight: 20
+tier: normal
+metrics:
+  - name: test_file_existence
+    command: python3 docs/fitness/scripts/check_test_coverage.py --check test-file-existence
+    pattern: "Test coverage ok"
+    hard_gate: true
+    tier: fast
+  - name: line_coverage_threshold
+    command: python3 docs/fitness/scripts/check_test_coverage.py --check line-coverage
+    pattern: "Test coverage ok"
+    hard_gate: true
+    tier: normal
+    timeout: 600
+---
+
+# 单元测试覆盖率规则
+
+## 当前目标
+
+- 变更的业务模块核心逻辑类必须有对应的单元测试文件。
+- 变更的业务模块必须满足 `{{COVERAGE_THRESHOLD}}%` 行覆盖率阈值。
+- 第一阶段 fast tier 仅做测试文件存在性静态检查，无需构建。
+- 第二阶段 normal/deep tier 解析 JaCoCo CSV 报告验证覆盖率阈值。
+
+## 配置说明
+
+- 在 `check_test_coverage.py` 中配置：
+  - `BUSINESS_MODULE_PREFIXES`：业务模块路径前缀。
+  - `BUSINESS_JACOCO_PACKAGES`：JaCoCo 报告中的业务包前缀。
+  - `BUSINESS_MODULE_PATHS`：用于按模块汇总覆盖率的模块路径。
+  - `TEST_REQUIRED_SUFFIXES` / `EXCLUDED_SUFFIXES` / `EXCLUDED_PATH_KEYWORDS`：分类规则。
+
+## 当前检查
+
+- 变更集中的 ServiceImpl、Listener、Handler、Support 等核心逻辑类必须有同包路径的 `XxxTest.java`。
+- Domain（Entity/VO/BO/DTO）、Controller、Mapper、Config、Constant、Enum 类不纳入测试文件存在性要求。
+- 变更的 Maven 模块整体业务代码行覆盖率须 >= `{{COVERAGE_THRESHOLD}}%`。
+- 若 JaCoCo CSV 报告缺失，提示需先执行 `mvn test -DskipTests=false`。
+
+## 后续扩展
+
+- 按类粒度报告覆盖率缺口。
+- 增加全量 deep tier 覆盖率检查。
+- 集成 CI 流水线自动生成 JaCoCo 报告后再执行 fitness check。

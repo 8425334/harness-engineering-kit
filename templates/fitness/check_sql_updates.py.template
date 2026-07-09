@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""Check changed SQL migration files are placed under the canonical update dir.
+
+Copy to: docs/fitness/scripts/check_sql_updates.py
+"""
+# {{CHECK_SQL_UPDATES_TEMPLATE}}
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+# Configure: canonical location for SQL migration scripts, with trailing slash.
+ALLOWED_PREFIX = "{{SQL_UPDATE_PREFIX}}"  # e.g. "script/sql/update/" or "db/migrations/"
+
+
+def git_lines(args: list[str]) -> list[str]:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def main() -> int:
+    changed = set(git_lines(["diff", "--name-only", "--diff-filter=AM", "--", "*.sql"]))
+    changed.update(git_lines(["diff", "--cached", "--name-only", "--diff-filter=AM", "--", "*.sql"]))
+    changed.update(git_lines(["ls-files", "--others", "--exclude-standard", "--", "*.sql"]))
+
+    violations = sorted(path for path in changed if not path.startswith(ALLOWED_PREFIX))
+    if violations:
+        print(f"SQL files must be placed under {ALLOWED_PREFIX}:")
+        for path in violations:
+            print(f"  {path}")
+        return 1
+
+    print("SQL update location ok")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

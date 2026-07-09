@@ -1,0 +1,47 @@
+# Agent 强制性 Skill 配置
+
+> 本文档定义 AI Coding Agent 在项目中**必须具备**的 3 个基础 Skill。
+> 将此文件复制到 `docs/methodology/core/mandatory-skills.md`，替换 `{{PROJECT_NAME}}` 占位符。
+
+## 1. OpenSpec — SDD 变更流程
+
+管理软件变更的完整生命周期：探索 → 提案 → 实现 → 同步 → 归档。
+
+- `/opsx:explore` → `/opsx:propose` → `/opsx:apply` → `/opsx:sync` → `/opsx:archive`
+- 配置：项目根目录需存在 `openspec/config.yaml`
+
+## 2. Superpowers — 长期计划与规格参考
+
+维护项目的长期参考文档，与 OpenSpec 的临时变更生命周期互补。
+
+- `docs/superpowers/plans/` — 设计决策记录（ADR）
+- `docs/superpowers/specs/` — 持久化规格参考
+
+## 3. Codegraph — 代码知识图谱
+
+毫秒级代码智能：符号搜索、调用链追踪、影响分析。
+
+- `codegraph_explore` 为首选探索工具
+- 先 explore，再 search，最后才 grep
+- 配置为 MCP Server
+
+## 验证命令
+
+```bash
+# 1. OpenSpec
+test -f openspec/config.yaml || echo "TODO: openspec init"
+
+# 2. Superpowers
+test -d docs/superpowers/plans || echo "TODO: mkdir -p docs/superpowers/plans docs/superpowers/specs"
+
+# 3. Codegraph
+grep -r "codegraph" ~/.claude/settings.* 2>/dev/null || echo "TODO: add codegraph MCP to settings.json"
+```
+
+## 占位符
+
+| 占位符 | 含义 |
+|--------|------|
+| `{{PROJECT_NAME}}` | 项目名称 |
+
+> 本文件为模板。完整文档（含职责边界、降级策略、依赖矩阵）见 `docs/methodology/core/mandatory-skills.md`。

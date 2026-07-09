@@ -1,0 +1,49 @@
+---
+dimension: debug_log_cleanup
+weight: 10
+tier: fast
+metrics:
+  - name: debug_log_cleanup_check
+    command: python3 docs/fitness/scripts/check_debug_log_cleanup.py
+    pattern: "Debug log cleanup ok"
+    hard_gate: true
+    tier: fast
+---
+
+# 调试日志清理规则
+
+## 当前目标
+
+执行 `docs/methodology/core/debug-log-discipline.md` 的阶段 3：单元测试自检通过后，临时调试日志必须清理；保留有意义的框架级日志。
+
+## 当前检查
+
+扫描本次变更中的源文件，发现以下残留即阻断：
+
+| 语言 | 禁止模式 |
+|------|----------|
+| Java | `System.out.print` / `System.err.print` / `printStackTrace()` |
+| JS / TS / JSX / TSX | `console.log` / `console.debug` / `debugger` 语句 |
+| Python | 行首 `print()` |
+
+框架级 logger 调用（`log.info` / `log.debug` / `logger.info` / `LOGGER.info` 等）**不纳入检查** —— 这些是"重要日志"，应保留。
+
+## 配置说明
+
+- 在 `check_debug_log_cleanup.py` 中按项目语言栈调整：
+  - `FORBIDDEN_DEBUG_PATTERNS`：按文件后缀配置禁止模式，元组形式 `(suffix, regex, label)`。
+  - `EXCLUDED_PATH_KEYWORDS`：豁免脚本/测试目录（允许 `print` / `console.log`）。
+
+## 阶段覆盖
+
+| 阶段 | 是否可校验 | 兜底机制 |
+|------|-----------|----------|
+| 1. 编码打调试日志 | 否 | agent 自律 + 代码 review |
+| 2. 测试自检预期一致 | 否 | agent 自律 + 代码 review |
+| 3. 清理临时日志、保留重要日志 | **是（本规则）** | fitness hard gate |
+
+## 后续扩展
+
+- 保留的框架日志应有业务语义（禁止 `log.info("here")` / `log.info("test1")` 等无意义日志）。
+- 异常 catch 块必须有 `log.error` 或等价诊断日志（不允许静默吞异常）。
+- 临时调试日志不得提交（即便在分支里）—— 当前规则已覆盖，未来可扩展为按提交粒度追溯。

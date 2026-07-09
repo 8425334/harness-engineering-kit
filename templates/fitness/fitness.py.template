@@ -1,0 +1,227 @@
+#!/usr/bin/env python3
+"""Run repository fitness rules declared in docs/fitness/*.md.
+
+Zero dependencies — stdlib only. Copy to any project and add rule files.
+
+Copy to: docs/fitness/scripts/fitness.py
+Make executable: chmod +x docs/fitness/scripts/fitness.py
+"""
+# {{FITNESS_PY_TEMPLATE}}
+
+from __future__ import annotations
+
+import argparse
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+
+def _resolve_shell() -> str:
+    """返回执行 metric 命令的 shell 路径。
+
+    Unix 直接用 `/bin/bash`。Windows 原生 Python 无法解析字面量 `/bin/bash`（WinError 2），
+    且裸 `bash` 会被 WindowsApps/System32 的 WSL 别名劫持，因此优先取 `shutil.which` 解析出的
+    Git Bash 全路径，并显式排除 WSL stub，回退到常见安装位置。
+    """
+    if sys.platform != "win32":
+        return "/bin/bash"
+    path = shutil.which("bash")
+    if path:
+        lower = path.lower()
+        if "system32" not in lower and "windowsapps" not in lower:
+            return path
+    for candidate in (
+        r"C:\Program Files\Git\usr\bin\bash.exe",
+        r"C:\Program Files\Git\bin\bash.exe",
+        r"C:\Program Files (x86)\Git\usr\bin\bash.exe",
+        r"C:\Program Files (x86)\Git\bin\bash.exe",
+    ):
+        if Path(candidate).exists():
+            return candidate
+    return "bash"
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+FITNESS_DIR = Path(__file__).resolve().parents[1]
+TIER_ORDER = {"fast": 0, "normal": 1, "deep": 2}
+DEFAULT_TIMEOUT_SECONDS = 300
+
+
+def parse_scalar(value: str) -> Any:
+    value = value.strip()
+    if value == "":
+        return ""
+    if value in {"true", "True"}:
+        return True
+    if value in {"false", "False"}:
+        return False
+    if value.isdigit():
+        return int(value)
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        return value[1:-1]
+    return value
+
+
+def parse_frontmatter(text: str) -> dict[str, Any] | None:
+    if not text.startswith("---\n"):
+        return None
+    end = text.find("\n---", 4)
+    if end == -1:
+        return None
+
+    frontmatter = text[4:end].splitlines()
+    data: dict[str, Any] = {}
+    metrics: list[dict[str, Any]] = []
+    current_metric: dict[str, Any] | None = None
+    in_metrics = False
+
+    for raw_line in frontmatter:
+        if not raw_line.strip() or raw_line.strip().startswith("#"):
+            continue
+
+        if raw_line.startswith("metrics:"):
+            in_metrics = True
+            data["metrics"] = metrics
+            continue
+
+        if in_metrics:
+            metric_match = re.match(r"^\s*-\s+([A-Za-z0-9_-]+):\s*(.*)$", raw_line)
+            field_match = re.match(r"^\s+([A-Za-z0-9_-]+):\s*(.*)$", raw_line)
+
+            if metric_match:
+                current_metric = {metric_match.group(1): parse_scalar(metric_match.group(2))}
+                metrics.append(current_metric)
+                continue
+
+            if field_match and current_metric is not None:
+                current_metric[field_match.group(1)] = parse_scalar(field_match.group(2))
+                continue
+
+            continue
+
+        top_match = re.match(r"^([A-Za-z0-9_-]+):\s*(.*)$", raw_line)
+        if top_match:
+            data[top_match.group(1)] = parse_scalar(top_match.group(2))
+
+    return data
+
+
+def should_run(metric: dict[str, Any], default_tier: str, selected_tier: str | None) -> bool:
+    if selected_tier is None:
+        return True
+
+    metric_tier = str(metric.get("tier") or default_tier or "normal")
+    return TIER_ORDER.get(metric_tier, 1) <= TIER_ORDER[selected_tier]
+
+
+def run_metric(metric: dict[str, Any], default_tier: str, dry_run: bool, verbose: bool) -> tuple[bool, str]:
+    command = str(metric.get("command") or "")
+    cwd_value = str(metric.get("cwd") or ".")
+    cwd = (PROJECT_ROOT / cwd_value).resolve()
+    timeout = int(metric.get("timeout") or DEFAULT_TIMEOUT_SECONDS)
+
+    if dry_run:
+        return True, f"DRY-RUN cwd={cwd.relative_to(PROJECT_ROOT)} command={command}"
+
+    try:
+        result = subprocess.run(
+            [_resolve_shell(), "-lc", command],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"TIMEOUT after {timeout}s"
+    except Exception as exc:  # pragma: no cover - defensive runtime path
+        return False, str(exc)
+
+    output = (result.stdout or "") + (result.stderr or "")
+    pattern = str(metric.get("pattern") or "")
+    passed = bool(re.search(pattern, output, re.IGNORECASE)) if pattern else result.returncode == 0
+
+    if passed and not verbose:
+        return True, output.strip().splitlines()[-1] if output.strip() else "exit 0"
+
+    max_lines = 20 if verbose else 8
+    summary = "\n".join(output.strip().splitlines()[:max_lines])
+    if output.count("\n") > max_lines:
+        summary += f"\n... ({output.count(chr(10)) - max_lines} more lines)"
+    return passed, summary or f"exit {result.returncode}"
+
+
+def iter_rule_files() -> list[Path]:
+    return [
+        path
+        for path in sorted(FITNESS_DIR.glob("*.md"))
+        if path.name not in {"README.md", "verification-ledger.md"}
+    ]
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run repository fitness rules.")
+    parser.add_argument("--dry-run", action="store_true", help="Print commands without executing them.")
+    parser.add_argument("--verbose", action="store_true", help="Print longer command output.")
+    parser.add_argument("--tier", choices=sorted(TIER_ORDER), help="Run metrics up to this tier.")
+    args = parser.parse_args()
+
+    print("=" * 72)
+    print("FITNESS FUNCTION REPORT")
+    if args.dry_run:
+        print("Mode: dry-run")
+    if args.tier:
+        print(f"Tier: {args.tier}")
+    print("=" * 72)
+
+    total = 0
+    passed_count = 0
+    hard_gate_failed: list[str] = []
+
+    for rule_file in iter_rule_files():
+        frontmatter = parse_frontmatter(rule_file.read_text(encoding="utf-8"))
+        if not frontmatter or not frontmatter.get("metrics"):
+            continue
+
+        dimension = str(frontmatter.get("dimension") or rule_file.stem)
+        default_tier = str(frontmatter.get("tier") or "normal")
+        metrics = [
+            metric for metric in frontmatter["metrics"]
+            if should_run(metric, default_tier, args.tier)
+        ]
+        if not metrics:
+            continue
+
+        print(f"\n## {dimension} ({rule_file.name})")
+        for metric in metrics:
+            total += 1
+            name = str(metric.get("name") or "unknown")
+            tier = str(metric.get("tier") or default_tier)
+            hard_gate = bool(metric.get("hard_gate"))
+            passed, output = run_metric(metric, default_tier, args.dry_run, args.verbose)
+            passed_count += 1 if passed else 0
+            status = "PASS" if passed else "FAIL"
+            gate_label = " HARD_GATE" if hard_gate else ""
+            print(f"- {name} [{tier}]{gate_label}: {status}")
+            if output:
+                for line in output.splitlines():
+                    print(f"  {line}")
+            if not passed and hard_gate:
+                hard_gate_failed.append(name)
+
+    print("\n" + "=" * 72)
+    print(f"RESULT: {passed_count}/{total} metrics passed")
+    if hard_gate_failed:
+        print(f"HARD GATES FAILED: {', '.join(hard_gate_failed)}")
+        return 2
+    if total == 0:
+        print("No metrics selected.")
+        return 1
+    print("FITNESS PASS")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

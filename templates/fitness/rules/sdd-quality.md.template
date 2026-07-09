@@ -1,0 +1,43 @@
+---
+dimension: sdd_quality
+weight: 10
+tier: fast
+metrics:
+  - name: sdd_directory_exists
+    command: test -d docs/sdd && test -f docs/sdd/README.md && test -f docs/sdd/AI.md && test -f docs/sdd/ai.json && echo "SDD directory present"
+    pattern: "SDD directory present"
+    hard_gate: true
+    tier: fast
+  - name: openspec_config_populated
+    command: python3 docs/fitness/scripts/check_sdd_quality.py --check config-populated
+    pattern: "SDD config populated"
+    hard_gate: true
+    tier: fast
+  - name: openspec_change_structure
+    command: python3 docs/fitness/scripts/check_sdd_quality.py --check change-structure
+    pattern: "SDD change structure ok"
+    hard_gate: false
+    tier: fast
+---
+
+# SDD 质量维度
+
+## 当前目标
+
+验证 SDD 基础设施完整性和 OpenSpec change 产物结构合规性。
+
+## 当前检查
+
+| 规则 | 门控 | 说明 |
+|------|------|------|
+| sdd_directory_exists | HARD | docs/sdd/ 目录存在，含 README.md + AI.md + ai.json |
+| openspec_config_populated | HARD | openspec/config.yaml 有非空的 context 和 rules 配置 |
+| openspec_change_structure | SOFT | 活跃 change 有 proposal.md + tasks.md |
+
+## 后续扩展
+
+- 验证 specs 使用 SHALL/MUST 语言
+- 验证 design 有编号决策（D1/D2...）
+- 验证 tasks 按模块分组顺序组织
+- 验证领域对象（Entity / VO / BO / Mapper）在 Domain Contract 任务组中完整
+- 验证 Controller 任务包含访问控制注解

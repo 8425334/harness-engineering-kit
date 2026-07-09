@@ -1,0 +1,33 @@
+---
+dimension: sql_quality
+weight: 15
+tier: fast
+metrics:
+  - name: sql_update_directory_exists
+    command: test -d {{SQL_UPDATE_PREFIX}} && echo "sql update dir present"
+    pattern: "sql update dir present"
+    hard_gate: true
+    tier: fast
+  - name: sql_update_location_check
+    command: python3 docs/fitness/scripts/check_sql_updates.py
+    pattern: "SQL update location ok"
+    hard_gate: true
+    tier: fast
+---
+
+# SQL 质量规则
+
+## 当前目标
+
+- 数据库 schema、索引、初始化和迁移变更必须落在 `{{SQL_UPDATE_PREFIX}}`。
+- 避免在业务模块或文档目录中散落新增 SQL 迁移脚本。
+
+## 配置说明
+
+- `{{SQL_UPDATE_PREFIX}}`：SQL 迁移目录，带尾斜杠，例如 `script/sql/update/`、`db/migrations/`、`supabase/migrations/`。
+
+## 后续扩展
+
+- SQL 文件命名规范检查。
+- 幂等性与危险 DDL 检查。
+- dev / prod 配置一致性检查。

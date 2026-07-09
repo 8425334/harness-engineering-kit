@@ -1,0 +1,147 @@
+# Path Document Template
+
+<!--
+  === HOW TO USE ===
+  For each important directory in your project:
+  1. Copy the AI.md template below → save as `AI.md` in that directory
+  2. Copy the ai.json template below → save as `ai.json` in that directory
+  3. Fill in all {{PLACEHOLDER}} values with directory-specific content
+  4. Keep both files in sync — fitness gate will check this
+
+  Priority chain: nearest ai.json > nearest AI.md > parent AI.md > root AI.md > AGENTS.md
+  Subdirectory docs may REFINE parent rules but must not VIOLATE them.
+-->
+
+---
+
+## AI.md Template
+
+```markdown
+# {{DIRECTORY_NAME}} AI 开发约束
+
+## 适用范围
+- {{SCOPE_DESCRIPTION}}
+
+## 目录职责
+- {{RESPONSIBILITY_1}}
+- {{RESPONSIBILITY_2}}
+- {{RESPONSIBILITY_3}}
+
+## 可修改范围
+- {{ALLOWED_MODIFICATION_1}}
+- {{ALLOWED_MODIFICATION_2}}
+
+## 禁止事项
+- {{FORBIDDEN_1}}
+- {{FORBIDDEN_2}}
+- {{FORBIDDEN_3}}
+
+## 依赖约束
+- {{DEPENDENCY_RULE_1}}
+- {{DEPENDENCY_RULE_2}}
+- {{DEPENDENCY_RULE_3}}
+
+## 性能要求
+- {{PERFORMANCE_1}}
+- {{PERFORMANCE_2}}
+
+## 测试要求
+- {{TESTING_1}}
+- {{TESTING_2}}
+
+## 交付说明
+- {{DELIVERY_1}}
+- {{DELIVERY_2}}
+```
+
+---
+
+## ai.json Template
+
+```json
+{
+  "$version": "1.0",
+  "scope": "{{SCOPE_DESCRIPTION}}",
+  "responsibilities": [
+    "{{RESPONSIBILITY_1}}",
+    "{{RESPONSIBILITY_2}}",
+    "{{RESPONSIBILITY_3}}"
+  ],
+  "allowed": [
+    "{{ALLOWED_MODIFICATION_1}}",
+    "{{ALLOWED_MODIFICATION_2}}"
+  ],
+  "forbidden": [
+    "{{FORBIDDEN_1}}",
+    "{{FORBIDDEN_2}}",
+    "{{FORBIDDEN_3}}"
+  ],
+  "dependencies": {
+    "allow": [],
+    "deny": [],
+    "rules": [
+      "{{DEPENDENCY_RULE_1}}",
+      "{{DEPENDENCY_RULE_2}}",
+      "{{DEPENDENCY_RULE_3}}"
+    ]
+  },
+  "performance": [
+    "{{PERFORMANCE_1}}",
+    "{{PERFORMANCE_2}}"
+  ],
+  "testing": [
+    "{{TESTING_1}}",
+    "{{TESTING_2}}"
+  ],
+  "delivery": [
+    "{{DELIVERY_1}}",
+    "{{DELIVERY_2}}"
+  ],
+  "ext": {}
+}
+```
+
+---
+
+## 填写指南
+
+### 适用范围 (scope)
+描述本文档管理哪些目录。标准写法：
+- "当前目录及其子目录，除非下层目录另有 AI.md"
+- 如果有特殊优先级："`subdir/AI.md` 对该子目录具有更高优先级"
+
+### 目录职责 (responsibilities)
+该目录负责什么。用动词开头，聚焦核心职责。例：
+- "承载业务领域基础层与数据访问层"
+- "负责接口暴露、业务编排、权限接入"
+
+### 可修改范围 (allowed)
+明确列出允许修改的文件路径或类型。例：
+- "`src/main/java/com/example/domain/**` 下的实体、BO、VO"
+- "各服务模块的 Controller、Service、配置类"
+
+### 禁止事项 (forbidden)
+绝对不能做的事。这是最关键的部分 — 防止 AI Agent 和开发者破坏架构边界。例：
+- "不在该目录中放置 Controller 或 HTTP 接口"
+- "不让该目录反向依赖上层模块的实现细节"
+- "不在该目录中编写业务规则或权限判断"
+
+### 依赖约束 (dependencies)
+- **allow**：允许的特殊依赖（大多数情况为空，由通用规则约束）
+- **deny**：明确禁止的依赖方向
+- **rules**：依赖规则的文字描述
+
+### 性能要求 (performance)
+该目录代码的性能约束。例：
+- "查询优先分页、索引命中与条件下推，避免 N+1"
+- "外部集成链路关注超时、重试、幂等、缓存"
+
+### 测试要求 (testing)
+该目录代码的测试要求。例：
+- "非 trivial 的字段映射、查询条件变化，应补充聚焦验证"
+- "核心登录链路变更必须补充测试"
+
+### 交付说明 (delivery)
+变更该目录时需要同步更新的内容。例：
+- "涉及表结构变化时，必须同步更新 SQL 脚本"
+- "职责边界变化时，必须同步更新本文件"

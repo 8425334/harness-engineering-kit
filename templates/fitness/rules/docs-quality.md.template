@@ -1,0 +1,59 @@
+---
+dimension: docs_quality
+weight: 25
+tier: fast
+metrics:
+  - name: agent_entry_exists
+    command: test -f AGENTS.md && echo "AGENTS.md present"
+    pattern: "AGENTS.md present"
+    hard_gate: true
+    tier: fast
+  - name: root_ai_entry_exists
+    command: test -f AI.md && test -f ai.json && echo "root ai docs present"
+    pattern: "root ai docs present"
+    hard_gate: true
+    tier: fast
+  - name: docs_ai_entry_exists
+    command: test -f docs/AI.md && test -f docs/ai.json && echo "docs ai docs present"
+    pattern: "docs ai docs present"
+    hard_gate: true
+    tier: fast
+  - name: github_ai_entry_exists
+    command: test -f .github/AI.md && test -f .github/ai.json && test -f .github/workflows/fitness.yml && echo "github fitness workflow present"
+    pattern: "github fitness workflow present"
+    hard_gate: true
+    tier: fast
+  - name: fitness_rulebook_exists
+    command: test -f docs/fitness/README.md && test -f docs/fitness/verification-ledger.md && echo "fitness docs present"
+    pattern: "fitness docs present"
+    hard_gate: true
+    tier: fast
+  - name: ai_context_script_works
+    command: python3 "{{AI_CONTEXT_SCRIPT}}" docs/fitness >/dev/null && echo "ai context ok"
+    pattern: "ai context ok"
+    hard_gate: true
+    tier: fast
+  - name: ai_json_sync_check
+    command: python3 docs/fitness/scripts/check_ai_json_sync.py
+    pattern: "AI JSON sync ok"
+    hard_gate: true
+    tier: fast
+---
+
+# 文档质量规则
+
+## 当前目标
+
+- 确保 Agent 入口和路径文档入口存在。
+- 确保 `docs/fitness` 自身具备规则手册和验证账本。
+- 确保 `AI.md` 与 `ai.json` 没有漂移。
+
+## 配置说明
+
+- `{{AI_CONTEXT_SCRIPT}}`：路径文档加载脚本的绝对或相对路径，例如 `$HOME/.codex/skills/<project>-guide/scripts/find_ai_context.py`。如未部署该工具，可删除 `ai_context_script_works` metric。
+
+## 后续扩展
+
+- Markdown 格式检查。
+- 接口文档与实现的契约一致性检查。
+- 链接有效性检查。

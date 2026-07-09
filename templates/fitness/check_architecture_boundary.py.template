@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+"""Run low-noise architecture boundary checks.
+
+Verifies that infrastructure modules don't contain business packages, and that
+application modules don't contain orchestration entry points (controllers, etc.).
+
+Copy to: docs/fitness/scripts/check_architecture_boundary.py
+"""
+# {{CHECK_ARCHITECTURE_BOUNDARY_TEMPLATE}}
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+# Configure: infrastructure/shared module directory that must not contain
+# business packages. Set to None or empty string to disable this check.
+INFRA_MODULE = "{{INFRA_MODULE}}"  # e.g. "ruoyi-common" or "common"
+# Configure: path parts that, if all present in a file path under INFRA_MODULE,
+# indicate a business package leak. Tuple of strings.
+INFRA_FORBIDDEN_PARTS = ("{{INFRA_FORBIDDEN_PART}}",)  # e.g. ("org", "example", "business")
+
+# Configure: application/domain module directory that must not contain
+# orchestration entry points (controllers). Set to None or empty to disable.
+APP_MODULE = "{{APP_MODULE}}"  # e.g. "coil-app" or "app"
+# Configure: glob pattern for forbidden files under APP_MODULE.
+APP_FORBIDDEN_GLOB = "{{APP_FORBIDDEN_GLOB}}"  # e.g. "*Controller.java" or "*View.java"
+
+
+def main() -> int:
+    violations: list[str] = []
+
+    if INFRA_MODULE:
+        infra_dir = PROJECT_ROOT / INFRA_MODULE
+        if infra_dir.exists():
+            for path in infra_dir.rglob("*"):
+                rel = path.relative_to(PROJECT_ROOT)
+                if "target" in rel.parts or "node_modules" in rel.parts:
+                    continue
+                if all(part in rel.parts for part in INFRA_FORBIDDEN_PARTS):
+                    violations.append(
+                        f"{INFRA_MODULE} must not contain business package: {rel}"
+                    )
+
+    if APP_MODULE:
+        app_dir = PROJECT_ROOT / APP_MODULE
+        if app_dir.exists() and APP_FORBIDDEN_GLOB:
+            for path in app_dir.rglob(APP_FORBIDDEN_GLOB):
+                rel = path.relative_to(PROJECT_ROOT)
+                if "target" in rel.parts or "node_modules" in rel.parts:
+                    continue
+                violations.append(
+                    f"{APP_MODULE} must not contain orchestration entry: {rel}"
+                )
+
+    # Verify the fitness directory itself has Harness entry docs (self-discipline).
+    fitness_dir = PROJECT_ROOT / "docs" / "fitness"
+    if fitness_dir.exists():
+        for required in ["AI.md", "ai.json", "README.md"]:
+            if not (fitness_dir / required).exists():
+                violations.append(f"docs/fitness missing required entry: {required}")
+
+    if violations:
+        print("Architecture boundary violations:")
+        for violation in violations[:50]:
+            print(f"  {violation}")
+        return 1
+
+    print("Architecture boundary baseline ok")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

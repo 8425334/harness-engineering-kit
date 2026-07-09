@@ -1,0 +1,40 @@
+---
+dimension: permission_management
+weight: 20
+tier: fast
+metrics:
+  - name: changed_controller_permission_check
+    command: python3 docs/fitness/scripts/check_permission_management.py
+    pattern: "Permission management ok"
+    hard_gate: true
+    tier: fast
+---
+
+# 权限管理规则
+
+## 当前目标
+
+- 对当前变更集中新增或修改的 Controller 做权限管理校验。
+- 需要登录或权限管理的接口必须显式声明访问意图，不能依赖隐式约定。
+- 新增权限码必须能在 SQL 菜单权限脚本中追溯，避免只写权限注解而没有权限数据。
+
+## 配置说明
+
+- 在 `check_permission_management.py` 中配置：
+  - `CONTROLLER_ROOTS` / `EXCLUDED_CONTROLLER_PREFIXES`：Controller 扫描范围。
+  - `MAPPING_ANNOTATIONS`：HTTP 路由注解（Spring：`@GetMapping` 等）。
+  - `ACCESS_ANNOTATIONS`：访问控制注解（Sa-Token / Spring Security 等）。
+  - `PERMISSION_ANNOTATION`：携带权限码字面量的注解，用于 SQL 目录交叉验证。
+  - `SQL_CATALOG_ROOT`：权限码 SQL 种子脚本根目录。
+
+## 当前检查
+
+- 扫描本次变更中的 `*Controller.java`。
+- Controller 映射方法必须满足以下任一条件：
+  - 方法或类标注 `{{ACCESS_ANNOTATIONS}}` 中的任一注解。
+- `{{PERMISSION_ANNOTATION}}("...")` 中的权限标识必须出现在 `{{SQL_CATALOG_ROOT}}/**/*.sql` 中。
+
+## 后续扩展
+
+- 对外部开放接口增加签名、白名单或来源校验扫描。
+- 将权限码与前端按钮权限、OpenAPI 文档做一致性校验。

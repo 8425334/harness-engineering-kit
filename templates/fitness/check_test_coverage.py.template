@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""Check unit test coverage fitness: test-file existence (fast) and line coverage (normal/deep).
+
+Sub-check 1 (fast): changed business-logic classes must have a matching test file.
+Sub-check 2 (normal/deep): changed modules must meet a JaCoCo line-coverage threshold.
+
+Java + JaCoCo. Adapt module prefixes, package roots, and suffix lists to your project.
+
+Copy to: docs/fitness/scripts/check_test_coverage.py
+"""
+# {{CHECK_TEST_COVERAGE_TEMPLATE}}
+
+from __future__ import annotations
+
+import argparse
+import csv
+import subprocess
+import sys
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+# Configure: minimum line coverage percentage for changed modules.
+COVERAGE_THRESHOLD = {{COVERAGE_THRESHOLD}}  # e.g. 65
+
+# Configure: path prefixes (relative to project root) of business modules
+# whose classes are subject to the test-file-existence check.
+BUSINESS_MODULE_PREFIXES = (  # {{BUSINESS_MODULE_PREFIXES}}
+    "app/business/",
+)
+# Configure: JaCoCo package prefixes (slash-separated) used to filter the CSV
+# report down to business code (excludes framework/generated code).
+BUSINESS_JACOCO_PACKAGES = (  # {{BUSINESS_JACOCO_PACKAGES}}
+    "com/example/business/",
+)
+# Configure: module paths (relative to project root) for per-module coverage
+# rollup. Each must produce target/site/jacoco/jacoco.csv on `mvn test`.
+BUSINESS_MODULE_PATHS = (  # {{BUSINESS_MODULE_PATHS}}
+    "app/business",
+)
+
+# Configure: production-class suffixes that require a matching test file.
+TEST_REQUIRED_SUFFIXES = (  # {{TEST_REQUIRED_SUFFIXES}}
+    "ServiceImpl.java",
+    "Service.java",
+    "Listener.java",
+    "Handler.java",
+    "Support.java",
+    "Adapter.java",
+    "Manager.java",
+    "Processor.java",
+    "Task.java",
+    "Validator.java",
+    "Utils.java",
+)
+# Configure: production-class suffixes exempt from the test-file requirement.
+EXCLUDED_SUFFIXES = (  # {{EXCLUDED_SUFFIXES}}
+    "Controller.java",
+    "Mapper.java",
+    "Config.java",
+    "Constants.java",
+    "Properties.java",
+    "Application.java",
+)
+# Configure: path keywords that exempt a class from the test-file requirement
+# (e.g. pure data holders, enums, constants).
+EXCLUDED_PATH_KEYWORDS = (  # {{EXCLUDED_PATH_KEYWORDS}}
+    "/domain/",
+    "/domain/bo/",
+    "/domain/vo/",
+    "/domain/dto/",
+    "/constant/",
+    "/enums/",
+)
+
+IGNORED_CHANGED_NAMES = {".DS_Store"}
+IGNORED_CHANGED_PARTS = {"__pycache__", "target"}
+
+
+def git_lines(args: list[str]) -> list[str]:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def changed_paths() -> set[str]:
+    changed = set(git_lines(["diff", "--name-only", "--diff-filter=ACMR"]))
+    changed.update(git_lines(["diff", "--cached", "--name-only", "--diff-filter=ACMR"]))
+    changed.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
+    return {path for path in changed if not _is_ignored(path)}
+
+
+def _is_ignored(path: str) -> bool:
+    parts = Path(path).parts
+    return (
+        Path(path).name in IGNORED_CHANGED_NAMES
+        or any(part in IGNORED_CHANGED_PARTS for part in parts)
+        or path.endswith(".pyc")
+    )
+
+
+def _compute_expected_test_path(source_rel: str) -> str:
+    parts = source_rel.split("/")
+    src_idx = None
+    for i, part in enumerate(parts):
+        if part == "src":
+            src_idx = i
+            break
+    if src_idx is None:
+        return source_rel
+    module_prefix = "/".join(parts[:src_idx])
+    package_path = "/".join(parts[src_idx + 3:])
+    class_name = package_path[:-5] if package_path.endswith(".java") else package_path
+    return f"{module_prefix}/src/test/java/{class_name}Test.java"
+
+
+def _should_require_test(source_rel: str) -> bool:
+    if any(source_rel.endswith(suffix) for suffix in EXCLUDED_SUFFIXES):
+        return False
+    if any(keyword in source_rel for keyword in EXCLUDED_PATH_KEYWORDS):
+        return False
+    return any(source_rel.endswith(suffix) for suffix in TEST_REQUIRED_SUFFIXES)
+
+
+def check_test_file_existence(changed: set[str]) -> list[str]:
+    violations: list[str] = []
+    for path in sorted(changed):
+        if not any(path.startswith(prefix) for prefix in BUSINESS_MODULE_PREFIXES):
+            continue
+        if "src/main/java/" not in path or not path.endswith(".java"):
+            continue
+        if not _should_require_test(path):
+            continue
+        expected = _compute_expected_test_path(path)
+        if not (PROJECT_ROOT / expected).exists():
+            violations.append(f"{path}: missing test file {expected}")
+    return violations
+
+
+def _determine_changed_modules(changed: set[str]) -> list[str]:
+    modules: set[str] = set()
+    for path in changed:
+        for module_path in BUSINESS_MODULE_PATHS:
+            if path.startswith(module_path + "/") and "src" in path:
+                modules.add(module_path)
+    return sorted(modules)
+
+
+def _parse_jacoco_csv(csv_path: Path) -> dict[str, tuple[int, int]]:
+    results: dict[str, tuple[int, int]] = {}
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        header = next(reader)
+        line_missed_idx = header.index("LINE_MISSED")
+        line_covered_idx = header.index("LINE_COVERED")
+        for row in reader:
+            if len(row) <= max(line_missed_idx, line_covered_idx):
+                continue
+            package, class_name = row[1], row[2]
+            fqn = f"{package}/{class_name}"
+            if not any(fqn.startswith(prefix) for prefix in BUSINESS_JACOCO_PACKAGES):
+                continue
+            lines_missed = int(row[line_missed_idx])
+            lines_covered = int(row[line_covered_idx])
+            results[fqn] = (lines_covered, lines_missed)
+    return results
+
+
+def check_line_coverage(changed: set[str]) -> list[str]:
+    violations: list[str] = []
+    changed_modules = _determine_changed_modules(changed)
+    if not changed_modules:
+        return violations
+    for module_rel in changed_modules:
+        csv_path = PROJECT_ROOT / module_rel / "target" / "site" / "jacoco" / "jacoco.csv"
+        if not csv_path.exists():
+            violations.append(
+                f"Module {module_rel}: JaCoCo CSV report missing. "
+                f"Run: mvn -pl {module_rel} -am test -DskipTests=false"
+            )
+            continue
+        try:
+            coverage_data = _parse_jacoco_csv(csv_path)
+        except (ValueError, IndexError, csv.Error) as exc:
+            violations.append(f"Module {module_rel}: JaCoCo CSV parse error: {exc}")
+            continue
+        total_covered = sum(c for c, m in coverage_data.values())
+        total_missed = sum(m for c, m in coverage_data.values())
+        if total_covered + total_missed == 0:
+            violations.append(f"Module {module_rel}: no business coverage data in JaCoCo report")
+            continue
+        percentage = total_covered / (total_covered + total_missed) * 100
+        if percentage < COVERAGE_THRESHOLD:
+            violations.append(
+                f"Module {module_rel}: line coverage {percentage:.1f}% < {COVERAGE_THRESHOLD}% threshold "
+                f"(covered={total_covered}, missed={total_missed})"
+            )
+    return violations
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Check unit test coverage fitness.")
+    parser.add_argument(
+        "--check",
+        choices=("all", "test-file-existence", "line-coverage"),
+        default="all",
+    )
+    args = parser.parse_args()
+
+    changed = changed_paths()
+    violations: list[str] = []
+    if args.check in {"all", "test-file-existence"}:
+        violations.extend(check_test_file_existence(changed))
+    if args.check in {"all", "line-coverage"}:
+        violations.extend(check_line_coverage(changed))
+
+    if violations:
+        print("Test coverage violations:")
+        for violation in violations[:100]:
+            print(f"  {violation}")
+        if len(violations) > 100:
+            print(f"  ... {len(violations) - 100} more")
+        return 1
+
+    print("Test coverage ok")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

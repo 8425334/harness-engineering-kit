@@ -1,0 +1,93 @@
+---
+name: ramer
+description: Fully automated RAMER cycle with DDD architecture — CRUD / DDD / Hexagonal / Hybrid
+args: <requirement description for the code change>
+---
+
+# RAMER — 全自动设计实现循环（DDD 增强版）
+
+一键触发 RAMER 全流程。**自动检测架构风格**（CRUD/DDD/Hexagonal/Hybrid），产出相应设计契约，人工确认后自动实现 + 审查。
+
+## 架构自适应
+
+系统根据需求复杂度自动判定架构风格：
+
+| 信号 | 风格 | 契约产出 |
+|------|------|---------|
+| 简单 CRUD，无不变量 | **crud** | Entity Quartet (Entity/VO/BO/Mapper/XML) |
+| 复杂业务规则、状态机、不变量 | **ddd** | Aggregate + ValueObject + DomainService + Port + Adapter + ApplicationService |
+| 多外部系统、已有 port/adapter | **hexagonal** | Port + Adapter + ApplicationService |
+| 混合场景 | **hybrid** | 组合 CRUD + DDD |
+
+**关键规则**：若目标区域已有 hexagonal-ddd（port/, adapter/, domain/model/），必须延续该模式。
+
+## 执行流程
+
+当用户输入 `/ramer <需求描述>` 时：
+
+### Step 1: 启动设计工作流
+
+```
+Workflow(name="ramer-design", args="<需求描述>")
+```
+
+自动完成 **READ → ANALYZE → MODEL**：
+
+- **READ**: 运行 `{{AI_CONTEXT_SCRIPT}}`，检测目标区域架构风格（layered / hexagonal-ddd / hybrid），识别已有 aggregate、port、adapter
+- **ANALYZE**: 判定架构风格，定义 Bounded Context 和 Ubiquitous Language，列出所有新增/修改文件
+- **MODEL**: 按判定风格产出设计契约：
+  - DDD 风格 → aggregates、valueObjects、domainServices、ports、adapters、applicationServices、domainEvents
+  - CRUD 风格 → entities（Entity Quartet）
+  - 统一输出 implementationPlan（按 domain → infrastructure → application → interface 分层排序）
+
+### Step 2: 呈现设计契约
+
+清晰呈现：变更摘要、架构判定理由、DDD 分层图、文件清单、实现依赖顺序。
+
+### Step 3: 人工确认
+
+AskUserQuestion:
+- "✅ 批准，开始实现" (Recommended)
+- "📝 修改设计" → 收集意见，重新运行 Step 1
+- "❌ 取消"
+
+### Step 4: 启动实现工作流（批准后）
+
+```
+Workflow(name="ramer-implement", args=<设计契约对象>)
+```
+
+自动完成 **EXECUTE → REVIEW**：
+
+- **EXECUTE**: 按 design contract 逐文件实现，根据 layer 字段应用不同规则：
+  - `domain` → 零框架依赖（禁止 Spring/MyBatis/Redis import）
+  - `application` → @Service，注入 port 接口（非 adapter 类）
+  - `infrastructure` → @Component，ACL 映射，实现 port 接口
+  - `interface` → @RestController，{{AUTH_FRAMEWORK}} 权限注解
+- **REVIEW**: 运行 fitness gate + DDD 专项检查：
+  - domain/model/ 和 domain/service/ 零框架 import
+  - Application service 注入的是 port 接口还是 adapter 类
+  - Adapter 是否有 ACL 映射说明
+  - Port 是否有存在理由的 Javadoc
+
+### Step 5: 呈现结果
+
+创建/修改的文件 + Fitness gate 通过/失败 + 修复建议。
+
+## DDD 依赖规则（不可协商）
+
+```
+domain/     → 依赖 NOTHING（纯 Java，无 Spring/MyBatis/Redis import）
+port/       → 依赖 domain（方法签名只用 domain 类型）
+adapter/    → 依赖 port + 基础设施（@Component，Spring DI）
+application → 依赖 domain + port（注入 port 接口，绝不注入 adapter）
+controller  → 依赖 application（调用 application service）
+```
+
+## 占位符说明
+
+本模板使用 `{{PLACEHOLDER}}` 标记项目特定内容。部署前用 `grep -rn '{{'` 列出所有占位符并替换。详见 `templates/ramer/README.md`。
+
+## 参考实现
+
+{{DDD_REFERENCE_CONTEXT}}

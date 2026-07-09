@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Check changed domain-layer classes follow DDD discipline.
+
+Sub-check 1 (domain_purity): classes in the domain layer must not import or use
+infrastructure annotations/classes (DI, controllers, data access). Enforces the
+"领域对象不依赖基础设施" rule from ddd-modeling.md.
+
+Java-only. Adapt path keywords and forbidden lists to your project.
+
+Copy to: docs/fitness/scripts/check_ddd_compliance.py
+"""
+# {{CHECK_DDD_COMPLIANCE_TEMPLATE}}
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+# Configure: path keywords that mark a file as belonging to the domain layer.
+# Files whose path contains any of these are subject to the domain purity check.
+DOMAIN_PATH_KEYWORDS = (  # {{DOMAIN_PATH_KEYWORDS}}
+    "/domain/",
+    "/model/",
+)
+
+# Configure: import package prefixes that must not appear in domain layer files.
+# These are framework/DI/data-access concerns that pollute the domain model.
+FORBIDDEN_INFRA_IMPORTS = (  # {{FORBIDDEN_INFRA_IMPORTS}}
+    "org.springframework.stereotype.Service",
+    "org.springframework.stereotype.Component",
+    "org.springframework.stereotype.Controller",
+    "org.springframework.web.bind.annotation",
+    "org.springframework.beans.factory.annotation.Autowired",
+    "org.springframework.beans.factory.annotation.Qualifier",
+    "org.springframework.jdbc.core",
+    "com.baomidou.mybatisplus.core.mapper",
+    "org.apache.ibatis.session",
+    "org.apache.ibatis.annotations",
+)
+
+# Configure: annotation names that must not appear on domain layer classes.
+# Catches same-package usage that bypasses the import check.
+FORBIDDEN_INFRA_ANNOTATIONS = (  # {{FORBIDDEN_INFRA_ANNOTATIONS}}
+    "@Service",
+    "@Component",
+    "@Controller",
+    "@RestController",
+    "@Autowired",
+    "@Resource",
+    "@Mapper",
+)
+
+IGNORED_CHANGED_NAMES = {".DS_Store"}
+IGNORED_CHANGED_PARTS = {"__pycache__", "target"}
+
+
+def git_lines(args: list[str]) -> list[str]:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def changed_paths() -> set[str]:
+    changed = set(git_lines(["diff", "--name-only", "--diff-filter=ACMR"]))
+    changed.update(git_lines(["diff", "--cached", "--name-only", "--diff-filter=ACMR"]))
+    changed.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
+    return {path for path in changed if not _is_ignored(path)}
+
+
+def _is_ignored(path: str) -> bool:
+    parts = Path(path).parts
+    return (
+        Path(path).name in IGNORED_CHANGED_NAMES
+        or any(part in IGNORED_CHANGED_PARTS for part in parts)
+        or path.endswith(".pyc")
+    )
+
+
+def is_domain_layer(rel_path: str) -> bool:
+    return any(keyword in rel_path for keyword in DOMAIN_PATH_KEYWORDS)
+
+
+def strip_comments(text: str) -> str:
+    """Remove block and line comments to avoid false positives."""
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    return "\n".join(line for line in text.splitlines() if not line.strip().startswith("//"))
+
+
+def check_domain_purity(rel_path: str) -> list[str]:
+    violations: list[str] = []
+    path = PROJECT_ROOT / rel_path
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return violations
+    text = strip_comments(raw)
+
+    for imp in FORBIDDEN_INFRA_IMPORTS:
+        if re.search(rf"^\s*import\s+(?:static\s+)?{re.escape(imp)}", text, re.MULTILINE):
+            violations.append(f"{rel_path}: domain layer imports infra: {imp}")
+
+    for ann in FORBIDDEN_INFRA_ANNOTATIONS:
+        if re.search(rf"\b{re.escape(ann)}\b", text):
+            violations.append(f"{rel_path}: domain layer uses infra annotation: {ann}")
+
+    return violations
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Check DDD compliance.")
+    parser.add_argument(
+        "--check",
+        choices=("all", "domain-purity"),
+        default="all",
+    )
+    args = parser.parse_args()
+
+    changed = changed_paths()
+    violations: list[str] = []
+
+    if args.check in {"all", "domain-purity"}:
+        for rel_path in sorted(changed):
+            if not rel_path.endswith(".java"):
+                continue
+            if not is_domain_layer(rel_path):
+                continue
+            violations.extend(check_domain_purity(rel_path))
+
+    if violations:
+        print("DDD compliance violations:")
+        for violation in violations[:100]:
+            print(f"  {violation}")
+        if len(violations) > 100:
+            print(f"  ... {len(violations) - 100} more")
+        return 1
+
+    print("DDD compliance ok")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

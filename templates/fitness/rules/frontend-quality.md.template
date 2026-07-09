@@ -1,0 +1,38 @@
+---
+dimension: frontend_quality
+weight: 10
+tier: normal
+metrics:
+  - name: frontend_typecheck
+    command: {{TYPECHECK_COMMAND}}
+    cwd: {{FRONTEND_DIR}}
+    pattern: ""
+    hard_gate: false
+    tier: normal
+    timeout: 600
+  - name: frontend_build
+    command: {{BUILD_COMMAND}}
+    cwd: {{FRONTEND_DIR}}
+    pattern: ""
+    hard_gate: false
+    tier: deep
+    timeout: 900
+---
+
+# 前端质量规则
+
+## 当前目标
+
+- 将前端项目的 typecheck 和 build 纳入统一 Fitness 入口。
+- 暂不把会自动修复文件的 lint 命令作为 Hard Gate。
+
+## 配置说明
+
+- `{{FRONTEND_DIR}}`：前端项目目录（相对于仓库根），例如 `coil-backend-ui`、`web/`、`frontend/`。
+- `{{TYPECHECK_COMMAND}}`：类型检查命令，例如 `pnpm typecheck`、`tsc --noEmit`、`npm run typecheck`。
+- `{{BUILD_COMMAND}}`：构建命令，例如 `pnpm build`、`npm run build`、`yarn build`。
+
+## 后续扩展
+
+- 新增非修改型 lint check 命令后接入 Hard Gate。
+- 将前端 git hooks 与根 Fitness 入口对齐。

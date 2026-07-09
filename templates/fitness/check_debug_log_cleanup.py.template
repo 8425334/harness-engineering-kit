@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+"""Check that ad-hoc debug logging has been cleaned up after testing.
+
+Enforces phase 3 of debug-log-discipline.md: temporary debug prints must be
+removed before commit. Framework-level logging (log.info / logger.debug /
+LOGGER.info) is NOT flagged — those are intentional "important logs" that stay.
+
+Multi-language (Java / JS / TS / JSX / Python). Configure patterns per project.
+
+Copy to: docs/fitness/scripts/check_debug_log_cleanup.py
+"""
+# {{CHECK_DEBUG_LOG_CLEANUP_TEMPLATE}}
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+# Configure: forbidden debug patterns as (file_suffix, regex, label) tuples.
+# Framework loggers (log.info / logger.debug / LOGGER.info) are deliberately
+# NOT here — those are "important logs" that should be kept.
+FORBIDDEN_DEBUG_PATTERNS = (  # {{FORBIDDEN_DEBUG_PATTERNS}}
+    # Java
+    (".java", r"\bSystem\.out\.print", "System.out.print"),
+    (".java", r"\bSystem\.err\.print", "System.err.print"),
+    (".java", r"\.printStackTrace\s*\(", "printStackTrace"),
+    # JavaScript / TypeScript / JSX / TSX
+    (".ts", r"\bconsole\.log\s*\(", "console.log"),
+    (".ts", r"\bconsole\.debug\s*\(", "console.debug"),
+    (".ts", r"\bdebugger\b", "debugger statement"),
+    (".tsx", r"\bconsole\.log\s*\(", "console.log"),
+    (".tsx", r"\bconsole\.debug\s*\(", "console.debug"),
+    (".tsx", r"\bdebugger\b", "debugger statement"),
+    (".js", r"\bconsole\.log\s*\(", "console.log"),
+    (".js", r"\bconsole\.debug\s*\(", "console.debug"),
+    (".js", r"\bdebugger\b", "debugger statement"),
+    (".jsx", r"\bconsole\.log\s*\(", "console.log"),
+    (".jsx", r"\bconsole\.debug\s*\(", "console.debug"),
+    (".jsx", r"\bdebugger\b", "debugger statement"),
+    # Python (configure EXCLUDED_PATH_KEYWORDS for scripts/tests)
+    (".py", r"^\s*print\s*\(", "print()"),
+)
+
+# Configure: path keywords that exempt a file from the check.
+# Substring match against git rel_path (which has no leading slash).
+# Use no-leading-slash forms for prefix matches ("docs/fitness/", "scripts/");
+# use leading-slash forms for interior matches ("/test/" avoids matching "latest").
+EXCLUDED_PATH_KEYWORDS = (  # {{EXCLUDED_PATH_KEYWORDS}}
+    "docs/fitness/",
+    "scripts/",
+    "__pycache__/",
+    "/test/",
+    "/tests/",
+    "/__tests__/",
+)
+
+IGNORED_CHANGED_NAMES = {".DS_Store"}
+IGNORED_CHANGED_PARTS = {"__pycache__", "target", "node_modules", "dist", "build"}
+
+
+def git_lines(args: list[str]) -> list[str]:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def changed_paths() -> set[str]:
+    changed = set(git_lines(["diff", "--name-only", "--diff-filter=ACMR"]))
+    changed.update(git_lines(["diff", "--cached", "--name-only", "--diff-filter=ACMR"]))
+    changed.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
+    return {path for path in changed if not _is_ignored(path)}
+
+
+def _is_ignored(path: str) -> bool:
+    parts = Path(path).parts
+    return (
+        Path(path).name in IGNORED_CHANGED_NAMES
+        or any(part in IGNORED_CHANGED_PARTS for part in parts)
+        or path.endswith(".pyc")
+    )
+
+
+def is_excluded(rel_path: str) -> bool:
+    return any(keyword in rel_path for keyword in EXCLUDED_PATH_KEYWORDS)
+
+
+def strip_comments(text: str, suffix: str) -> str:
+    """Strip comments to avoid false positives in commented-out debug lines."""
+    if suffix in {".java", ".js", ".ts", ".tsx", ".jsx", ".c", ".cpp", ".go", ".rs"}:
+        text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+        text = "\n".join(
+            line for line in text.splitlines() if not line.strip().startswith("//")
+        )
+    elif suffix == ".py":
+        text = "\n".join(
+            line for line in text.splitlines() if not line.strip().startswith("#")
+        )
+    return text
+
+
+def check_file(rel_path: str) -> list[str]:
+    violations: list[str] = []
+    path = PROJECT_ROOT / rel_path
+    suffix = path.suffix
+    matching = [
+        (pat, label)
+        for sfx, pat, label in FORBIDDEN_DEBUG_PATTERNS
+        if sfx == suffix
+    ]
+    if not matching:
+        return violations
+
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return violations
+
+    text = strip_comments(raw, suffix)
+    for pattern, label in matching:
+        for match in re.finditer(pattern, text, re.MULTILINE):
+            line_no = text[:match.start()].count("\n") + 1
+            violations.append(f"{rel_path}:{line_no}: leftover debug {label}")
+    return violations
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Check debug log cleanup.")
+    parser.add_argument(
+        "--check",
+        choices=("all",),
+        default="all",
+    )
+    args = parser.parse_args()
+
+    changed = changed_paths()
+    violations: list[str] = []
+    for rel_path in sorted(changed):
+        if is_excluded(rel_path):
+            continue
+        violations.extend(check_file(rel_path))
+
+    if violations:
+        print("Debug log cleanup violations:")
+        for violation in violations[:100]:
+            print(f"  {violation}")
+        if len(violations) > 100:
+            print(f"  ... {len(violations) - 100} more")
+        return 1
+
+    print("Debug log cleanup ok")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

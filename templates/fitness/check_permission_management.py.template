@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+"""Check changed controller endpoints declare permission intent.
+
+Scans changed `*Controller.java` files for mapping annotations and verifies
+each mapped method (or its class) declares an access-control annotation.
+Also verifies that permission codes declared in annotations are traceable to
+the SQL menu/permission catalog.
+
+Java + annotation-based access control. Adapt the annotation tuples to your
+framework (Sa-Token / Spring Security / etc.).
+
+Copy to: docs/fitness/scripts/check_permission_management.py
+"""
+# {{CHECK_PERMISSION_MANAGEMENT_TEMPLATE}}
+
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+# Configure: path prefixes (relative to project root) where controllers live.
+CONTROLLER_ROOTS = (  # {{CONTROLLER_ROOTS}}
+    "src/main/java/",
+)
+# Configure: path prefixes to exclude from the controller scan (e.g. demo
+# modules, external open-api adapters that don't require permission checks).
+EXCLUDED_CONTROLLER_PREFIXES = (  # {{EXCLUDED_CONTROLLER_PREFIXES}}
+    # "modules/demo/",
+)
+
+# Configure: annotations that mark a method as an HTTP endpoint.
+MAPPING_ANNOTATIONS = (  # {{MAPPING_ANNOTATIONS}} — Spring example
+    "@GetMapping",
+    "@PostMapping",
+    "@PutMapping",
+    "@DeleteMapping",
+    "@PatchMapping",
+    "@RequestMapping",
+)
+# Configure: annotations that declare access-control intent.
+# Sa-Token: @SaCheckPermission / @SaCheckRole / @SaCheckLogin / @SaIgnore
+# Spring Security: @PreAuthorize / @Secured / @RolesAllowed
+ACCESS_ANNOTATIONS = (  # {{ACCESS_ANNOTATIONS}}
+    "@SaCheckPermission",
+    "@SaCheckRole",
+    "@SaCheckLogin",
+    "@SaIgnore",
+)
+# Configure: the annotation that carries a permission code literal, used to
+# extract permission strings for SQL catalog cross-check.
+PERMISSION_ANNOTATION = "{{PERMISSION_ANNOTATION}}"  # e.g. "@SaCheckPermission" or "@PreAuthorize"
+# Configure: SQL catalog root (relative to project root) where permission
+# codes are declared in menu/permission seed scripts.
+SQL_CATALOG_ROOT = "{{SQL_CATALOG_ROOT}}"  # e.g. "script/sql" or "db/seed"
+
+
+@dataclass(frozen=True)
+class JavaMethod:
+    name: str
+    line_no: int
+    annotations: tuple[str, ...]
+
+
+def git_lines(args: list[str]) -> list[str]:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def changed_paths() -> set[str]:
+    changed = set(git_lines(["diff", "--name-only", "--diff-filter=ACMR"]))
+    changed.update(git_lines(["diff", "--cached", "--name-only", "--diff-filter=ACMR"]))
+    changed.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
+    return changed
+
+
+def is_changed_controller(path: str) -> bool:
+    if not path.endswith("Controller.java"):
+        return False
+    if not any(path.startswith(root) for root in CONTROLLER_ROOTS):
+        return False
+    return not any(path.startswith(prefix) for prefix in EXCLUDED_CONTROLLER_PREFIXES)
+
+
+def strip_comments(text: str) -> str:
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    return "\n".join(line for line in text.splitlines() if not line.strip().startswith("//"))
+
+
+def annotation_start(line: str) -> str | None:
+    stripped = line.strip()
+    if not stripped.startswith("@"):
+        return None
+    match = re.match(r"@([A-Za-z_][A-Za-z0-9_]*)", stripped)
+    return f"@{match.group(1)}" if match else None
+
+
+def collect_annotation(lines: list[str], start_index: int) -> tuple[str, int]:
+    chunks = [lines[start_index].strip()]
+    balance = lines[start_index].count("(") - lines[start_index].count(")")
+    index = start_index
+    while balance > 0 and index + 1 < len(lines):
+        index += 1
+        chunks.append(lines[index].strip())
+        balance += lines[index].count("(") - lines[index].count(")")
+    return " ".join(chunks), index
+
+
+def parse_controller(text: str) -> tuple[tuple[str, ...], list[JavaMethod]]:
+    lines = strip_comments(text).splitlines()
+    class_annotations: list[str] = []
+    pending_annotations: list[str] = []
+    methods: list[JavaMethod] = []
+    seen_class = False
+    index = 0
+
+    while index < len(lines):
+        line = lines[index]
+        ann_name = annotation_start(line)
+        if ann_name:
+            annotation, index = collect_annotation(lines, index)
+            pending_annotations.append(annotation)
+            index += 1
+            continue
+
+        stripped = line.strip()
+        if not seen_class and re.search(r"\bclass\s+\w+", stripped):
+            class_annotations = pending_annotations
+            pending_annotations = []
+            seen_class = True
+            index += 1
+            continue
+
+        if seen_class and re.search(r"\b(public|protected|private)\s+[\w<>\[\], ?]+\s+\w+\s*\(", stripped):
+            name_match = re.search(r"\s(\w+)\s*\(", stripped)
+            methods.append(JavaMethod(
+                name=name_match.group(1) if name_match else "<unknown>",
+                line_no=index + 1,
+                annotations=tuple(pending_annotations),
+            ))
+            pending_annotations = []
+            index += 1
+            continue
+
+        if stripped and not stripped.startswith("@"):
+            pending_annotations = []
+        index += 1
+
+    return tuple(class_annotations), methods
+
+
+def has_any_annotation(annotations: tuple[str, ...], prefixes: tuple[str, ...]) -> bool:
+    return any(annotation.startswith(prefix) for annotation in annotations for prefix in prefixes)
+
+
+def extract_permissions(text: str) -> set[str]:
+    clean = strip_comments(text)
+    pattern = re.escape(PERMISSION_ANNOTATION) + r"\s*\(\s*\"([^\"]+)\""
+    return set(re.findall(pattern, clean))
+
+
+def load_sql_permission_catalog() -> str:
+    parts: list[str] = []
+    sql_root = PROJECT_ROOT / SQL_CATALOG_ROOT
+    if not sql_root.exists():
+        return ""
+    for path in sql_root.rglob("*.sql"):
+        try:
+            parts.append(path.read_text(encoding="utf-8", errors="ignore"))
+        except OSError:
+            continue
+    return "\n".join(parts)
+
+
+def check_controller(path: Path, sql_catalog: str) -> list[str]:
+    rel_path = path.relative_to(PROJECT_ROOT).as_posix()
+    text = path.read_text(encoding="utf-8")
+    class_annotations, methods = parse_controller(text)
+    class_has_access = has_any_annotation(class_annotations, ACCESS_ANNOTATIONS)
+    violations: list[str] = []
+
+    for method in methods:
+        has_mapping = has_any_annotation(method.annotations, MAPPING_ANNOTATIONS)
+        if not has_mapping:
+            continue
+        has_access = class_has_access or has_any_annotation(method.annotations, ACCESS_ANNOTATIONS)
+        if not has_access:
+            violations.append(
+                f"{rel_path}:{method.line_no} {method.name} has mapping annotation but no access annotation"
+            )
+
+    for permission in sorted(extract_permissions(text)):
+        if permission not in sql_catalog:
+            violations.append(
+                f"{rel_path}: permission '{permission}' is not present under {SQL_CATALOG_ROOT}/**/*.sql"
+            )
+
+    return violations
+
+
+def main() -> int:
+    changed = sorted(path for path in changed_paths() if is_changed_controller(path))
+    sql_catalog = load_sql_permission_catalog()
+    violations: list[str] = []
+
+    for rel_path in changed:
+        path = PROJECT_ROOT / rel_path
+        if not path.is_file():
+            continue
+        violations.extend(check_controller(path, sql_catalog))
+
+    if violations:
+        print("Permission management violations:")
+        for violation in violations[:50]:
+            print(f"  {violation}")
+        if len(violations) > 50:
+            print(f"  ... {len(violations) - 50} more")
+        return 1
+
+    print("Permission management ok")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

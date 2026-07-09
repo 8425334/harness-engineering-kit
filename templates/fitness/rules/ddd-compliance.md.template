@@ -1,0 +1,44 @@
+---
+dimension: ddd_compliance
+weight: 15
+tier: fast
+metrics:
+  - name: domain_purity
+    command: python3 docs/fitness/scripts/check_ddd_compliance.py --check domain-purity
+    pattern: "DDD compliance ok"
+    hard_gate: true
+    tier: fast
+---
+
+# DDD 合规规则
+
+## 当前目标
+
+验证代码迭代是否遵循 DDD 建模纪律（详见 `docs/methodology/core/ddd-modeling.md` 的"建模纪律"节）。
+
+## 当前检查
+
+| 规则 | 门控 | 说明 |
+|------|------|------|
+| domain_purity | HARD | 领域层（`{{DOMAIN_PATH_KEYWORDS}}` 路径下的 Java 类）不得 import 或使用基础设施注解/类 |
+
+具体禁止项：
+
+- 禁止 import 的基础设施包：`{{FORBIDDEN_INFRA_IMPORTS}}`（Spring DI、Controller、JdbcTemplate、MyBatis Mapper 等）。
+- 禁止使用的注解：`{{FORBIDDEN_INFRA_ANNOTATIONS}}`（`@Service` / `@Component` / `@Controller` / `@RestController` / `@Autowired` / `@Resource` / `@Mapper`）。
+- 持久化映射注解（如 `@TableName` / `@TableId` / `@TableLogic` / `@Entity`）不纳入禁止项 —— 活动记录模式下实体直接承载持久化映射是可接受的。
+
+## 配置说明
+
+- 在 `check_ddd_compliance.py` 中按项目实际包结构调整：
+  - `DOMAIN_PATH_KEYWORDS`：标识领域层文件的路径关键字。
+  - `FORBIDDEN_INFRA_IMPORTS`：禁止 import 的基础设施包前缀。
+  - `FORBIDDEN_INFRA_ANNOTATIONS`：禁止使用的注解名。
+
+## 后续扩展
+
+- 跨聚合引用必须通过 ID（需 AST 解析实体字段类型，识别聚合根之间的直接对象引用）。
+- 领域事件命名使用过去时（`OrderPlaced` / `DispatchCompleted`）。
+- 应用服务不承载业务规则（识别价格计算、风控规则等业务关键字出现在 App Service 中）。
+- 仓储接口归属领域层、实现归属基础设施层（按 `*Repository` / `*RepositoryImpl` 的目录位置校验）。
+- 跨上下文直接调用：禁止一个限界上下文直接持有另一个上下文的 Service/Mapper。

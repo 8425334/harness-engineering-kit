@@ -1,0 +1,23 @@
+{
+  "engineering": {
+    "methodology": "docs/methodology/core/frontend-engineering.md",
+    "ironRules": [
+      "分层不可逾越：views → api → request，禁止越层调用",
+      "类型即契约：禁止 any，API 类型与后端同步",
+      "组件受控：单文件 ≤ 300 行，弹窗/表单/表格独立组件",
+      "三态覆盖：Loading / Empty / Error 必须处理"
+    ],
+    "componentDecomposition": {
+      "parentRole": "编排层，≤150 行，组装子组件 + 管理页面级状态",
+      "childRole": "实现层，≤300 行，props 接收 + emit 报告事件",
+      "modalPattern": "父组件 visible + data 状态，子组件 props + emit close/submit",
+      "triggerRules": {
+        "dialog/drawer": "拆为 modules/<name>-modal.vue 或 <name>-drawer.vue",
+        "form > 5 fields": "拆为 modules/<name>-form.vue",
+        "table > 6 columns": "拆为 modules/<name>-table.vue",
+        "reused 2+ times": "提取到 hooks/ 或 components/",
+        "file > 300 lines": "必须分解"
+      }
+    }
+  }
+}

@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""SDD quality checks: config populated and change structure validation.
+
+Verifies openspec/config.yaml has populated context + rules blocks, and that
+active openspec changes have the required proposal.md + tasks.md artifacts.
+
+Generic — no project-specific placeholders. Works with any OpenSpec-style layout.
+
+Copy to: docs/fitness/scripts/check_sdd_quality.py
+"""
+# {{CHECK_SDD_QUALITY_TEMPLATE}}
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+OPENSPEC_DIR = PROJECT_ROOT / "openspec"
+CONFIG_FILE = OPENSPEC_DIR / "config.yaml"
+SDD_DIR = PROJECT_ROOT / "docs" / "sdd"
+
+
+def check_config_populated() -> int:
+    """Verify openspec/config.yaml has populated context and rules blocks."""
+    if not CONFIG_FILE.exists():
+        print("openspec/config.yaml does not exist")
+        return 1
+
+    text = CONFIG_FILE.read_text(encoding="utf-8")
+
+    context_start = text.find("context:")
+    if context_start == -1:
+        print("openspec/config.yaml missing context block")
+        return 1
+
+    context_section = text[context_start:]
+    context_lines = []
+    in_context = False
+    for line in context_section.splitlines():
+        if line.startswith("context:"):
+            in_context = True
+            continue
+        if in_context:
+            if line.startswith("rules:") and not line.startswith("  "):
+                break
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                context_lines.append(stripped)
+
+    if len(context_lines) < 5:
+        print(f"openspec/config.yaml context block too sparse ({len(context_lines)} content lines, need >= 5)")
+        return 1
+
+    rules_start = text.find("rules:")
+    if rules_start == -1:
+        print("openspec/config.yaml missing rules block")
+        return 1
+
+    rules_section = text[rules_start:]
+    required_keys = ["proposal:", "design:", "specs:", "tasks:"]
+    found_keys = [k for k in required_keys if k in rules_section]
+
+    if len(found_keys) < 4:
+        missing = [k.rstrip(":") for k in required_keys if k not in found_keys]
+        print(f"openspec/config.yaml rules block missing keys: {missing}")
+        return 1
+
+    print("SDD config populated")
+    return 0
+
+
+def check_change_structure() -> int:
+    """Verify active openspec changes have proposal.md and tasks.md."""
+    changes_dir = OPENSPEC_DIR / "changes"
+    if not changes_dir.exists():
+        print("No openspec/changes/ directory — no active changes to validate")
+        return 0
+
+    issues = []
+    for entry in sorted(changes_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        if entry.name == "archive":
+            continue
+
+        has_proposal = (entry / "proposal.md").exists()
+        has_tasks = (entry / "tasks.md").exists()
+
+        if not has_proposal:
+            issues.append(f"{entry.name}: missing proposal.md")
+        if not has_tasks:
+            issues.append(f"{entry.name}: missing tasks.md")
+
+    if issues:
+        print("OpenSpec change structure issues:")
+        for issue in issues:
+            print(f"  {issue}")
+        return 1
+
+    print("SDD change structure ok")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="SDD quality checks")
+    parser.add_argument("--check", choices=["config-populated", "change-structure"], required=True)
+    args = parser.parse_args()
+
+    if args.check == "config-populated":
+        return check_config_populated()
+    elif args.check == "change-structure":
+        return check_change_structure()
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

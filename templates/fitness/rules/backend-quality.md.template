@@ -1,0 +1,41 @@
+---
+dimension: backend_quality
+weight: 20
+tier: normal
+metrics:
+  - name: java_impl_size_limit
+    command: python3 docs/fitness/scripts/check_java_impl_size.py
+    pattern: "Java implementation size ok"
+    hard_gate: true
+    tier: fast
+  - name: backend_core_tests
+    command: {{BACKEND_TEST_COMMAND}}
+    pattern: "BUILD SUCCESS"
+    hard_gate: false
+    tier: normal
+    timeout: 900
+---
+
+# 后端质量规则
+
+## 当前目标
+
+- 将已有模块测试命令纳入统一 Fitness 入口。
+- 第一阶段作为 normal tier 声明，避免本地 fast 检查过重。
+- 限制单个 Java 实现类体量，按排除空行、注释、`package` / `import`、变量定义和结构闭合行后的有效逻辑行统计；入口路由类（Controller）不纳入该实现类行数检查。
+
+## 配置说明
+
+- `{{BACKEND_TEST_COMMAND}}`：后端核心模块的测试命令，例如 `mvn -pl app/business -am test -DskipTests=false` 或 `./gradlew :app:business:test`。可复制多条 metric 以覆盖多个模块。
+- 在 `check_java_impl_size.py` 中配置 `MAX_IMPL_LINES`（默认 `{{MAX_IMPL_LINES}}`）。
+
+## 当前检查
+
+- 当前变更集中的 `*Impl.java` 单文件最高 `{{MAX_IMPL_LINES}}` 个有效逻辑行；历史超限类按后续重构逐步消化。
+- `*Controller.java` 作为入口路由类不纳入该行数上限。
+
+## 后续扩展
+
+- 增加全量 verify deep tier。
+- 增加依赖方向和架构边界自动化检查。
+- 增加生产类/方法/字段的 Javadoc 契约检查（参考 coil 项目的 `check_java_documentation_contract.py`，因含项目特定关键字未模板化）。

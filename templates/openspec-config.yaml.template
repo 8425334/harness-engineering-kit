@@ -1,0 +1,38 @@
+# OpenSpec Configuration — {{PROJECT_NAME}}
+# Copy to: openspec/config.yaml
+# Fill in {{PLACEHOLDER}} values for your project.
+
+schema: spec-driven
+
+context: |
+  Tech stack: {{TECH_STACK}}
+  Build: {{BUILD_SYSTEM}}
+  Database: {{DATABASE}}
+  Module structure:
+    {{MODULE_1}} — {{MODULE_1_DESCRIPTION}}
+    {{MODULE_2}} — {{MODULE_2_DESCRIPTION}}
+    {{MODULE_3}} — {{MODULE_3_DESCRIPTION}}
+  Conventions:
+    {{CONVENTION_1}}
+    {{CONVENTION_2}}
+    {{CONVENTION_3}}
+
+rules:
+  proposal:
+    - Reference specific module paths when listing impact
+    - Capability names use kebab-case
+    - Always list affected modules in Impact section with directory paths
+    - Check openspec/specs/ for existing capabilities before declaring Modified Capabilities
+  design:
+    - Every decision must specify which module owns the implementation
+    - Use numbered decisions (D1, D2...) with choice, reason, and alternatives
+    - New types must follow project conventions (specify module and package)
+  specs:
+    - Use SHALL/MUST for normative requirements (never should/may)
+    - Every requirement must have at least one Scenario with WHEN/THEN format
+    - Scenarios must use exactly 4 hashtags (####)
+    - Reference specific module names and package paths in requirements
+  tasks:
+    - Group tasks by module dependency order
+    - Every task must be a checkbox: "- [ ] X.Y Task description"
+    - Verification tasks must include fitness gate invocation

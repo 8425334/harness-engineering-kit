@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""Run lightweight security checks for dangerous Agent tool configuration.
+
+Scans tracked files for patterns that bypass AI Agent permission boundaries.
+
+Copy to: docs/fitness/scripts/check_security_baseline.py
+"""
+# {{CHECK_SECURITY_BASELINE_TEMPLATE}}
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DANGEROUS_PATTERNS = [
+    "--dangerously-skip-permissions",
+    "--allow-all-tools",
+    "bypassPermissions: true",
+    "bypassPermissions=true",
+]
+# Configure: directories to exclude from the scan. These typically contain
+# documentation that references dangerous patterns for educational purposes.
+# Adjust to match your project's documentation layout.
+EXCLUDED_DIRS = {
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    # {{EXTRA_EXCLUDED_DIRS}} — add project-specific doc dirs, e.g.:
+    # "docs/ai-docs",
+    # "docs/fitness",
+}
+
+
+def tracked_files() -> list[str]:
+    result = subprocess.run(
+        ["git", "ls-files"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def is_excluded(path: str) -> bool:
+    return any(path == excluded or path.startswith(f"{excluded}/") for excluded in EXCLUDED_DIRS)
+
+
+def main() -> int:
+    violations: list[str] = []
+    for rel_path in tracked_files():
+        if is_excluded(rel_path):
+            continue
+        path = PROJECT_ROOT / rel_path
+        if not path.is_file():
+            continue
+        try:
+            content = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+
+        for pattern in DANGEROUS_PATTERNS:
+            if pattern in content:
+                violations.append(f"{rel_path}: contains {pattern}")
+
+    if violations:
+        print("Dangerous Agent configuration found:")
+        for violation in violations[:30]:
+            print(f"  {violation}")
+        return 1
+
+    print("Security baseline ok")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,28 @@
+---
+dimension: security
+weight: 20
+tier: fast
+metrics:
+  - name: dangerous_agent_config_check
+    command: python3 docs/fitness/scripts/check_security_baseline.py
+    pattern: "Security baseline ok"
+    hard_gate: true
+    tier: fast
+---
+
+# 安全与 Agent 工具配置规则
+
+## 当前目标
+
+- 阻断危险 Agent 权限绕过配置进入仓库。
+- 对明显高风险配置进行轻量扫描。
+
+## 配置说明
+
+- 在 `check_security_baseline.py` 的 `EXCLUDED_DIRS` 中配置项目特定的文档目录（允许在文档中引用危险模式作为示例）。
+
+## 后续扩展
+
+- 敏感信息扫描（密钥、Token、凭据）。
+- 公开入口鉴权检查。
+- 命令执行、文件删除、外部请求等高风险变更 review-required 检查。
