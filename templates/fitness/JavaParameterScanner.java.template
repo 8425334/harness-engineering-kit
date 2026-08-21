@@ -1,0 +1,246 @@
+import com.sun.source.tree.ClassTree;
+import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.Tree;
+import com.sun.source.tree.VariableTree;
+import com.sun.source.util.JavacTask;
+import com.sun.source.util.TreeScanner;
+import com.sun.source.util.Trees;
+
+import javax.tools.Diagnostic;
+import javax.tools.DiagnosticCollector;
+import javax.tools.JavaCompiler;
+import javax.tools.JavaFileObject;
+import javax.tools.StandardJavaFileManager;
+import javax.tools.ToolProvider;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Java 可调用签名参数数量扫描器 — enforce-java-parameter-object-limit task 2.1-2.4.
+ *
+ * <p>使用 Java 21 JDK Compiler Tree API 只做 parse（不依赖解析、不编译），批量处理
+ * 标准输入传入的全部 Java 源文件，输出每个 method / 显式 constructor / record 规范构造
+ * 签名的稳定 JSON 记录。参数类型取源码规范文本（如 {@code Map<String, List<Long>>}），
+ * 支持多行、泛型逗号、参数注解、数组、varargs、嵌套类型与同名重载。
+ *
+ * <p>record：从 record components 推导规范构造签名（计一次）；compact constructor 视为
+ * 同一 canonical 签名去重，不额外计数。任一文件读取失败或 parse diagnostic 错误 →
+ * 输出错误并 exit 非零（fail closed）。
+ *
+ * <p>用法: {@code cat files.txt | java JavaParameterScanner.java}
+ * 输出: JSON 数组，每项 {@code {file, ownerType, kind, name, params, line}}。
+ */
+public class JavaParameterScanner {
+
+    /** callable kind：普通方法 */
+    static final String KIND_METHOD = "method";
+    /** callable kind：显式构造器 */
+    static final String KIND_CONSTRUCTOR = "constructor";
+    /** callable kind：record 规范构造签名 */
+    static final String KIND_RECORD_CONSTRUCTOR = "record-constructor";
+
+    static final class Callable {
+        String file;
+        String ownerType;
+        String kind;
+        String name;
+        List<String> params = new ArrayList<>();
+        long line;
+    }
+
+    public static void main(String[] args) throws Exception {
+        // 读取文件清单（标准输入，逐行）
+        List<String> files = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String trimmed = line.trim();
+                if (!trimmed.isEmpty()) {
+                    files.add(trimmed);
+                }
+            }
+        }
+        if (files.isEmpty()) {
+            System.err.println("JavaParameterScanner: no input files");
+            System.exit(2);
+        }
+
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        if (compiler == null) {
+            System.err.println("JavaParameterScanner: JDK compiler unavailable (run with JDK 21 javac)");
+            System.exit(2);
+        }
+        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(diagnostics, null, StandardCharsets.UTF_8)) {
+            Iterable<? extends JavaFileObject> units = fileManager.getJavaFileObjectsFromStrings(files);
+            // 仅 parse；不触发注解处理或依赖解析
+            List<String> options = List.of("-proc:none");
+            JavacTask task = (JavacTask) compiler.getTask(null, fileManager, diagnostics, options, null, units);
+            Iterable<? extends CompilationUnitTree> compilationUnits = task.parse();
+
+            List<Callable> callables = new ArrayList<>();
+            Trees trees = Trees.instance(task);
+
+            for (CompilationUnitTree unit : compilationUnits) {
+                // StandardJavaFileObject.getName() 返回输入文件路径（非 URI）
+                String sourcePath = unit.getSourceFile().getName();
+                CallableCollector collector = new CallableCollector(sourcePath, trees, unit);
+                unit.accept(collector, null);
+                callables.addAll(collector.callables);
+            }
+
+            // fail-closed：任何 ERROR 级 diagnostic（含 parse 错误）→ exit 非零
+            boolean hadError = false;
+            for (Diagnostic<? extends JavaFileObject> d : diagnostics.getDiagnostics()) {
+                if (d.getKind() == Diagnostic.Kind.ERROR) {
+                    hadError = true;
+                    System.err.println("JavaParameterScanner: parse error: " + d.getSource() + ":" + d.getLineNumber() + ": " + d.getMessage(null));
+                }
+            }
+            if (hadError) {
+                System.exit(1);
+            }
+
+            // 输出 JSON
+            StringBuilder sb = new StringBuilder("[");
+            for (int i = 0; i < callables.size(); i++) {
+                if (i > 0) {
+                    sb.append(',');
+                }
+                Callable c = callables.get(i);
+                sb.append("{\"file\":").append(quote(c.file))
+                    .append(",\"ownerType\":").append(quote(c.ownerType))
+                    .append(",\"kind\":").append(quote(c.kind))
+                    .append(",\"name\":").append(quote(c.name))
+                    .append(",\"line\":").append(c.line)
+                    .append(",\"params\":[");
+                for (int j = 0; j < c.params.size(); j++) {
+                    if (j > 0) {
+                        sb.append(',');
+                    }
+                    sb.append(quote(c.params.get(j)));
+                }
+                sb.append("]}");
+            }
+            sb.append("]");
+            System.out.println(sb);
+        }
+    }
+
+    /** AST 收集器：收集方法、显式构造器、record 规范构造签名。 */
+    static final class CallableCollector extends TreeScanner<Void, Void> {
+        final List<Callable> callables = new ArrayList<>();
+        private final String sourcePath;
+        private final Trees trees;
+        private final CompilationUnitTree unit;
+        private final String currentPackage;
+
+        CallableCollector(String sourcePath, Trees trees, CompilationUnitTree unit) {
+            this.sourcePath = sourcePath;
+            this.trees = trees;
+            this.unit = unit;
+            this.currentPackage = unit.getPackageName() == null ? "" : unit.getPackageName().toString();
+        }
+
+        @Override
+        public Void visitClass(ClassTree node, Void unused) {
+            String simpleName = node.getSimpleName().toString();
+            String ownerType = currentPackage.isEmpty() ? simpleName : currentPackage + "." + simpleName;
+            boolean isRecord = node.getKind() == Tree.Kind.RECORD;
+            long classLine = lineOf(node);
+
+            // GraalVM jdk.compiler tree API 无 RecordComponentTree：record components 以
+            // private final 非 static 的 VARIABLE member 呈现（见 RecProbe）。
+            List<String> recordComponents = new ArrayList<>();
+            if (isRecord) {
+                for (Tree member : node.getMembers()) {
+                    if (member instanceof VariableTree var && isRecordComponent(var)) {
+                        recordComponents.add(var.getType().toString());
+                    }
+                }
+                // record 规范构造签名：从 components 推导（去重，只计一次）
+                Callable c = new Callable();
+                c.file = sourcePath;
+                c.ownerType = ownerType;
+                c.kind = KIND_RECORD_CONSTRUCTOR;
+                c.name = "<init>";
+                c.line = classLine;
+                c.params.addAll(recordComponents);
+                callables.add(c);
+            }
+
+            for (Tree member : node.getMembers()) {
+                if (member instanceof MethodTree methodTree) {
+                    String name = methodTree.getName().toString();
+                    boolean isConstructor = "<init>".equals(name);
+                    if (isRecord && isConstructor) {
+                        // record 的显式 canonical/compact constructor 与 components 推导的
+                        // canonical 等价 → 去重；仅当参数数与 components 不一致时视为独立构造器
+                        if (methodTree.getParameters().size() == recordComponents.size()) {
+                            continue;
+                        }
+                    }
+                    Callable c = new Callable();
+                    c.file = sourcePath;
+                    c.ownerType = ownerType;
+                    c.kind = isConstructor ? KIND_CONSTRUCTOR : KIND_METHOD;
+                    c.name = isConstructor ? "<init>" : name;
+                    c.line = lineOf(methodTree);
+                    for (VariableTree param : methodTree.getParameters()) {
+                        c.params.add(param.getType().toString());
+                    }
+                    callables.add(c);
+                }
+            }
+            return super.visitClass(node, unused);
+        }
+
+        /**
+         * 判断 VARIABLE member 是否为 record component（private final 非 static）。
+         * GraalVM jdk.compiler tree API 缺 {@code Modifier} 枚举，改用 modifiers 文本匹配。
+         */
+        private boolean isRecordComponent(VariableTree var) {
+            String modifiers = var.getModifiers() == null ? "" : var.getModifiers().toString();
+            if (modifiers.contains("static")) {
+                return false;
+            }
+            // record components 总是 private final（默认/显式均可出现）；宽松判定：非 static 即计入
+            return true;
+        }
+
+        private long lineOf(Tree tree) {
+            com.sun.source.tree.LineMap lineMap = unit.getLineMap();
+            long pos = trees.getSourcePositions().getStartPosition(unit, tree);
+            return lineMap.getLineNumber(pos);
+        }
+    }
+
+    static String quote(String s) {
+        if (s == null) {
+            return "\"\"";
+        }
+        StringBuilder sb = new StringBuilder("\"");
+        for (char ch : s.toCharArray()) {
+            switch (ch) {
+                case '"' -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (ch < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) ch));
+                    } else {
+                        sb.append(ch);
+                    }
+                }
+            }
+        }
+        return sb.append('"').toString();
+    }
+}

@@ -141,7 +141,12 @@ def run_metric(metric: dict[str, Any], default_tier: str, dry_run: bool, verbose
 
     output = (result.stdout or "") + (result.stderr or "")
     pattern = str(metric.get("pattern") or "")
-    passed = bool(re.search(pattern, output, re.IGNORECASE)) if pattern else result.returncode == 0
+    # 防假绿：metric 只有在退出码为零且配置的 pattern 命中时才通过——
+    # 非零退出但输出含成功文本必须判为失败。
+    if pattern:
+        passed = result.returncode == 0 and bool(re.search(pattern, output, re.IGNORECASE))
+    else:
+        passed = result.returncode == 0
 
     if passed and not verbose:
         return True, output.strip().splitlines()[-1] if output.strip() else "exit 0"

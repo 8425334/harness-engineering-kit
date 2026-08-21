@@ -103,9 +103,22 @@ do_check() {
   file_exists "$TEMPLATES_DIR/CLAUDE.md.template"
   file_exists "$TEMPLATES_DIR/openspec-config.yaml.template"
   file_exists "$TEMPLATES_DIR/mandatory-skills/SKILLS.md.template"
+  file_exists "$TEMPLATES_DIR/fitness/JavaParameterScanner.java.template"
+  file_exists "$TEMPLATES_DIR/fitness/test_java_parameter_limit.py.template"
   echo ""
   echo "--- Frontend Engineering ---"
   file_exists "$HOME/.claude/skills/fe-engineering/SKILL.md"
+  file_exists "$HOME/.codex/skills/fe-engineering/SKILL.md"
+  echo ""
+  echo "--- Multi-Agent Parallel ---"
+  file_exists "$HOME/.claude/skills/multi-agent/SKILL.md"
+  file_exists "$HOME/.codex/skills/multi-agent/SKILL.md"
+  echo ""
+  echo "--- Token Compaction Preservation ---"
+  file_exists "$PROJECT_ROOT/.claude/round-contract.md"
+  file_exists "$PROJECT_ROOT/.claude/hooks/save-state.sh"
+  file_exists "$PROJECT_ROOT/.codex/round-contract.md"
+  file_exists "$PROJECT_ROOT/.codex/hooks/save-state.sh"
   echo ""
   echo "--- Fitness (Tier 2) ---"
   file_exists "$PROJECT_ROOT/docs/fitness/scripts/fitness.py"
@@ -175,9 +188,70 @@ do_tier1() {
     run cp "$TEMPLATES_DIR/fe-engineering/SKILL.md" "$HOME/.claude/skills/fe-engineering/SKILL.md"
     ok "Installed fe-engineering to ~/.claude/skills/"
   fi
+  if [ -f "$HOME/.codex/skills/fe-engineering/SKILL.md" ]; then
+    ok "fe-engineering skill already installed for Codex"
+  elif [ -f "$TEMPLATES_DIR/fe-engineering/SKILL.md" ]; then
+    run mkdir -p "$HOME/.codex/skills/fe-engineering"
+    run cp "$TEMPLATES_DIR/fe-engineering/SKILL.md" "$HOME/.codex/skills/fe-engineering/SKILL.md"
+    ok "Installed fe-engineering to ~/.codex/skills/"
+  fi
 
-  # 1.6 Global CLAUDE.md update
-  info "1.6 Checking global CLAUDE.md method routing..."
+  # 1.6 Multi-Agent global skill
+  info "1.6 Installing Multi-Agent global skill..."
+  if [ -f "$HOME/.claude/skills/multi-agent/SKILL.md" ]; then
+    ok "multi-agent skill already installed globally"
+  elif [ -f "$TEMPLATES_DIR/multi-agent/SKILL.md.template" ]; then
+    run mkdir -p "$HOME/.claude/skills/multi-agent"
+    run cp "$TEMPLATES_DIR/multi-agent/SKILL.md.template" "$HOME/.claude/skills/multi-agent/SKILL.md"
+    ok "Installed multi-agent to ~/.claude/skills/"
+  fi
+  if [ -f "$HOME/.codex/skills/multi-agent/SKILL.md" ]; then
+    ok "multi-agent skill already installed for Codex"
+  elif [ -f "$TEMPLATES_DIR/multi-agent/SKILL.md.template" ]; then
+    run mkdir -p "$HOME/.codex/skills/multi-agent"
+    run cp "$TEMPLATES_DIR/multi-agent/SKILL.md.template" "$HOME/.codex/skills/multi-agent/SKILL.md"
+    ok "Installed multi-agent to ~/.codex/skills/"
+  fi
+
+  # 1.7 Token compaction preservation
+  info "1.7 Installing token compaction preservation..."
+  if [ -f "$PROJECT_ROOT/.claude/round-contract.md" ]; then
+    ok "round-contract.md already exists"
+  elif [ -f "$TEMPLATES_DIR/compaction/round-contract.md.template" ]; then
+    run mkdir -p "$PROJECT_ROOT/.claude/hooks" "$PROJECT_ROOT/.claude/compaction-state"
+    run cp "$TEMPLATES_DIR/compaction/round-contract.md.template" "$PROJECT_ROOT/.claude/round-contract.md"
+    ok "Created .claude/round-contract.md"
+  fi
+  if [ -f "$PROJECT_ROOT/.claude/hooks/save-state.sh" ]; then
+    ok "save-state.sh already exists"
+  elif [ -f "$TEMPLATES_DIR/compaction/save-state.sh.template" ]; then
+    run cp "$TEMPLATES_DIR/compaction/save-state.sh.template" "$PROJECT_ROOT/.claude/hooks/save-state.sh"
+    run chmod +x "$PROJECT_ROOT/.claude/hooks/save-state.sh"
+    ok "Installed .claude/hooks/save-state.sh"
+  fi
+  if grep -q '"PreCompact"' "$PROJECT_ROOT/.claude/settings.json" "$PROJECT_ROOT/.claude/settings.local.json" 2>/dev/null; then
+    ok "Compaction hooks configured"
+  else
+    warn "Compaction hooks not in settings. Merge the fragment from:"
+    echo "  $TEMPLATES_DIR/compaction/settings-hooks.json.template"
+  fi
+  if [ -f "$PROJECT_ROOT/.codex/round-contract.md" ]; then
+    ok "Codex round-contract.md already exists"
+  elif [ -f "$TEMPLATES_DIR/compaction/codex-round-contract.md.template" ]; then
+    run mkdir -p "$PROJECT_ROOT/.codex/hooks" "$PROJECT_ROOT/.codex-state"
+    run cp "$TEMPLATES_DIR/compaction/codex-round-contract.md.template" "$PROJECT_ROOT/.codex/round-contract.md"
+    ok "Created .codex/round-contract.md"
+  fi
+  if [ -f "$PROJECT_ROOT/.codex/hooks/save-state.sh" ]; then
+    ok "Codex save-state.sh already exists"
+  elif [ -f "$TEMPLATES_DIR/compaction/codex-save-state.sh.template" ]; then
+    run cp "$TEMPLATES_DIR/compaction/codex-save-state.sh.template" "$PROJECT_ROOT/.codex/hooks/save-state.sh"
+    run chmod +x "$PROJECT_ROOT/.codex/hooks/save-state.sh"
+    ok "Installed .codex/hooks/save-state.sh"
+  fi
+
+  # 1.8 Global CLAUDE.md update
+  info "1.8 Checking global CLAUDE.md method routing..."
   if grep -q "自动方法论路由" "$HOME/.claude/CLAUDE.md" 2>/dev/null; then
     ok "Global CLAUDE.md has method routing configured"
   elif [ -f "$TEMPLATES_DIR/fe-engineering/claude-md/global.append.md" ]; then
@@ -185,7 +259,7 @@ do_tier1() {
     echo "  cat $TEMPLATES_DIR/fe-engineering/claude-md/global.append.md >> ~/.claude/CLAUDE.md"
   fi
 
-  # 1.7 Skill check summary
+  # 1.9 Skill check summary
   step "Mandatory Skills Check"
   echo ""
   ok "OpenSpec:     $( [ -f "$PROJECT_ROOT/openspec/config.yaml" ] && echo 'configured' || echo 'TODO: openspec init' )"
@@ -217,24 +291,42 @@ do_tier2() {
 
   # 2.1 Fitness scripts
   info "2.1 Setting up Fitness framework..."
+  run mkdir -p "$PROJECT_ROOT/docs/fitness/scripts"
   if [ -f "$PROJECT_ROOT/docs/fitness/scripts/fitness.py" ]; then
-    ok "Fitness scripts already exist"
+    ok "Fitness runner already exists"
   elif [ -f "$TEMPLATES_DIR/fitness/fitness.py.template" ]; then
-    run mkdir -p "$PROJECT_ROOT/docs/fitness/scripts"
     run cp "$TEMPLATES_DIR/fitness/fitness.py.template" "$PROJECT_ROOT/docs/fitness/scripts/fitness.py"
     run chmod +x "$PROJECT_ROOT/docs/fitness/scripts/fitness.py"
     ok "Created docs/fitness/scripts/fitness.py (edit placeholders)"
-
-    # Copy check scripts
-    if ls "$TEMPLATES_DIR/fitness/check_"*.py.template &>/dev/null 2>&1; then
-      for f in "$TEMPLATES_DIR/fitness/check_"*.py.template; do
-        local_name="$(basename "$f" .template)"
-        run cp "$f" "$PROJECT_ROOT/docs/fitness/scripts/$local_name"
-      done
-      ok "Copied fitness check scripts"
-    fi
   else
     warn "Fitness templates not found, skipping"
+  fi
+
+  # Add new templates without overwriting project adaptations.
+  if ls "$TEMPLATES_DIR/fitness/check_"*.py.template &>/dev/null 2>&1; then
+    for f in "$TEMPLATES_DIR/fitness/check_"*.py.template; do
+      local_name="$(basename "$f" .template)"
+      [ -f "$PROJECT_ROOT/docs/fitness/scripts/$local_name" ] && continue
+      run cp "$f" "$PROJECT_ROOT/docs/fitness/scripts/$local_name"
+    done
+    ok "Filled missing fitness check scripts"
+  fi
+  if ls "$TEMPLATES_DIR/fitness/test_"*.py.template &>/dev/null 2>&1; then
+    for f in "$TEMPLATES_DIR/fitness/test_"*.py.template; do
+      local_name="$(basename "$f" .template)"
+      [ -f "$PROJECT_ROOT/docs/fitness/scripts/$local_name" ] && continue
+      run cp "$f" "$PROJECT_ROOT/docs/fitness/scripts/$local_name"
+    done
+    ok "Filled missing fitness self-tests"
+  fi
+  if [ -f "$TEMPLATES_DIR/fitness/JavaParameterScanner.java.template" ] \
+      && [ ! -f "$PROJECT_ROOT/docs/fitness/scripts/JavaParameterScanner.java" ]; then
+    run cp "$TEMPLATES_DIR/fitness/JavaParameterScanner.java.template" "$PROJECT_ROOT/docs/fitness/scripts/JavaParameterScanner.java"
+    ok "Copied Java parameter scanner"
+  fi
+  if [ -f "$TEMPLATES_DIR/fitness/README.md" ] && [ ! -f "$PROJECT_ROOT/docs/fitness/README.md" ]; then
+    run cp "$TEMPLATES_DIR/fitness/README.md" "$PROJECT_ROOT/docs/fitness/README.md"
+    ok "Copied Fitness setup guide"
   fi
 
   # 2.2 Fitness rules

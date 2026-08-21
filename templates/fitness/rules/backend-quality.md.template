@@ -8,6 +8,31 @@ metrics:
     pattern: "Java implementation size ok"
     hard_gate: true
     tier: fast
+  - name: java_parameter_object_gate
+    command: python3 docs/fitness/scripts/check_java_parameter_limit.py --mode block
+    pattern: "Java parameter object gate ok"
+    hard_gate: true
+    tier: fast
+  - name: java_parameter_object_selftest
+    command: python3 docs/fitness/scripts/test_java_parameter_limit.py
+    pattern: "OK"
+    hard_gate: true
+    tier: fast
+  - name: mapper_inline_sql_guard
+    command: python3 docs/fitness/scripts/check_mapper_inline_sql.py
+    pattern: "Mapper inline SQL ok"
+    hard_gate: true
+    tier: fast
+  - name: mapper_inline_sql_selftest
+    command: python3 docs/fitness/scripts/test_mapper_inline_sql.py
+    pattern: "OK"
+    hard_gate: true
+    tier: fast
+  - name: mapper_xml_parity
+    command: python3 docs/fitness/scripts/check_mapper_xml_parity.py
+    pattern: "Mapper XML parity ok"
+    hard_gate: true
+    tier: fast
   - name: backend_core_tests
     command: {{BACKEND_TEST_COMMAND}}
     pattern: "BUILD SUCCESS"
@@ -28,14 +53,21 @@ metrics:
 
 - `{{BACKEND_TEST_COMMAND}}`：后端核心模块的测试命令，例如 `mvn -pl app/business -am test -DskipTests=false` 或 `./gradlew :app:business:test`。可复制多条 metric 以覆盖多个模块。
 - 在 `check_java_impl_size.py` 中配置 `MAX_IMPL_LINES`（默认 `{{MAX_IMPL_LINES}}`）。
+- `check_java_parameter_limit.py`：生产 method / 显式 constructor / record 规范构造签名位置参数最多 `{{MAX_PARAMETERS}}` 个（默认 `3`），用 Java 21 Compiler Tree API 单次批量 parse；存量超限签名以精确 shrink-only 基线渐进收敛，外部框架回调用有期限精确例外。需配套 Java 21 source-file-mode scanner（输出 callable 签名 JSON）与三个 JSON 配置（config / baseline / exceptions）。详见 `templates/fitness/check_java_parameter_limit.py.template` 的 docstring。
+- `check_mapper_inline_sql.py`：生产 Mapper 不得嵌入 SQL 注解、provider 注解或 MyBatis-Plus SQL 逃生口；自定义 SQL 必须进入所属基础设施的 Mapper XML。在脚本中配置 `MAPPER_SOURCE_ROOTS`。
+- `check_mapper_xml_parity.py`：每个 Mapper 接口方法必须有 XML 中对应 statement。在脚本中配置 `MAPPER_SOURCE_ROOTS` / `MAPPER_XML_ROOTS` 与 `MAPPER_XML_GLOB`。
+- 每个包含复杂解析、基线或豁免语义的门禁应配套零外部依赖自测；至少覆盖正例、反例、边界值、失效基线/例外和退出码，防止门禁自身回归后静默假绿。
 
 ## 当前检查
 
 - 当前变更集中的 `*Impl.java` 单文件最高 `{{MAX_IMPL_LINES}}` 个有效逻辑行；历史超限类按后续重构逐步消化。
 - `*Controller.java` 作为入口路由类不纳入该行数上限。
+- **Java 参数对象门禁**：生产 callable 位置参数最多 `{{MAX_PARAMETERS}}` 个（超过即违规，且必须聚合为**恰好一个**具名参数对象）；新增违规、stale 基线、无效/过期/通配例外均使 block 模式失败。
+- **Mapper SQL 外置**：生产 Mapper 禁止内联 SQL 与 provider；SQL 一律落 XML。配合 `mapper_xml_parity` 保证接口方法与 XML statement 一一对应。
+- **门禁自测**：参数对象与 Mapper 内联 SQL 检查的 selftest 同属 fast hard gate；检查器和自测必须一起移植、一起维护。
 
 ## 后续扩展
 
 - 增加全量 verify deep tier。
 - 增加依赖方向和架构边界自动化检查。
-- 增加生产类/方法/字段的 Javadoc 契约检查（参考 coil 项目的 `check_java_documentation_contract.py`，因含项目特定关键字未模板化）。
+- 增加生产类/方法/字段的 Javadoc 契约检查（见 `java-documentation.md.template`，配套 `check_java_documentation_contract.py`）。

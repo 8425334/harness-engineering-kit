@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""Check source/XML parity for Mapper files.
+
+Verifies that:
+1. Every Java Mapper method with a corresponding XML statement exists
+2. XML namespaces match Java Mapper fully qualified names
+3. No duplicate statement IDs exist in XML
+4. Parameter names in XML match @Param annotations in Java
+
+Exit 0 = no violations found.
+Exit 1 = violations found (details printed to stdout).
+
+Copy to: docs/fitness/scripts/check_mapper_xml_parity.py
+"""
+# {{CHECK_MAPPER_XML_PARITY_TEMPLATE}}
+
+from __future__ import annotations
+
+import re
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+# Configure: root directories that contain Mapper Java sources. Each root may
+# point at a module root (e.g. ``PROJECT_ROOT / "modules" / "foo"``) or
+# directly at the source directory (e.g. ``PROJECT_ROOT / "src" / "main" /
+# "java"``); the matching Java file is resolved under either shape. Generic
+# examples:
+#   MAPPER_SOURCE_ROOTS = (
+#       PROJECT_ROOT / "modules" / "foo",
+#       PROJECT_ROOT / "modules" / "bar",
+#   )
+MAPPER_SOURCE_ROOTS = (  # {{MAPPER_SOURCE_ROOTS}}
+    PROJECT_ROOT / "src" / "main" / "java",
+)
+
+# Configure: root directories that contain Mapper XML resources, scanned with
+# MAPPER_XML_GLOB (a recursive glob, so a leading `**/` is optional). Generic
+# examples:
+#   MAPPER_XML_ROOTS = (PROJECT_ROOT / "src" / "main" / "resources",)
+MAPPER_XML_ROOTS = (  # {{MAPPER_XML_ROOTS}}
+    PROJECT_ROOT / "src" / "main" / "resources",
+)
+
+# Configure: glob (relative to each XML root) that matches Mapper XML files.
+MAPPER_XML_GLOB = "**/mapper/**/*.xml"  # {{MAPPER_XML_GLOB}}
+
+# Configure: path substrings that mark a directory as non-production.
+EXCLUDE_PATTERNS = ["/target/", "/test/", "/tests/"]
+
+
+def should_exclude(path: Path) -> bool:
+    path_str = str(path)
+    for pattern in EXCLUDE_PATTERNS:
+        if pattern in path_str:
+            return True
+    return False
+
+
+def extract_java_methods(filepath: Path) -> set[str]:
+    """Extract non-default, non-inherited method names from a Java Mapper file."""
+    try:
+        content = filepath.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return set()
+
+    # BaseMapper/BaseMapperPlus inherited methods to exclude
+    inherited_methods = {
+        "selectById", "selectBatchIds", "selectByMap", "selectOne", "selectList",
+        "selectMaps", "selectObjs", "selectCount", "selectPage", "insert",
+        "insertBatch", "deleteById", "deleteByMap", "deleteBatchIds", "updateById",
+        "updateBatch", "save", "saveBatch", "saveOrUpdateBatch", "removeById",
+        "removeByMap", "removeBatchByIds", "update", "getBaseMapper",
+    }
+
+    methods = set()
+    # Simple approach: extract ALL method-like identifiers from the file
+    # A method declaration in a Java interface has the pattern:
+    #   returnType methodName(...) ;
+    # We find all identifiers that appear before ( and are followed by ) eventually
+    # by looking for the pattern: word word( ... );
+    #
+    # Since multi-line declarations make regex hard, we use a heuristic:
+    # Find all occurrences of `methodName(` where methodName is preceded by a space
+    # and a return type, and followed by parameters and a semicolon.
+
+    # Remove comments
+    text = re.sub(r'//.*?$', '', content, flags=re.MULTILINE)
+    text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
+
+    # Find all method declarations by looking for the pattern:
+    # whitespace + word + ( + ... + ) + ;
+    # We scan for `methodName(` and then look ahead for `);` within the next few hundred chars
+    for match in re.finditer(r'(?<=\s)(\w+)\s*\(', text):
+        method_name = match.group(1)
+        if method_name in inherited_methods or method_name in {"if", "for", "while", "switch", "return", "throw", "catch", "try", "new", "super", "this", "eq", "ne", "in", "like", "gt", "lt", "ge", "le", "isNull", "isNotNull", "orderByAsc", "orderByDesc", "selectOne", "selectList", "selectCount", "selectPage", "selectMaps", "selectObjs", "update", "insert", "delete", "ofNullable", "of", "get", "put", "set", "stream", "map", "filter", "forEach", "collect", "toList", "toSet", "isEmpty", "isNotEmpty", "size", "add", "remove", "contains", "forEachRemaining", "hasNext", "next"}:
+            continue
+
+        # Look ahead for `);` within the next 1500 chars to confirm it's a declaration
+        lookahead = text[match.start():match.start() + 1500]
+        # Count parentheses depth
+        depth = 0
+        for i, ch in enumerate(lookahead):
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth -= 1
+                if depth == 0:
+                    # Check if followed by ;
+                    rest = lookahead[i + 1:i + 5].strip()
+                    if rest.startswith(";"):
+                        methods.add(method_name)
+                    break
+
+    return methods
+
+
+def extract_java_default_methods(filepath: Path) -> set[str]:
+    """Extract default method names (these don't need XML statements)."""
+    try:
+        content = filepath.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return set()
+
+    default_methods = set()
+    # Match default methods with body
+    pattern = re.compile(r"default\s+\w+(?:<[^>]+>)?\s+(\w+)\s*\(", re.MULTILINE)
+    for match in pattern.finditer(content):
+        default_methods.add(match.group(1))
+
+    return default_methods
+
+
+def parse_xml_mapper(filepath: Path) -> tuple[str | None, dict[str, list[str]], list[str]]:
+    """Parse XML mapper file. Returns (namespace, {stmt_id: [param_names]}, duplicate_ids)."""
+    try:
+        content = filepath.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return None, {}, []
+
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError:
+        return None, {}, []
+
+    namespace = root.get("namespace")
+    statements = {}
+    seen_ids = []
+    duplicates = []
+
+    for elem in root:
+        stmt_id = elem.get("id")
+        if stmt_id:
+            if stmt_id in seen_ids:
+                duplicates.append(stmt_id)
+            seen_ids.append(stmt_id)
+
+            # Extract parameter references from SQL
+            params = []
+            for param_match in re.finditer(r"#\{(\w+)(?:\.\w+)?\}", ET.tostring(elem, encoding="unicode")):
+                param_name = param_match.group(1)
+                if param_name not in params:
+                    params.append(param_name)
+            statements[stmt_id] = params
+
+    return namespace, statements, duplicates
+
+
+def java_class_to_path(fqn: str) -> Path:
+    """Convert fully qualified class name to file path."""
+    parts = fqn.replace(".", "/")
+    return Path(parts + ".java")
+
+
+def find_java_mapper(namespace: str) -> Path | None:
+    """Locate the Java Mapper file for a fully qualified namespace.
+
+    Each source root may point at the source directory itself (e.g.
+    ``src/main/java``) or at a module root that contains ``src/main/java``.
+    """
+    relative = java_class_to_path(namespace)
+    for java_root in MAPPER_SOURCE_ROOTS:
+        for candidate in (java_root / relative, java_root / "src" / "main" / "java" / relative):
+            if candidate.exists():
+                return candidate
+    return None
+
+
+def main() -> int:
+    violations = []
+
+    for xml_root in MAPPER_XML_ROOTS:
+        if not xml_root.exists():
+            continue
+
+        # Find all XML mapper files
+        for xml_file in sorted(xml_root.rglob(MAPPER_XML_GLOB)):
+            if should_exclude(xml_file):
+                continue
+
+            namespace, xml_stmts, duplicates = parse_xml_mapper(xml_file)
+            if not namespace:
+                violations.append(f"XML parse error: {xml_file}")
+                continue
+
+            # Check for duplicate statement IDs
+            for dup_id in duplicates:
+                violations.append(f"Duplicate statement ID '{dup_id}' in {xml_file.relative_to(PROJECT_ROOT)}")
+
+            # Find corresponding Java file
+            java_file = find_java_mapper(namespace)
+            if java_file is None:
+                violations.append(f"Java Mapper not found for namespace {namespace} (XML: {xml_file.relative_to(PROJECT_ROOT)})")
+                continue
+
+            # Extract Java methods
+            java_methods = extract_java_methods(java_file)
+            default_methods = extract_java_default_methods(java_file)
+
+            # Check that all non-default Java methods have XML statements
+            for method_name in java_methods:
+                if method_name not in default_methods and method_name not in xml_stmts:
+                    violations.append(f"Missing XML statement for {namespace}.{method_name} (XML: {xml_file.relative_to(PROJECT_ROOT)})")
+
+            # Check that all XML statements have corresponding Java methods
+            for stmt_id in xml_stmts:
+                if stmt_id not in java_methods and stmt_id not in default_methods:
+                    violations.append(f"XML statement '{stmt_id}' has no Java method in {namespace} (XML: {xml_file.relative_to(PROJECT_ROOT)})")
+
+    if violations:
+        print(f"Mapper XML parity violations found: {len(violations)}")
+        for v in violations:
+            print(f"  {v}")
+        return 1
+
+    print("Mapper XML parity ok")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

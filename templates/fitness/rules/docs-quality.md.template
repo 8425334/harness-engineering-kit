@@ -38,6 +38,16 @@ metrics:
     pattern: "AI JSON sync ok"
     hard_gate: true
     tier: fast
+  - name: code_block_simple_class_names
+    command: python3 docs/fitness/scripts/check_code_block_simple_class_names.py
+    pattern: "Code block simple class names ok"
+    hard_gate: true
+    tier: fast
+  - name: code_block_simple_class_names_selftest
+    command: python3 docs/fitness/scripts/test_code_block_simple_class_names.py
+    pattern: "Code block simple class names selftest ok"
+    hard_gate: true
+    tier: fast
 ---
 
 # 文档质量规则
@@ -51,6 +61,8 @@ metrics:
 ## 配置说明
 
 - `{{AI_CONTEXT_SCRIPT}}`：路径文档加载脚本的绝对或相对路径，例如 `$HOME/.codex/skills/<project>-guide/scripts/find_ai_context.py`。如未部署该工具，可删除 `ai_context_script_works` metric。
+- `code_block_simple_class_names`：仅扫描当前变更集（新增/修改/未跟踪）中的 `.md` 文件，检查 Java 风格 fenced 代码块是否在类型位置使用全限定类名。`package`/`import` 声明、注释、字符串、URL 与非 Java 围栏不计；确有歧义时在同围栏、单行的 `// fitness: allow-qualified-class-name: <原因>` 标记并写明非空原因即可豁免。归档/构建产物/依赖目录不扫描，避免历史债务阻塞无关变更。
+- `code_block_simple_class_names_selftest`：用内存 fixture 覆盖 fence 解析、语言过滤、豁免作用域和 changed-path 过滤；它与主检查同为 hard gate，避免规则脚本回归后假绿。
 
 ## 后续扩展
 

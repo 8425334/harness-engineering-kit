@@ -169,3 +169,71 @@ type: user | feedback | project | reference
 - Git 历史（`git log` 才是权威源）
 - 调试方案（修复在代码中，commit message 有上下文）
 - 临时任务状态（用 task tracking，不是 memory）
+
+---
+
+## 组件 5：Token 压缩保持（Compaction Preservation）
+
+自动压缩是有损的——上下文窗口被压缩时，进行中任务的契约与状态可能被静默丢弃，Agent 会在任务中途丢失线索。压缩保持模式让本轮工作**在压缩前存盘、压缩后重新注入**，从而扛过压缩事件。
+
+### 模式
+
+```
+round-contract.md（≤50 行，始终保持最新）
+        │   每轮开始前更新
+        ▼
+  PreCompact hook（matcher: auto | user）
+        │   把 round-contract.md + 压缩触发 JSON 归档
+        │   到 .claude/compaction-state/（保留最近 20 份）
+        ▼
+        ── 上下文被压缩 ──
+        ▼
+  SessionStart hook（matcher: compact）
+        │   cat round-contract.md 重新注入上下文
+        ▼
+   Agent 带着契约继续
+```
+
+### 本轮契约文件（`.claude/round-contract.md`）
+
+一份紧凑文件（≤50 行），只放**压缩后必须还记得**的事实：
+
+| 段落 | 内容 |
+|------|------|
+| 当前任务 | 任务名、一句话目标、所在模块 |
+| 关键契约字段 | API 端点、请求 BO 字段、返回 VO 字段、枚举 |
+| 相关文件清单 | 后端（adapter/application/domain/infra）+ 前端（api/页面/组件） |
+| 当前待办 | 本轮的下一步 |
+
+规则：保持 ≤50 行；只放压缩后 Agent 仍需知道的事实；不要散文。`SessionStart(matcher=compact)` hook 会把本文件重新注入，保证本轮不丢失。
+
+### Hook 接线（`settings.json`）
+
+```json
+{
+  "hooks": {
+    "PreCompact": [
+      { "matcher": "auto", "hooks": [{ "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/save-state.sh" }] },
+      { "matcher": "user", "hooks": [{ "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/save-state.sh" }] }
+    ],
+    "SessionStart": [
+      { "matcher": "compact", "hooks": [{ "type": "command", "command": "cat ${CLAUDE_PROJECT_DIR}/.claude/round-contract.md 2>/dev/null || true" }] }
+    ]
+  }
+}
+```
+
+### 存盘 Hook（`.claude/hooks/save-state.sh`）
+
+- 归档 `round-contract.md` → `.claude/compaction-state/round-contract-<时间戳>.md`
+- 捕获压缩触发 JSON → `.claude/compaction-state/compact-<时间戳>.json`
+- 裁剪到最近 20 份归档（有界增长）
+- 永不阻断压缩（始终 `exit 0`）
+
+可部署模板：`templates/compaction/`（round-contract、save-state hook、settings 片段）。
+
+Codex 当前没有 Claude `PreCompact` / `SessionStart` 的项目级等价 hook。使用同目录提供的显式降级方案：持续更新 `.codex/round-contract.md`，长轮次或预计压缩前运行 `bash .codex/hooks/save-state.sh`，恢复后重新读取契约和 `.codex-state/round-contract-*.md` 最新存档。不要在 `.codex/config.toml` 中写入尚未支持的 hook 配置键。
+
+### 与记忆的关系
+
+记忆（组件 4）跨会话持久化*事实*；压缩保持是在**会话内**把*进行中的本轮*扛过压缩事件。二者互补：记忆回答「我知道什么」，本轮契约回答「我现在在做什么」。

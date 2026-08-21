@@ -1,0 +1,503 @@
+#!/usr/bin/env python3
+"""REQ governance checks for docs/prd/requirements.
+
+Verifies the product-requirement governance contract:
+
+- REQ file counts / status distribution (expected totals are configurable)
+- document-id uniqueness and format (REQ-### by default)
+- frontmatter required fields (baseline-compatibility, owner roles,
+  sequence fields)
+- owner controlled-vocabulary (no generic owner role)
+- baseline-version vs baseline-compatibility consistency
+  (COMPATIBLE => current baseline; REVISION_REQUIRED / BASELINE_UPGRADE_REQUIRED
+  => stays on old baseline, no mechanical bump)
+- metric contract presence (N-column table + metric->scenario evidence map)
+- DRAFT overreach: active product OpenSpec changes must not formally reference
+  a DRAFT REQ in requirement-ids
+- index consistency: requirements README / sequence-baseline / coverage matrix
+  totals and denominators match the scanned frontmatter facts
+- archived-change reconciliation: archived changes carry a reconciliation
+  record, cross-checked against the delivery-evidence ledger
+
+Self-contained, stdlib only. Run: python3 docs/fitness/scripts/check_req_governance.py
+
+Copy to: docs/fitness/scripts/check_req_governance.py
+"""
+# {{CHECK_REQ_GOVERNANCE_TEMPLATE}}
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+# Configure: paths to the requirement docs and governance index documents.
+REQS_DIR = PROJECT_ROOT / "docs" / "prd" / "requirements"
+README_FILE = REQS_DIR / "README.md"
+PRD_ROOT_README = PROJECT_ROOT / "docs" / "prd" / "README.md"
+IMPL_PLAN_README = PROJECT_ROOT / "docs" / "prd" / "implementation-plans" / "README.md"
+# {{ISB_FILE}} — implementation-sequence-baseline document, e.g.:
+#   ISB_FILE = PROJECT_ROOT / "docs" / "prd" / "implementation-sequence-baseline.md"
+ISB_FILE = PROJECT_ROOT / "docs" / "prd" / "{{ISB_FILE}}"
+# {{COVERAGE_FILE}} — product-baseline spec-coverage document, e.g.:
+#   COVERAGE_FILE = PROJECT_ROOT / "docs" / "prd" / "implementation-plans" / "product-baseline-spec-coverage.md"
+COVERAGE_FILE = PROJECT_ROOT / "docs" / "prd" / "implementation-plans" / "{{COVERAGE_FILE}}"
+# {{DELIVERY_EVIDENCE_PATH}} — JSON ledger of committed change ids, e.g.:
+#   DELIVERY_EVIDENCE = PROJECT_ROOT / "docs" / "fitness" / "delivery-evidence.json"
+DELIVERY_EVIDENCE = PROJECT_ROOT / "docs" / "fitness" / "{{DELIVERY_EVIDENCE_PATH}}"
+CHANGES_DIR = PROJECT_ROOT / "openspec" / "changes"
+
+# Configure: expected REQ totals / status distribution and the current
+# baseline version the index documents must point at.
+CURRENT_BASELINE_VERSION = "{{CURRENT_BASELINE_VERSION}}"  # e.g. "1.1.0"
+EXPECTED_TOTAL = {{EXPECTED_TOTAL}}  # e.g. 46
+EXPECTED_APPROVED = {{EXPECTED_APPROVED}}  # e.g. 46
+EXPECTED_DRAFT = {{EXPECTED_DRAFT}}  # e.g. 0
+EXPECTED_DRAFT_IDS: set[str] = set()  # DRAFT REQ ids expected; empty = none allowed
+
+ALLOWED_STATUS = {"APPROVED", "DRAFT", "REVIEWING", "EFFECTIVE", "SUPERSEDED", "FROZEN", "REJECTED"}
+ALLOWED_COMPAT = {"COMPATIBLE", "REVISION_REQUIRED", "BASELINE_UPGRADE_REQUIRED"}
+
+# Configure: controlled owner vocabulary for the owner roles. Replace with your
+# project's role taxonomy.
+OWNER_VOCAB = (  # {{OWNER_VOCAB}}
+    "Engineering Manager",
+    "Platform Admin",
+    "Tenant Admin",
+    "Product Operations Lead",
+    "Fulfillment Lead",
+    "Customer Service Lead",
+    "Automation Ops Lead",
+    "Data Analyst",
+    "Finance Lead",
+    "Security & Compliance Lead",
+)
+# Owners that are too generic to be parseable and must be rejected.
+GENERIC_OWNER = (  # {{GENERIC_OWNER}}
+    "Product Owner",
+    "TBD",
+    "",
+)
+# Frontmatter fields that carry the controlled owner roles.
+OWNER_ROLE_FIELDS = (  # {{OWNER_ROLE_FIELDS}}
+    "product-owner",
+    "domain-owner",
+    "metric-owner",
+    "approval-owner",
+)
+
+# Configure: metric contract table shape and header tokens. Column positions in
+# check_metric_contract() are index-based (1 = metric name, 2 = current value,
+# 4 = formula/definition) — adjust if your header layout differs.
+METRIC_HEADER_COLS = {{METRIC_HEADER_COLS}}  # e.g. 12
+# {{METRIC_HEADER_TOKEN}} — exact Markdown header of the metric contract table,
+# e.g.: "| Metric ID | Metric | Current | Target | Formula | Source | Owner | Granularity | Window | Min sample | Quality | Fail cond |"
+METRIC_HEADER_TOKEN = "{{METRIC_HEADER_TOKEN}}"
+# {{EVIDENCE_HEADER_TOKEN}} — exact Markdown header of the
+# metric->acceptance-scenario evidence table, e.g.: "| Metric ID | Scenario | Exit evidence |"
+EVIDENCE_HEADER_TOKEN = "{{EVIDENCE_HEADER_TOKEN}}"
+# {{EXIT_EVIDENCE_STATES}} — allowed exit-evidence states, e.g.:
+#   ("Estimated", "Observing", "Confirmed", "Not verifiable")
+EXIT_EVIDENCE_STATES = ("Estimated", "Observing", "Confirmed", "Not verifiable")
+# {{METRIC_TABLE_PREFIX}} — prefix identifying a near-miss metric table (wrong
+# column count), e.g.: "| Metric ID | Metric |"
+METRIC_TABLE_PREFIX = "{{METRIC_TABLE_PREFIX}}"
+# {{EVIDENCE_TABLE_KEYWORD}} — keyword identifying the evidence table, used to
+# keep it out of the near-miss metric-table branch, e.g.: "Scenario"
+EVIDENCE_TABLE_KEYWORD = "{{EVIDENCE_TABLE_KEYWORD}}"
+# {{NO_DATA_SENTINEL}} — value a metric must show when it has no measured
+# current value yet (no-false-zero rule), e.g.: "UNKNOWN"
+NO_DATA_SENTINEL = "{{NO_DATA_SENTINEL}}"
+
+# Configure: expected tokens in the index documents (drift detection). Keys must
+# match the labels used in check_index_consistency(); values are substrings
+# whose absence flags drift, e.g.:
+#   {
+#     "README_FILE": ["46 REQs", "0 DRAFT"],
+#     "PRD_ROOT_README": ["baseline 1.1.0"],
+#     "IMPL_PLAN_README": ["baseline 1.1.0"],
+#     "ISB_FILE": ["P0 subtotal: 35"],
+#     "COVERAGE_FILE": ["all APPROVED"],
+#   }
+INDEX_EXPECTATIONS = {
+    "README_FILE": [
+        "{{INDEX_README_FILE}}",  # e.g. "46 REQs"
+    ],
+    "PRD_ROOT_README": [
+        "{{INDEX_PRD_ROOT_README}}",  # e.g. "baseline 1.1.0"
+    ],
+    "IMPL_PLAN_README": [
+        "{{INDEX_IMPL_PLAN_README}}",  # e.g. "baseline 1.1.0"
+    ],
+    "ISB_FILE": [
+        "{{INDEX_ISB_FILE}}",  # e.g. "P0 subtotal: 35"
+    ],
+    "COVERAGE_FILE": [
+        "{{INDEX_COVERAGE_FILE}}",  # e.g. "all APPROVED"
+    ],
+}
+
+# Configure: effective sequence baseline the current index entry points must
+# reference, e.g.: "ISB@1.1.0"
+EFFECTIVE_SEQ_BASELINE = "{{EFFECTIVE_SEQ_BASELINE}}"
+
+# Configure: glob pattern for requirement files under REQS_DIR.
+REQ_GLOB = "{{REQ_GLOB}}"  # e.g. "*/REQ-*.md"
+# Configure: regex for valid requirement document ids.
+REQ_ID_PATTERN = r"{{REQ_ID_PATTERN}}"  # e.g. r"REQ-\d{3}"
+
+# Configure: optional (document-id, expected sequence-id) pin. Set to None to
+# disable the special case, e.g.:
+#   SPECIAL_CASE_REQ = ("REQ-001", "P0-01")
+SPECIAL_CASE_REQ = None  # {{SPECIAL_CASE_REQ}}
+
+# Configure: markers for the trace matrix and revision-record sections.
+TRACE_SECTION = "{{TRACE_SECTION}}"  # e.g. "11.2"
+TRACE_LINE = "{{TRACE_LINE}}"  # e.g. "REQ -> sequence -> OpenSpec -> evidence"
+REVISION_RECORD_KEYWORD = "{{REVISION_RECORD_KEYWORD}}"  # e.g. "Revision History"
+
+
+def parse_frontmatter(text: str) -> dict[str, str]:
+    """Parse simple `key: value` frontmatter. Returns dict of str."""
+    data: dict[str, str] = {}
+    if not text.startswith("---\n"):
+        return data
+    end = text.find("\n---", 4)
+    if end == -1:
+        return data
+    for raw in text[4:end].splitlines():
+        m = re.match(r"^([A-Za-z0-9_-]+):\s*(.*)$", raw.strip())
+        if m:
+            data[m.group(1)] = m.group(2).strip()
+    return data
+
+
+def req_files() -> list[Path]:
+    return sorted(REQS_DIR.glob(REQ_GLOB))
+
+
+def load_reqs() -> list[dict]:
+    """Return list of {path, fm, text} for every REQ file."""
+    out = []
+    for p in req_files():
+        text = p.read_text(encoding="utf-8")
+        out.append({"path": p, "fm": parse_frontmatter(text), "text": text})
+    return out
+
+
+def check_stats(reqs: list[dict]) -> list[str]:
+    problems = []
+    total = len(reqs)
+    statuses = {}
+    for r in reqs:
+        st = r["fm"].get("status", "")
+        statuses[st] = statuses.get(st, 0) + 1
+    if total != EXPECTED_TOTAL:
+        problems.append(f"REQ total = {total}, expected {EXPECTED_TOTAL}")
+    approved = statuses.get("APPROVED", 0)
+    drafts = statuses.get("DRAFT", 0)
+    if approved != EXPECTED_APPROVED:
+        problems.append(f"APPROVED = {approved}, expected {EXPECTED_APPROVED}")
+    if drafts != EXPECTED_DRAFT:
+        problems.append(f"DRAFT = {drafts}, expected {EXPECTED_DRAFT}")
+    draft_ids = {r["fm"].get("document-id") for r in reqs if r["fm"].get("status") == "DRAFT"}
+    if draft_ids != EXPECTED_DRAFT_IDS:
+        problems.append(f"DRAFT ids = {sorted(draft_ids)}, expected {sorted(EXPECTED_DRAFT_IDS)}")
+    return problems
+
+
+def check_ids(reqs: list[dict]) -> list[str]:
+    problems = []
+    seen: dict[str, Path] = {}
+    for r in reqs:
+        did = r["fm"].get("document-id", "")
+        if not re.fullmatch(REQ_ID_PATTERN, did):
+            problems.append(f"{r['path'].name}: document-id '{did}' does not match {REQ_ID_PATTERN}")
+        if did in seen:
+            problems.append(f"duplicate document-id '{did}' in {seen[did].name} and {r['path'].name}")
+        else:
+            seen[did] = r["path"]
+    return problems
+
+
+def check_frontmatter(reqs: list[dict]) -> list[str]:
+    problems = []
+    for r in reqs:
+        fm = r["fm"]
+        name = r["path"].name
+        did = fm.get("document-id", "?")
+        status = fm.get("status", "")
+        if status not in ALLOWED_STATUS:
+            problems.append(f"{name}: invalid status '{status}'")
+        if "owner" in fm:
+            problems.append(
+                f"{name}: generic 'owner' field must be removed (use {len(OWNER_ROLE_FIELDS)} role fields)"
+            )
+        for key in OWNER_ROLE_FIELDS:
+            if key not in fm:
+                problems.append(f"{name}: missing {key}")
+            elif fm[key] in GENERIC_OWNER:
+                problems.append(f"{name}: {key}='{fm[key]}' is not a parseable owner")
+            elif fm[key] not in OWNER_VOCAB:
+                problems.append(f"{name}: {key}='{fm[key]}' not in controlled vocabulary")
+        if "sequence-baseline" not in fm:
+            problems.append(f"{name}: missing sequence-baseline")
+        if "sequence-id" not in fm:
+            problems.append(f"{name}: missing sequence-id")
+        if fm.get("status") == "APPROVED" and "approved-date" not in fm:
+            problems.append(f"{name}: APPROVED REQ missing approved-date")
+        if SPECIAL_CASE_REQ and did == SPECIAL_CASE_REQ[0] and fm.get("sequence-id") != SPECIAL_CASE_REQ[1]:
+            problems.append(f"{name}: {SPECIAL_CASE_REQ[0]} sequence-id must be {SPECIAL_CASE_REQ[1]}")
+    return problems
+
+
+def check_baseline(reqs: list[dict]) -> list[str]:
+    problems = []
+    for r in reqs:
+        fm = r["fm"]
+        name = r["path"].name
+        bv = fm.get("baseline-version", "")
+        compat = fm.get("baseline-compatibility", "")
+        if compat not in ALLOWED_COMPAT and fm.get("status") in ("APPROVED", "DRAFT"):
+            problems.append(f"{name}: missing/invalid baseline-compatibility '{compat}'")
+        if compat == "COMPATIBLE" and bv != CURRENT_BASELINE_VERSION:
+            problems.append(
+                f"{name}: COMPATIBLE but baseline-version={bv} (expected {CURRENT_BASELINE_VERSION})"
+            )
+        if compat in ("REVISION_REQUIRED", "BASELINE_UPGRADE_REQUIRED") and bv == CURRENT_BASELINE_VERSION:
+            problems.append(
+                f"{name}: {compat} but baseline-version already bumped to {bv} (mechanical bump)"
+            )
+        if "compatibility-review-date" not in fm and bv != CURRENT_BASELINE_VERSION:
+            problems.append(f"{name}: old-baseline REQ missing compatibility-review-date")
+    return problems
+
+
+def count_table_columns(header_line: str) -> int:
+    return len([c for c in header_line.split("|") if c.strip()])
+
+
+def is_separator_row(cells: list[str]) -> bool:
+    return all(c in ("", "---", "----", "-----", "--") for c in cells)
+
+
+def split_row(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def check_metric_contract(reqs: list[dict]) -> list[str]:
+    problems = []
+    for r in reqs:
+        text = r["text"]
+        name = r["path"].name
+        lines = text.splitlines()
+        found_header = False
+        found_evidence = False
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            # metric contract table: exact N-column header
+            if stripped == METRIC_HEADER_TOKEN:
+                found_header = True
+                for data in lines[i + 1:]:
+                    ds = data.strip()
+                    if not ds.startswith("|"):
+                        break
+                    cells = split_row(ds)
+                    if len(cells) != METRIC_HEADER_COLS or is_separator_row(cells):
+                        continue
+                    current = cells[2]
+                    if current and current != NO_DATA_SENTINEL:
+                        problems.append(
+                            f"{name}: metric '{cells[1]}' has current value '{current}', "
+                            f"expected {NO_DATA_SENTINEL} (no-false-zero rule)"
+                        )
+                    if not cells[4]:
+                        problems.append(f"{name}: metric '{cells[1]}' missing formula/definition")
+            # near-miss metric table: starts like the metric table but wrong
+            # column count -> flag so the REQ cannot claim a full contract
+            elif stripped.startswith(METRIC_TABLE_PREFIX) and EVIDENCE_TABLE_KEYWORD not in stripped:
+                cols = count_table_columns(stripped)
+                if cols != METRIC_HEADER_COLS:
+                    problems.append(
+                        f"{name}: metric table has {cols} columns, expected {METRIC_HEADER_COLS} "
+                        "(metric contract must include all required columns)"
+                    )
+            # evidence table: exact 3-column header
+            if stripped == EVIDENCE_HEADER_TOKEN:
+                found_evidence = True
+                for data in lines[i + 1:]:
+                    ds = data.strip()
+                    if not ds.startswith("|"):
+                        break
+                    cells = split_row(ds)
+                    if len(cells) != 3 or is_separator_row(cells):
+                        continue
+                    token = re.split(r"[（(]", cells[2], maxsplit=1)[0].strip()
+                    if token not in EXIT_EVIDENCE_STATES:
+                        problems.append(
+                            f"{name}: exit evidence '{cells[2]}' not in {'/'.join(EXIT_EVIDENCE_STATES)}"
+                        )
+        if not found_header:
+            problems.append(f"{name}: missing {METRIC_HEADER_COLS}-column metric contract table")
+        if not found_evidence:
+            problems.append(f"{name}: missing metric->acceptance-scenario evidence table")
+    return problems
+
+
+def check_draft_overreach() -> list[str]:
+    """Active product OpenSpec changes must not formally reference DRAFT REQs."""
+    problems = []
+    if not CHANGES_DIR.exists():
+        return problems
+    for entry in sorted(CHANGES_DIR.iterdir()):
+        if not entry.is_dir() or entry.name == "archive":
+            continue
+        proposal = entry / "proposal.md"
+        if not proposal.exists():
+            continue
+        text = proposal.read_text(encoding="utf-8")
+        fm = parse_frontmatter(text)
+        req_ids = fm.get("requirement-ids", "")
+        ids = [x.strip() for x in req_ids.strip("[]").split(",") if x.strip().strip("'\"")]
+        for rid in ids:
+            if rid in EXPECTED_DRAFT_IDS:
+                problems.append(
+                    f"{entry.name}: active change formally references DRAFT REQ {rid} in requirement-ids"
+                )
+    return problems
+
+
+def check_index_consistency() -> list[str]:
+    problems = []
+    checks = [
+        ("README_FILE", README_FILE, INDEX_EXPECTATIONS["README_FILE"]),
+        ("PRD_ROOT_README", PRD_ROOT_README, INDEX_EXPECTATIONS["PRD_ROOT_README"]),
+        ("IMPL_PLAN_README", IMPL_PLAN_README, INDEX_EXPECTATIONS["IMPL_PLAN_README"]),
+        ("ISB_FILE", ISB_FILE, INDEX_EXPECTATIONS["ISB_FILE"]),
+        ("COVERAGE_FILE", COVERAGE_FILE, INDEX_EXPECTATIONS["COVERAGE_FILE"]),
+    ]
+    for label, path, expected_tokens in checks:
+        if not path.exists():
+            problems.append(f"{label}: {path.name} missing")
+            continue
+        text = path.read_text(encoding="utf-8")
+        for token in expected_tokens:
+            if token not in text:
+                problems.append(f"{label} drift: '{token}' not found in {path.name}")
+    return problems
+
+
+def check_effective_sequence_version() -> list[str]:
+    """The current entry points must reference the effective sequence baseline."""
+    problems = []
+    for label, path in (("PRD_ROOT_README", PRD_ROOT_README),
+                        ("IMPL_PLAN_README", IMPL_PLAN_README)):
+        if not path.exists():
+            problems.append(f"{label}: {path.name} missing")
+            continue
+        text = path.read_text(encoding="utf-8")
+        if EFFECTIVE_SEQ_BASELINE not in text:
+            problems.append(f"{label}: does not reference {EFFECTIVE_SEQ_BASELINE}")
+    return problems
+
+
+def load_archived_change_ids() -> list[str]:
+    """Read committed change ids from the delivery-evidence JSON ledger.
+
+    The ledger is expected to be a JSON document that lists committed change
+    ids. Both of these shapes are accepted:
+
+    - a top-level array of id strings:  ["foo-change", "bar-change", ...]
+    - an object with a ``sequences`` array whose entries carry a ``change``
+      key:  {"sequences": [{"change": "foo-change"}, ...]}
+
+    Returns an empty list when the ledger is missing or unparsable; the caller
+    reports a missing ledger as a problem (fail-closed).
+    """
+    if not DELIVERY_EVIDENCE.exists():
+        return []
+    try:
+        data = json.loads(DELIVERY_EVIDENCE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if isinstance(data, list):
+        return [str(x) for x in data if x]
+    if isinstance(data, dict):
+        return [
+            str(seq["change"])
+            for seq in data.get("sequences", [])
+            if isinstance(seq, dict) and seq.get("change")
+        ]
+    return []
+
+
+def check_archived_reconciliation() -> list[str]:
+    """Archived changes must carry an archive reconciliation record, and the
+    delivery-evidence ledger must exist and cover those sequences."""
+    problems = []
+    archive_root = CHANGES_DIR / "archive"
+    if not archive_root.exists():
+        return problems
+    for change in load_archived_change_ids():
+        d = archive_root / change
+        if not d.exists():
+            problems.append(f"archived change missing: {change}")
+            continue
+        if not (d / "RECONCILIATION.md").exists():
+            problems.append(f"{change}: missing RECONCILIATION.md (delivery evidence reconciliation)")
+    if not DELIVERY_EVIDENCE.exists():
+        problems.append(f"delivery evidence ledger missing: {DELIVERY_EVIDENCE.name}")
+    return problems
+
+
+def check_trace_revision(reqs: list[dict]) -> list[str]:
+    problems = []
+    for r in reqs:
+        text = r["text"]
+        name = r["path"].name
+        status = r["fm"].get("status", "")
+        if TRACE_SECTION not in text and TRACE_LINE not in text:
+            problems.append(f"{name}: missing trace matrix ({TRACE_SECTION})")
+        if status == "APPROVED":
+            if REVISION_RECORD_KEYWORD not in text:
+                problems.append(f"{name}: APPROVED REQ missing revision record section")
+    return problems
+
+
+def run_all_checks() -> list[str]:
+    problems: list[str] = []
+    reqs = load_reqs()
+    problems += check_stats(reqs)
+    problems += check_ids(reqs)
+    problems += check_frontmatter(reqs)
+    problems += check_baseline(reqs)
+    problems += check_metric_contract(reqs)
+    problems += check_draft_overreach()
+    problems += check_index_consistency()
+    problems += check_effective_sequence_version()
+    problems += check_archived_reconciliation()
+    problems += check_trace_revision(reqs)
+    return problems
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="REQ governance checks")
+    parser.add_argument("--check", choices=["all"], default="all")
+    args = parser.parse_args()
+
+    problems = run_all_checks()
+    if problems:
+        print(f"REQ governance: {len(problems)} problem(s)")
+        for p in problems:
+            print(f"  - {p}")
+        return 1
+    print("REQ governance ok")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

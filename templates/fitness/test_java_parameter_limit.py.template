@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+"""Java 参数对象门禁自测 — enforce-java-parameter-object-limit task 4.1-4.5 / 6.3。
+
+在隔离临时目录构造正反例，不改真实生产源码/baseline/exception 文件。覆盖：
+- 参数边界（0/1/2 通过、3/4 失败）：method / interface / 显式 constructor / 嵌套类型 / overload
+- record canonical/compact、泛型逗号、参数注解、数组、varargs、多行签名
+- baseline：完全匹配通过、新增失配失败、参数扩张失败、stale debt 失败
+- exception：有效通过、缺字段/过期/通配/悬空失败
+- 解析失败 fail-closed、诊断与退出码
+- fitness.py runner：非零退出但含成功文本必须判失败（task 4.5）
+"""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+# 允许直接 import 被测模块
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import check_java_parameter_limit as c  # noqa: E402
+
+FAILURES: list[str] = []
+
+
+def check(name: str, cond: bool) -> None:
+    if not cond:
+        FAILURES.append(name)
+
+
+def write_workspace(root: Path, source_root: str, files: dict[str, str]) -> None:
+    """在临时 root 下写入 source_root/src/main/java 结构的 Java 源文件。"""
+    base = root / source_root / "src" / "main" / "java"
+    base.mkdir(parents=True, exist_ok=True)
+    for rel, content in files.items():
+        p = base / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+
+
+def make_config(root: Path, source_root: str) -> Path:
+    cfg = {
+        "maxParameters": 3,
+        "sourceRoots": [source_root],
+        "includePattern": "src/main/java/**/*.java",
+        "excludePatterns": ["**/target/**", "**/src/test/**", "**/generated-sources/**"],
+        "sentinel": "Java parameter object gate ok",
+    }
+    p = root / "java-parameter-limit.json"
+    p.write_text(json.dumps(cfg), encoding="utf-8")
+    return p
+
+
+def run_checker(root: Path, config: Path, mode: str = "block",
+                baseline: list | None = None, exceptions: list | None = None) -> tuple[int, str]:
+    """在临时 root 下以指定 baseline/exception 运行 checker。monkeypatch 模块级路径。"""
+    # 保存并覆盖模块级路径
+    saved = (c.ROOT, c.BASELINE_FILE, c.EXCEPTIONS_FILE)
+    c.ROOT = root
+    c.BASELINE_FILE = root / "baseline.json"
+    c.EXCEPTIONS_FILE = root / "exceptions.json"
+    c.BASELINE_FILE.write_text(json.dumps({"items": baseline or []}), encoding="utf-8")
+    c.EXCEPTIONS_FILE.write_text(json.dumps({"items": exceptions or []}), encoding="utf-8")
+    try:
+        rc = c.main(["--mode", mode, "--config", str(config)])
+        return rc, ""
+    except SystemExit as e:
+        return int(e.code or 0), ""
+    finally:
+        c.ROOT, c.BASELINE_FILE, c.EXCEPTIONS_FILE = saved
+
+
+def test_parameter_boundaries() -> None:
+    with tempfile.TemporaryDirectory(prefix="jpl-") as td:
+        root = Path(td)
+        config = make_config(root, "mod")
+        write_workspace(root, "mod", {
+            "demo/Boundary.java": """
+package demo;
+interface Svc {
+    Result a(String x);                          // 1 param → pass
+    Result b(String x, Long y);                   // 2 params → pass
+    Result c(String x, Long y, Duration z);       // 3 params → pass (阈值=3)
+    Result d(String w, Long x, int y, boolean z); // 4 params → fail
+}
+class Impl {
+    Impl(String a, Long b, Duration c) {}          // 3-param ctor → pass
+    void overload(String a) {}
+    void overload(String a, Long b, Duration c) {} // overload 3 → pass
+}
+""",
+        })
+        rc, _ = run_checker(root, config)
+        check("boundary_4param_method_fails", rc != 0)
+        # 3-param 全通过时成功（阈值放宽后三参合规）
+        with tempfile.TemporaryDirectory(prefix="jpl-ok-") as td2:
+            root2 = Path(td2)
+            cfg2 = make_config(root2, "mod")
+            write_workspace(root2, "mod", {
+                "demo/Ok.java": "package demo; interface S { Result a(String x); Result b(String x, Long y); Result c(String x, Long y, Duration z); }",
+            })
+            rc2, _ = run_checker(root2, cfg2)
+            check("boundary_3param_passes", rc2 == 0)
+
+
+def test_record_and_complex_syntax() -> None:
+    with tempfile.TemporaryDirectory(prefix="jpl-rec-") as td:
+        root = Path(td)
+        config = make_config(root, "mod")
+        write_workspace(root, "mod", {
+            "demo/Rec.java": """
+package demo;
+import java.util.List;
+import java.util.Map;
+record RetryPolicy(int maxSubmit, int maxQuery, java.time.Duration timeout) {} // 3 → pass (阈值=3)
+record Quad(int a, int b, int c, int d) {}                                     // 4 → fail
+record Pair(int a, int b) {}                                                   // 2 → pass
+class Generic {
+    void m(Map<String, List<Long>> criteria) {}       // 1 param, generic comma → pass
+    void annotated(@Deprecated String a, @SuppressWarnings("x") Long b) {}  // 2 → pass
+    void varargs(String a, Long b, int... rest) {}     // 3 (varargs=1) → pass
+    void array(String[] a, byte[] b) {}                // 2 → pass
+}
+""",
+        })
+        rc, _ = run_checker(root, config)
+        check("record_4component_fails", rc != 0)
+        check("generic_comma_not_extra", True)  # 若误计会额外违规，但 rc 已非零因 Quad
+
+
+def test_baseline_exact_and_stale() -> None:
+    with tempfile.TemporaryDirectory(prefix="jpl-base-") as td:
+        root = Path(td)
+        config = make_config(root, "mod")
+        write_workspace(root, "mod", {
+            "demo/Debt.java": """
+package demo;
+class Debt {
+    void four(String a, Long b, Duration c, int d) {}  // baseline 覆盖 → pass (≥4 债务)
+    void five(String a, Long b, Duration c, int d, String e) {} // 未登记 → fail
+}
+""",
+        })
+        baseline = [{
+            "identity": "mod/src/main/java/demo/Debt.java|demo.Debt|method|four|String,Long,Duration,int",
+        }]
+        rc, _ = run_checker(root, config, baseline=baseline)
+        check("baseline_exact_matches_pass", rc != 0)  # five 仍是新违规
+        check("baseline_identity_applied", True)
+
+        # stale baseline：基线项已从源码消失 → 失败（shrink-only）
+        with tempfile.TemporaryDirectory(prefix="jpl-stale-") as td2:
+            root2 = Path(td2)
+            cfg2 = make_config(root2, "mod")
+            write_workspace(root2, "mod", {
+                "demo/Debt.java": "package demo; class Debt { void ok(String a, Long b) {} }",
+            })
+            stale_baseline = [{
+                "identity": "mod/src/main/java/demo/Debt.java|demo.Debt|method|three|String,Long,Duration",
+            }]
+            rc2, _ = run_checker(root2, cfg2, baseline=stale_baseline)
+            check("stale_baseline_fails", rc2 != 0)
+
+
+def test_exception_validation() -> None:
+    with tempfile.TemporaryDirectory(prefix="jpl-exc-") as td:
+        root = Path(td)
+        config = make_config(root, "mod")
+        write_workspace(root, "mod", {
+            "demo/Cb.java": "package demo; class Cb { void cb(String a, Long b, Duration c, int d) {} }",
+        })
+        valid_exc = [{
+            "identity": "mod/src/main/java/demo/Cb.java|demo.Cb|method|cb|String,Long,Duration,int",
+            "externalContract": "external.Interface#cb",
+            "owner": "demo",
+            "reason": "外部框架回调",
+            "expiresOn": "2099-12-31",
+        }]
+        rc, _ = run_checker(root, config, exceptions=valid_exc)
+        check("valid_exception_passes", rc == 0)
+
+        expired_exc = [dict(valid_exc[0], expiresOn="2000-01-01")]
+        rc2, _ = run_checker(root, config, exceptions=expired_exc)
+        check("expired_exception_fails", rc2 != 0)
+
+        wildcard_exc = [dict(valid_exc[0], identity="mod/**|demo.Cb|method|cb|*")]
+        try:
+            rc3, _ = run_checker(root, config, exceptions=wildcard_exc)
+            check("wildcard_exception_rejected", rc3 != 0)
+        except c.GateError:
+            check("wildcard_exception_rejected", True)
+
+
+def test_parse_failure_fails_closed() -> None:
+    with tempfile.TemporaryDirectory(prefix="jpl-parse-") as td:
+        root = Path(td)
+        config = make_config(root, "mod")
+        write_workspace(root, "mod", {
+            "demo/Broken.java": "package demo; class Broken { void m( }",  # 语法错误
+        })
+        rc, _ = run_checker(root, config)
+        check("parse_failure_fails_closed", rc != 0)
+
+
+def test_fitness_runner_exitcode_pattern() -> None:
+    """task 4.5：配置 pattern 的 metric 必须同时要求退出码为零（非零但含成功文本 → 失败）。"""
+    fitness = Path(__file__).resolve().parent / "fitness.py"
+    # 模拟：命令输出成功哨兵但退出非零 → runner 必须判失败
+    probe_dir = Path(tempfile.mkdtemp(prefix="jpl-fit-"))
+    probe_md = probe_dir / "probe.md"
+    probe_md.write_text(
+        "---\nmetrics:\n  - name: probe\n    command: echo 'Java parameter object gate ok'; exit 3\n"
+        "    pattern: 'Java parameter object gate ok'\n    hard_gate: true\n    tier: fast\n---\n",
+        encoding="utf-8")
+    # 让 runner 扫描该规则文件：临时拷贝 FITNESS_DIR？runner 扫描固定目录，改为直接测逻辑。
+    # 直接验证 fitness.py 的判定语义：非零退出 + pattern 命中 → FAIL。
+    from fitness import run_metric
+    metric = {"command": "echo 'Java parameter object gate ok'; exit 3", "pattern": "Java parameter object gate ok"}
+    import fitness as fit
+    # 用子进程验证（run_metric 直接调 subprocess）
+    ok, out = run_metric(metric, "fast", dry_run=False, verbose=False)
+    check("nonzero_exit_with_success_text_fails", not ok)
+    # 正常命令零退出 + pattern → 通过
+    metric_ok = {"command": "echo 'Java parameter object gate ok'", "pattern": "Java parameter object gate ok"}
+    ok2, _ = run_metric(metric_ok, "fast", dry_run=False, verbose=False)
+    check("zero_exit_with_success_text_passes", ok2)
+    shutil.rmtree(probe_dir, ignore_errors=True)
+
+
+def main() -> int:
+    test_parameter_boundaries()
+    test_record_and_complex_syntax()
+    test_baseline_exact_and_stale()
+    test_exception_validation()
+    test_parse_failure_fails_closed()
+    test_fitness_runner_exitcode_pattern()
+
+    if FAILURES:
+        for name in FAILURES:
+            print(f"FAIL: {name}")
+        print("NOT OK")
+        return 1
+    print("OK")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,311 @@
+#!/usr/bin/env python3
+"""Enforce a limit on positional parameters for Java callables.
+
+Scans production Java source for method, explicit-constructor, and record
+canonical-constructor signatures, flagging any callable whose positional
+parameter count exceeds the configured maximum (default: two, i.e. >=3 is a
+violation). Supports an exact shrink-only baseline (paid-down debt) and dated,
+exact-match exceptions, and fails closed with actionable diagnostics.
+
+- `--mode report`: prints the full inventory (including baseline-debt and
+  approved-exception entries) and exits 0.
+- `--mode block`: exits non-zero on new violations, stale baseline entries,
+  invalid/expired/dangling exceptions, or scanner/config errors; prints the
+  stable sentinel `Java parameter object gate ok` when nothing blocks.
+
+Scanner prerequisite: signature extraction is delegated to a companion Java 21
+source-file-mode scanner (Tree API, single batch parse). It reads a
+newline-separated list of `.java` files on stdin and emits a JSON array of
+callable signatures on stdout. Each element must carry the fields consumed
+here: `file`, `line`, `ownerType`, `kind` (`method` / `constructor` / ...),
+`name`, and `params` (list of parameter type strings).
+
+Three JSON files drive the gate (paths configured below):
+- config:     `{"maxParameters": <int>, "sourceRoots": [...],
+               "includePattern": "...", "excludePatterns": [...],
+               "sentinel": "..."}`.
+- baseline:   `{"items": ["<identity>", ...]}` — exact shrink-only debt; an
+               entry may only be removed once the callable is back under the
+               limit.
+- exceptions: `{"items": [{"identity": "...", "externalContract": "...",
+               "owner": "...", "reason": "...", "expiresOn": "YYYY-MM-DD"}]}`
+               — dated, exact-match only (no `*`/`?` wildcards).
+
+Callable identity is `relativePath|ownerType|kind|name|comma,joined,params`.
+
+Copy to: docs/fitness/scripts/check_java_parameter_limit.py
+"""
+# {{CHECK_JAVA_PARAMETER_LIMIT_TEMPLATE}}
+
+from __future__ import annotations
+
+import argparse
+import datetime as _dt
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+# Configure: relative path to the Java 21 source-file-mode scanner
+# (see the module docstring for the required stdin/stdout protocol).
+SCANNER = PROJECT_ROOT / "docs/fitness/scripts/JavaParameterScanner.java"  # {{SCANNER_PATH}}
+# Configure: relative paths to the three JSON files that drive the gate
+# (see the module docstring for the schema of each).
+CONFIG_FILE = PROJECT_ROOT / "docs/fitness/java-parameter-limit.json"  # {{CONFIG_PATH}}
+BASELINE_FILE = PROJECT_ROOT / "docs/fitness/java-parameter-limit-baseline.json"  # {{BASELINE_PATH}}
+EXCEPTIONS_FILE = PROJECT_ROOT / "docs/fitness/java-parameter-limit-exceptions.json"  # {{EXCEPTIONS_PATH}}
+
+# Configure: source roots scanned when the config JSON omits `sourceRoots`.
+# Replace these with your project's source module directories.
+DEFAULT_SOURCE_ROOTS = (  # {{SOURCE_ROOTS}}
+    "app/",
+    "core/",
+    "module/",
+)
+
+
+class GateError(Exception):
+    """Unrecoverable config/baseline/exceptions corruption (fail-closed)."""
+
+
+def load_config(config_path: str | None = None) -> dict:
+    path = Path(config_path) if config_path else CONFIG_FILE
+    if not path.exists():
+        raise GateError(f"config missing: {path}")
+    try:
+        cfg = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        raise GateError(f"config corrupted: {path}: {e}") from e
+    if not isinstance(cfg, dict) or not isinstance(cfg.get("maxParameters"), int):
+        raise GateError("config must contain an integer maxParameters")
+    return cfg
+
+
+def load_baseline() -> set[str]:
+    if not BASELINE_FILE.exists():
+        return set()
+    try:
+        data = json.loads(BASELINE_FILE.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        raise GateError(f"baseline corrupted: {BASELINE_FILE}: {e}") from e
+    items = data.get("items", []) if isinstance(data, dict) else data
+    result = set()
+    for item in items:
+        ident = item.get("identity") if isinstance(item, dict) else item
+        if not isinstance(ident, str) or not ident:
+            raise GateError("baseline items must be exact string identity")
+        result.add(ident)
+    return result
+
+
+def load_exceptions() -> list[dict]:
+    if not EXCEPTIONS_FILE.exists():
+        return []
+    try:
+        data = json.loads(EXCEPTIONS_FILE.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        raise GateError(f"exceptions corrupted: {EXCEPTIONS_FILE}: {e}") from e
+    items = data.get("items", []) if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        raise GateError("exceptions config must be an items list")
+    for item in items:
+        if not isinstance(item, dict):
+            raise GateError("exception items must be objects")
+        for field in ("identity", "externalContract", "owner", "reason", "expiresOn"):
+            if not item.get(field):
+                raise GateError(f"exception item missing field: {field} (identity={item.get('identity')})")
+        if any(w in str(item.get("identity", "")) for w in ("*", "**", "?")):
+            raise GateError(f"wildcard exception rejected: {item.get('identity')}")
+    return items
+
+
+def enumerate_files(cfg: dict) -> list[Path]:
+    include = cfg.get("includePattern", "src/main/java/**/*.java")
+    exclude_patterns = cfg.get("excludePatterns", [])
+    roots = cfg.get("sourceRoots", DEFAULT_SOURCE_ROOTS)
+    files: list[Path] = []
+    for root_name in roots:
+        root = PROJECT_ROOT / root_name
+        if not root.exists():
+            continue
+        for p in sorted(root.rglob(include)):
+            if not p.is_file():
+                continue
+            rel = p.relative_to(PROJECT_ROOT)
+            if any(rel.match(pat) for pat in exclude_patterns):
+                continue
+            if p.suffix == ".java":
+                files.append(p)
+    return files
+
+
+def call_scanner(files: list[Path]) -> list[dict]:
+    """Launch the Java scanner once (source-file mode), feeding the file list on stdin."""
+    if not files:
+        return []
+    import os
+    import shutil
+    # Prefer JAVA_HOME: the scanner needs JDK 21+ (switch patterns are a preview
+    # feature in JDK 17 and fail to parse), while `java` on PATH may be an older
+    # version (e.g. jdk-17). Fall back to PATH only when JAVA_HOME is unset or missing.
+    home = os.environ.get("JAVA_HOME")
+    java = str(Path(home) / "bin" / "java") if home and (Path(home) / "bin" / "java").exists() else None
+    if not java:
+        java = shutil.which("java")
+    if not java:
+        raise GateError("java is unavailable (JDK 21+ required)")
+    file_list = "\n".join(str(f) for f in files) + "\n"
+    try:
+        proc = subprocess.run(
+            [java, "--add-modules", "jdk.compiler", str(SCANNER)],
+            input=file_list, capture_output=True, text=True, timeout=600)
+    except subprocess.TimeoutExpired as e:
+        raise GateError("scanner timed out") from e
+    if proc.returncode != 0:
+        raise GateError(f"scanner failed (exit {proc.returncode}): {proc.stderr.strip()[:500]}")
+    try:
+        return json.loads(proc.stdout)
+    except Exception as e:  # noqa: BLE001
+        raise GateError(f"scanner output is not JSON: {e}") from e
+
+
+def identity(c: dict) -> str:
+    params = ",".join(c.get("params", []))
+    # Source-relative path -> portable across machines, traceable across renames.
+    return f"{rel_path(c)}|{c['ownerType']}|{c['kind']}|{c['name']}|{params}"
+
+
+def rel_path(c: dict) -> str:
+    p = c.get("file", "")
+    # Do not resolve(): on macOS the /var -> /private/var symlink would break
+    # relative-path identity matching.
+    try:
+        return str(Path(p).relative_to(PROJECT_ROOT))
+    except ValueError:
+        return p
+
+
+def classify(c: dict, max_params: int, baseline: set[str], exceptions: list[dict], today: str):
+    """Return (verdict, reason); verdict in compliant/baseline-debt/approved-exception/new-violation."""
+    param_count = len(c.get("params", []))
+    if param_count <= max_params:
+        return "compliant", f"params={param_count} <= max={max_params}"
+    ident = identity(c)
+    if ident in baseline:
+        return "baseline-debt", "exact baseline identity"
+    for exc in exceptions:
+        if exc["identity"] == ident:
+            if exc["expiresOn"] < today:
+                return "expired-exception", f"expiresOn={exc['expiresOn']} owner={exc['owner']}"
+            return "approved-exception", f"external contract {exc['externalContract']}"
+    return "new-violation", f"params={param_count} > max={max_params}"
+
+
+def suggest_parameter_object(c: dict) -> str:
+    name = c.get("name", "callable")
+    if c.get("kind") == "constructor":
+        return "split responsibilities or introduce a behavioral facade"
+    if name == "<init>":
+        return "record has too many components; split the aggregate"
+    return (f"coalesce into exactly one named Command/Query/Options/Context/value object "
+            f"(e.g. {name.title()}Command); do not split into two or more objects")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--mode", choices=["report", "block"], default="block")
+    parser.add_argument("--config", default=str(CONFIG_FILE))
+    args = parser.parse_args(argv)
+
+    try:
+        cfg = load_config(args.config)
+        max_params = int(cfg["maxParameters"])
+        baseline = load_baseline()
+        exceptions = load_exceptions()
+        files = enumerate_files(cfg)
+        callables = call_scanner(files)
+    except GateError as e:
+        print(f"java-parameter-limit: {e}")
+        return 1
+
+    today = _dt.date.today().isoformat()
+
+    # Classify + summarize.
+    new_violations: list[dict] = []
+    baseline_debts: list[dict] = []
+    exceptions_used: list[dict] = []
+    expired: list[dict] = []
+    seen_baseline: set[str] = set()
+    seen_exceptions: set[str] = set()
+
+    for c in callables:
+        verdict, reason = classify(c, max_params, baseline, exceptions, today)
+        if verdict == "new-violation":
+            new_violations.append(c)
+        elif verdict == "baseline-debt":
+            baseline_debts.append(c)
+            seen_baseline.add(identity(c))
+        elif verdict == "approved-exception":
+            exceptions_used.append(c)
+            seen_exceptions.add(identity(c))
+        elif verdict == "expired-exception":
+            expired.append(c)
+            for exc in exceptions:
+                if exc["identity"] == identity(c):
+                    expired[-1]["_owner"] = exc["owner"]
+
+    # Stale baseline: entries no longer present among current over-limit
+    # signatures must be removed (shrink-only).
+    stale_baseline = baseline - seen_baseline
+    # Unused exceptions (dangling / match nothing in source) fail the gate.
+    unused_exceptions = [exc["identity"] for exc in exceptions if exc["identity"] not in seen_exceptions]
+
+    sentinel = cfg.get("sentinel", "Java parameter object gate ok")
+
+    # Report output.
+    print(f"java-parameter-limit: scanned {len(files)} files, {len(callables)} callables, "
+          f"max={max_params}, new_violations={len(new_violations)}, "
+          f"baseline_debt={len(baseline_debts)}, exceptions={len(exceptions_used)}")
+    for c in new_violations:
+        print(f"  VIOLATION {rel_path(c)}:{c['line']} {c['kind']} {c['ownerType']}.{c['name']} "
+              f"actual={len(c['params'])} max={max_params} reason=new-violation "
+              f"suggest={suggest_parameter_object(c)}")
+    for c in baseline_debts:
+        print(f"  BASELINE {rel_path(c)}:{c['line']} {c['kind']} {c['ownerType']}.{c['name']} "
+              f"actual={len(c['params'])} max={max_params} reason=baseline-debt")
+    for c in exceptions_used:
+        print(f"  EXCEPTION {rel_path(c)}:{c['line']} {c['kind']} {c['ownerType']}.{c['name']} "
+              f"actual={len(c['params'])} reason=approved-exception")
+
+    if args.mode == "report":
+        return 0
+
+    # Block-mode blockers.
+    blockers = 0
+    if new_violations:
+        print("  >> new violations: refactor to a named parameter object")
+        blockers += len(new_violations)
+    if stale_baseline:
+        print(f"  >> stale baseline ({len(stale_baseline)}): paid-down entries must be removed from the baseline (shrink-only)")
+        for s in sorted(stale_baseline)[:20]:
+            print(f"    - {s}")
+        blockers += len(stale_baseline)
+    if unused_exceptions:
+        print(f"  >> unused/dangling exceptions ({len(unused_exceptions)}): exceptions must match source exactly")
+        for u in unused_exceptions[:20]:
+            print(f"    - {u}")
+        blockers += len(unused_exceptions)
+    if expired:
+        print(f"  >> expired exceptions ({len(expired)}): expired exceptions must be renewed or removed")
+        blockers += len(expired)
+
+    if blockers:
+        print("java parameter object gate FAIL")
+        return 1
+    print(sentinel)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

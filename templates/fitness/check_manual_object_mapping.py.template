@@ -1,0 +1,315 @@
+#!/usr/bin/env python3
+"""Check changed Java files for repetitive getter-to-setter entity mapping.
+
+Detects hand-written `target.setX(source.getX())` blocks that copy many
+same-name fields into a newly created persistent (ORM-mapped) type, and
+requires a declarative mapping framework instead.
+
+Java-only. Skip or replace if your project uses a different language.
+
+Copy to: docs/fitness/scripts/check_manual_object_mapping.py
+"""
+# {{CHECK_MANUAL_OBJECT_MAPPING_TEMPLATE}}
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+# Configure: minimum number of same-name fields copied before it counts as a
+# manual-mapping violation.
+MIN_COPIED_FIELDS = {{MIN_COPIED_FIELDS}}  # e.g. 4
+IGNORED_CHANGED_NAMES = {".DS_Store"}
+IGNORED_CHANGED_PARTS = {
+    "__pycache__",
+    "target",
+    "generated",
+    # {{EXTRA_IGNORED_CHANGED_PARTS}} — add project build/dependency dirs, e.g.:
+    # ".mvn",
+    # "node_modules",
+}
+# Configure: path segments that mark a production Java source root.
+PRODUCTION_SOURCE_PARTS = ("src", "main", "java")  # {{PRODUCTION_SOURCE_PARTS}}
+
+OBJECT_CREATION_RE = re.compile(
+    r"\b(?P<type>[A-Za-z_$][\w$]*)\s+"
+    r"(?P<target>[A-Za-z_$][\w$]*)\s*=\s*new\s+"
+    r"(?P=type)\s*\(\s*\)\s*;"
+)
+CLASS_DECLARATION_RE = re.compile(r"\bclass\s+([A-Za-z_$][\w$]*)\b")
+# Configure: a comment marker that exempts a mapping block directly below it
+# from this check. The marker must be followed by `-- <reason>`.
+MANUAL_MAPPING_EXEMPTION = "fitness: allow-manual-object-mapping"  # {{MANUAL_MAPPING_EXEMPTION}}
+DIRECT_COPY_RE = re.compile(
+    r"\b(?P<target>[A-Za-z_$][\w$]*)\.set(?P<setter>[A-Z][\w$]*)\s*"
+    r"\(\s*(?P<source>[A-Za-z_$][\w$]*)\.get(?P<getter>[A-Z][\w$]*)\s*"
+    r"\(\s*\)\s*\)\s*;"
+)
+# Configure: how a class is recognized as a persistent (ORM-mapped) type.
+# A production class is treated as persistent if it carries any of these
+# annotations, or directly extends any of these base classes. Adjust for your
+# ORM framework (MyBatis-Plus example: "@TableName" + "BaseEntity").
+PERSISTENT_TYPE_ANNOTATIONS = (  # {{PERSISTENT_TYPE_ANNOTATIONS}}
+    "@TableName",
+)
+PERSISTENT_TYPE_BASE_CLASSES = (  # {{PERSISTENT_TYPE_BASE_CLASSES}}
+    "BaseEntity",
+)
+# Configure: fallback type-name suffix used to detect persistent types when
+# no persistent-type index is available.
+PERSISTENT_TYPE_SUFFIX = "Entity"  # {{PERSISTENT_TYPE_SUFFIX}}
+
+
+@dataclass(frozen=True)
+class MappingViolation:
+    line: int
+    target_type: str
+    target_variable: str
+    source_variable: str
+    fields: tuple[str, ...]
+
+
+def git_lines(args: list[str]) -> list[str]:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def is_ignored_changed_path(path: str) -> bool:
+    parts = Path(path).parts
+    return (
+        Path(path).name in IGNORED_CHANGED_NAMES
+        or any(part in IGNORED_CHANGED_PARTS for part in parts)
+        or path.endswith(".pyc")
+    )
+
+
+def changed_paths() -> set[str]:
+    changed = set(git_lines(["diff", "--name-only", "--diff-filter=ACMR"]))
+    changed.update(git_lines(["diff", "--cached", "--name-only", "--diff-filter=ACMR"]))
+    changed.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
+    return {path for path in changed if not is_ignored_changed_path(path)}
+
+
+def is_production_java(path: Path) -> bool:
+    parts = path.relative_to(PROJECT_ROOT).parts
+    return (
+        path.suffix == ".java"
+        and all(part in parts for part in PRODUCTION_SOURCE_PARTS)
+    )
+
+
+def persistent_type_names(root: Path = PROJECT_ROOT) -> set[str]:
+    persistent_types: set[str] = set()
+    for path in root.rglob("*.java"):
+        if not path.is_file() or not is_production_java(path):
+            continue
+        source = path.read_text(encoding="utf-8", errors="ignore")
+        cleaned_source = "\n".join(code_lines(source))
+        declaration = CLASS_DECLARATION_RE.search(cleaned_source)
+        if declaration is None:
+            continue
+        type_name = declaration.group(1)
+        has_persistent_annotation = any(
+            annotation in cleaned_source for annotation in PERSISTENT_TYPE_ANNOTATIONS
+        )
+        extends_persistent_base = any(
+            re.search(
+                rf"\bclass\s+{re.escape(type_name)}\b[^\{{]*\bextends\s+{re.escape(base)}\b",
+                cleaned_source,
+            )
+            for base in PERSISTENT_TYPE_BASE_CLASSES
+        )
+        if has_persistent_annotation or extends_persistent_base:
+            persistent_types.add(type_name)
+    return persistent_types
+
+
+def strip_comments_and_strings(line: str, in_block_comment: bool) -> tuple[str, bool]:
+    result: list[str] = []
+    index = 0
+    in_string = False
+    in_char = False
+    escaped = False
+
+    while index < len(line):
+        if in_block_comment:
+            end = line.find("*/", index)
+            if end == -1:
+                return "".join(result), True
+            index = end + 2
+            in_block_comment = False
+            continue
+
+        pair = line[index:index + 2]
+        char = line[index]
+        if not in_string and not in_char and pair == "//":
+            break
+        if not in_string and not in_char and pair == "/*":
+            in_block_comment = True
+            index += 2
+            continue
+        if escaped:
+            escaped = False
+            result.append(" ")
+        elif char == "\\" and (in_string or in_char):
+            escaped = True
+            result.append(" ")
+        elif char == '"' and not in_char:
+            in_string = not in_string
+            result.append(" ")
+        elif char == "'" and not in_string:
+            in_char = not in_char
+            result.append(" ")
+        elif in_string or in_char:
+            result.append(" ")
+        else:
+            result.append(char)
+        index += 1
+
+    return "".join(result), in_block_comment
+
+
+def code_lines(source: str) -> list[str]:
+    cleaned: list[str] = []
+    in_block_comment = False
+    for line in source.splitlines():
+        code, in_block_comment = strip_comments_and_strings(line, in_block_comment)
+        cleaned.append(code)
+    return cleaned
+
+
+def has_manual_mapping_exemption(lines: list[str], declaration_index: int) -> bool:
+    for index in range(declaration_index - 1, max(-1, declaration_index - 3), -1):
+        stripped = lines[index].strip()
+        if not stripped:
+            continue
+        if MANUAL_MAPPING_EXEMPTION not in stripped:
+            return False
+        reason = stripped.split(MANUAL_MAPPING_EXEMPTION, 1)[1].strip()
+        return reason.startswith("--") and bool(reason[2:].strip())
+    return False
+
+
+def find_manual_mappings(
+    source: str,
+    persistent_types: set[str] | None = None,
+) -> list[MappingViolation]:
+    original_lines = source.splitlines()
+    lines = code_lines(source)
+    depths_before: list[int] = []
+    depths_after: list[int] = []
+    depth = 0
+    for line in lines:
+        depths_before.append(depth)
+        depth += line.count("{") - line.count("}")
+        depths_after.append(depth)
+
+    violations: list[MappingViolation] = []
+    for declaration_index, line in enumerate(lines):
+        declaration = OBJECT_CREATION_RE.search(line)
+        if declaration is None:
+            continue
+        target_type = declaration.group("type")
+        if persistent_types is None:
+            if not target_type.endswith(PERSISTENT_TYPE_SUFFIX):
+                continue
+        elif target_type not in persistent_types:
+            continue
+        if has_manual_mapping_exemption(original_lines, declaration_index):
+            continue
+
+        declaration_depth = depths_before[declaration_index]
+        copies_by_source: dict[str, list[str]] = {}
+        for index in range(declaration_index + 1, len(lines)):
+            if depths_before[index] < declaration_depth:
+                break
+            copy = DIRECT_COPY_RE.search(lines[index])
+            if copy is not None and copy.group("target") == declaration.group("target"):
+                if copy.group("setter") == copy.group("getter"):
+                    copies_by_source.setdefault(copy.group("source"), []).append(copy.group("setter"))
+            if depths_after[index] < declaration_depth:
+                break
+
+        for source_variable, fields in copies_by_source.items():
+            unique_fields = tuple(dict.fromkeys(fields))
+            if len(unique_fields) >= MIN_COPIED_FIELDS:
+                violations.append(MappingViolation(
+                    line=declaration_index + 1,
+                    target_type=declaration.group("type"),
+                    target_variable=declaration.group("target"),
+                    source_variable=source_variable,
+                    fields=unique_fields,
+                ))
+    return violations
+
+
+def check_java_file(path: Path, persistent_types: set[str] | None = None) -> list[str]:
+    relative_path = path.relative_to(PROJECT_ROOT).as_posix()
+    violations: list[str] = []
+    source = path.read_text(encoding="utf-8", errors="ignore")
+    for violation in find_manual_mappings(source, persistent_types):
+        fields = ", ".join(violation.fields)
+        # Configure: the fix hint should name your project's object-mapping
+        # framework and conversion API (MapStruct-Plus example).
+        violations.append(
+            f"{relative_path}:{violation.line} manually copies {len(violation.fields)} same-name fields "
+            f"from {violation.source_variable} to {violation.target_type} ({fields}); "
+            "declare @AutoMapper and use MapstructUtils.convert"
+        )
+    return violations
+
+
+def scan_paths(root: Path, scan_all: bool) -> list[Path]:
+    if scan_all:
+        return sorted(path for path in root.rglob("*.java") if path.is_file() and is_production_java(path))
+    paths: list[Path] = []
+    for relative_path in sorted(changed_paths()):
+        path = PROJECT_ROOT / relative_path
+        if path.is_file() and path.is_relative_to(root) and is_production_java(path):
+            paths.append(path)
+    return paths
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Check repetitive manual mapping into persistent Java types.")
+    parser.add_argument("--all", action="store_true", help="Scan every production Java file under --root.")
+    parser.add_argument("--root", default=".", help="Scan root relative to the project root.")
+    args = parser.parse_args()
+
+    scan_root = (PROJECT_ROOT / args.root).resolve()
+    if not scan_root.is_relative_to(PROJECT_ROOT) or not scan_root.exists():
+        parser.error("--root must resolve to an existing path inside the project")
+
+    persistent_types = persistent_type_names(PROJECT_ROOT)
+    violations: list[str] = []
+    for path in scan_paths(scan_root, args.all):
+        violations.extend(check_java_file(path, persistent_types))
+
+    if violations:
+        print("Manual object mapping violations:")
+        for violation in violations[:100]:
+            print(f"  {violation}")
+        if len(violations) > 100:
+            print(f"  ... {len(violations) - 100} more")
+        return 1
+
+    print("Manual object mapping check ok")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

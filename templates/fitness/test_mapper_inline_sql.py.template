@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""Self-test for the Mapper inline SQL fitness gate."""
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+import check_mapper_inline_sql as checker
+
+
+class MapperInlineSqlTest(unittest.TestCase):
+    def scan(self, source: str) -> list[dict[str, object]]:
+        with tempfile.TemporaryDirectory(dir=checker.PROJECT_ROOT, prefix="mapper-gate-") as directory:
+            path = Path(directory) / "ExampleMapper.java"
+            path.write_text(source, encoding="utf-8")
+            return checker.scan_mapper_file(path)
+
+    def test_annotations_and_multiline_escape_hatches_are_rejected(self) -> None:
+        violations = self.scan(
+            """
+            interface ExampleMapper {
+                // @Select(\"not executable\")
+                @Update(\n                    \"UPDATE v_example SET status = #{status}\"\n                )\n                void update(String status);\n                void scan() {\n                    wrapper.last(\n                        \"LIMIT 1\"\n                    );\n                }\n            }\n            """
+        )
+        self.assertEqual(["sql-annotation", "raw-last"], [v["pattern"] for v in violations])
+        self.assertEqual([4, 9], [v["line"] for v in violations])
+
+    def test_raw_projection_and_sql_methods_are_rejected(self) -> None:
+        violations = self.scan(
+            """
+            interface ExampleMapper {
+                void count() { wrapper.select(\"merchant_id\", \"COUNT(*) AS cnt\"); }\n
+                void project() { wrapper.selectAs(\"COALESCE(a, b)\", Example::getValue); }\n
+                void update() { wrapper.eqSql(Example::getId, \"SELECT id FROM v_example\"); }\n
+            }\n
+            """
+        )
+        self.assertEqual(["raw-select", "raw-selectAs", "raw-eqSql"], [v["pattern"] for v in violations])
+
+    def test_type_safe_mpj_alias_and_comments_are_allowed(self) -> None:
+        violations = self.scan(
+            """
+            interface ExampleMapper {
+                // wrapper.last(\"LIMIT 1\");\n
+                void query() {\n
+                    wrapper.select(\"u\", Example::getId)\n
+                        .selectAs(\"u\", Example::getName, View::getName);\n
+                }\n
+            }\n
+            """
+        )
+        self.assertEqual([], violations)
+
+
+if __name__ == "__main__":
+    unittest.main()

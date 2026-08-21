@@ -1,0 +1,267 @@
+#!/usr/bin/env python3
+"""Check changed Java files for magic values — hardcoded literals that should be enum constants.
+
+Copy to: docs/fitness/scripts/check_magic_values.py
+"""
+# {{CHECK_MAGIC_VALUES_TEMPLATE}}
+
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+IGNORED_CHANGED_NAMES = {".DS_Store"}
+IGNORED_CHANGED_PARTS = {"__pycache__", "target", "generated"}
+# {{EXTRA_IGNORED_CHANGED_PARTS}} — add project-specific build/output dirs, e.g.:
+# "build",
+# "out",
+
+# Patterns that look like magic code/status/type values (SHOUT_CASE, snake_case, kebab-case)
+MAGIC_STRING_RE = re.compile(
+    r'"([A-Z][A-Z_]{2,})"|'          # SHOUT_CASE codes like "SYNC_ORDERS", "ORDER_STATUS"
+    r'"([a-z]+([_-][a-z]+){2,})"|'   # snake_case / kebab-case like "task_timeout"
+    r'"([a-z]+\.[a-z]+\.[a-z]+)"'    # dot-separated identifiers like "com.example.module"
+)
+
+# Patterns that are NOT magic values even though they match the shape above
+# Full-line matches for messages, descriptions, log templates are excluded
+NOT_MAGIC_PATTERNS = re.compile(
+    r'[一-鿿]|'              # Chinese text (descriptions, messages)
+    r'\{.*\}|'                       # Log format templates with placeholders
+    r'https?://|'                    # URLs
+    r'\.css|\.js|\.html|\.png|\.jpg' # File extensions
+)
+
+# Numeric literals: flag non-trivial numbers (not 0, 1, -1, 2, 100, 1000)
+MAGIC_NUMBER_RE = re.compile(
+    r'(?<![.\w])'                    # Not part of a larger identifier
+    r'('
+    r'(?<!\d)(?:[3-9]\d{1,5}|'      # 3-999999
+    r'\d{7,}'                        # 1000000+
+    r')(?!\d)'
+    r')'
+    r'(?![.\w])'
+)
+
+# Common constants that are OK even if they match the above
+ALLOWED_NUMBERS = {
+    "0", "1", "-1", "2", "10", "100", "1000", "24", "60", "30", "365",
+    "1024", "2048", "4096", "8192", "65536",
+    # {{EXTRA_ALLOWED_NUMBERS}} — add project-specific benign numbers, e.g.:
+    # "255", "1023", "65535",
+}
+
+# Recognized numeric patterns that are NOT magic (bit shifts, array indices, etc.)
+# These are detected by context — skip numbers that appear in reasonable contexts
+NON_MAGIC_NUMBER_CONTEXTS = re.compile(
+    r'\[\s*\d+\s*\]|'               # Array index access
+    r'capacity\s*\(|'               # Collection capacity
+    r'initialCapacity|'             # Builder initial capacity
+    r'shift\s*=|'                   # Bit shift
+    r'<<\s*\d+|'                    # Left shift
+    r'>>\s*\d+'                     # Right shift
+)
+
+
+def git_lines(args: list[str]) -> list[str]:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def changed_paths() -> set[str]:
+    changed = set(git_lines(["diff", "--name-only", "--diff-filter=ACMR"]))
+    changed.update(git_lines(["diff", "--cached", "--name-only", "--diff-filter=ACMR"]))
+    changed.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
+    return {path for path in changed if not is_ignored_changed_path(path)}
+
+
+def is_ignored_changed_path(path: str) -> bool:
+    parts = Path(path).parts
+    return (
+        Path(path).name in IGNORED_CHANGED_NAMES
+        or any(part in IGNORED_CHANGED_PARTS for part in parts)
+        or path.endswith(".pyc")
+    )
+
+
+def is_production_java(path: Path) -> bool:
+    rel = path.relative_to(PROJECT_ROOT)
+    parts = rel.parts
+    return path.suffix == ".java" and "src" in parts and "main" in parts and "java" in parts
+
+
+def is_enum_class(path: Path) -> bool:
+    """Check if the file is an enum class (exempt from magic value checks)."""
+    parts = path.relative_to(PROJECT_ROOT).parts
+    if "enums" in parts:
+        return True
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    return bool(re.search(r'\bpublic\s+(?:abstract\s+)?enum\s+\w+', text))
+
+
+def is_constant_definition(line: str) -> bool:
+    """Check if this line is a static final constant definition."""
+    return bool(re.search(r'\b(?:public|private|protected)\s+static\s+final\s+', line))
+
+
+def is_annotation_line(line: str) -> bool:
+    """Check if this line is a Java annotation."""
+    stripped = line.strip()
+    return stripped.startswith("@") and not stripped.startswith("@Override")
+
+
+def is_comment_line(line: str) -> bool:
+    """Check if this line is purely a comment."""
+    stripped = line.strip()
+    return stripped.startswith("//") or stripped.startswith("/*") or stripped.startswith("*")
+
+
+def is_log_line(line: str) -> bool:
+    """Check if this line is a log statement."""
+    return bool(re.search(r'\b(log|LOGGER|logger)\.(info|debug|warn|error|trace)\s*\(', line))
+
+
+def is_exception_line(line: str) -> bool:
+    """Check if this line throws or creates an exception."""
+    return bool(re.search(r'\bthrow\s+new\s+\w+|new\s+\w+Exception', line))
+
+
+def is_import_line(line: str) -> bool:
+    return line.strip().startswith("import ")
+
+
+def is_package_line(line: str) -> bool:
+    return line.strip().startswith("package ")
+
+
+def find_magic_strings(lines: list[str]) -> list[tuple[int, str]]:
+    """Find magic string literals in code lines."""
+    violations: list[tuple[int, str]] = []
+    in_block_comment = False
+
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+
+        if "/*" in stripped:
+            in_block_comment = True
+        if "*/" in stripped:
+            in_block_comment = False
+            continue
+        if in_block_comment:
+            continue
+
+        # Skip non-code lines
+        if (is_comment_line(line) or is_annotation_line(line) or
+            is_import_line(line) or is_package_line(line) or
+            is_constant_definition(line) or is_log_line(line) or
+            is_exception_line(line)):
+            continue
+
+        # Skip lines that are just variable declarations with string assignment
+        # (these are fine — the constant pattern above handles the concern)
+        if not stripped or stripped == "}" or stripped == "{":
+            continue
+
+        for match in MAGIC_STRING_RE.finditer(line):
+            value = match.group(1) or match.group(2) or match.group(3)
+            if not value:
+                continue
+            # Skip if the line contains Chinese (descriptions/messages)
+            if NOT_MAGIC_PATTERNS.search(line):
+                continue
+            # Skip annotation values (like @GetMapping("/path"))
+            if re.search(r'@\w+\s*\([^)]*"' + re.escape(value), line):
+                continue
+            # Skip prefix strings used for concatenation (e.g. "PREFIX_" + eventType)
+            if value.endswith("_") and re.search(r'"\s*\+\s*', line):
+                continue
+            violations.append((index + 1, f'"{value}"'))
+
+    return violations
+
+
+def find_magic_numbers(lines: list[str]) -> list[tuple[int, str]]:
+    """Find magic number literals in code lines."""
+    violations: list[tuple[int, str]] = []
+    in_block_comment = False
+
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+
+        if "/*" in stripped:
+            in_block_comment = True
+        if "*/" in stripped:
+            in_block_comment = False
+            continue
+        if in_block_comment:
+            continue
+
+        if (is_comment_line(line) or is_annotation_line(line) or
+            is_import_line(line) or is_package_line(line) or
+            is_constant_definition(line)):
+            continue
+
+        if not stripped or stripped == "}" or stripped == "{":
+            continue
+
+        for match in MAGIC_NUMBER_RE.finditer(line):
+            value = match.group(1)
+            if value in ALLOWED_NUMBERS:
+                continue
+            if NON_MAGIC_NUMBER_CONTEXTS.search(line):
+                continue
+            violations.append((index + 1, value))
+
+    return violations
+
+
+def check_java_file(path: Path) -> list[str]:
+    rel_path = path.relative_to(PROJECT_ROOT).as_posix()
+    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    violations: list[str] = []
+
+    for line_num, value in find_magic_strings(lines):
+        violations.append(f"{rel_path}:{line_num} magic string {value} should be an enum constant")
+
+    for line_num, value in find_magic_numbers(lines):
+        violations.append(f"{rel_path}:{line_num} magic number {value} should be a named constant")
+
+    return violations
+
+
+def main() -> int:
+    violations: list[str] = []
+    for rel_path in sorted(changed_paths()):
+        path = PROJECT_ROOT / rel_path
+        if not path.is_file() or not is_production_java(path):
+            continue
+        if is_enum_class(path):
+            continue
+        violations.extend(check_java_file(path))
+
+    if violations:
+        print("Magic value violations (use enum or named constant instead):")
+        for violation in violations[:100]:
+            print(f"  {violation}")
+        if len(violations) > 100:
+            print(f"  ... {len(violations) - 100} more")
+        return 1
+
+    print("Magic value check ok")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

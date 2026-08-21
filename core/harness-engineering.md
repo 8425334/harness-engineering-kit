@@ -169,3 +169,71 @@ type: user | feedback | project | reference
 - Git history (`git log` is the authoritative source)
 - Debug solutions (the fix is in the code, context is in the commit message)
 - Temporary task state (use task tracking, not memory)
+
+---
+
+## Component 5: Token Compaction Preservation
+
+Auto-compaction is lossy — when the context window is compacted, the in-flight task's contract and state can be silently dropped, and the agent loses the thread mid-task. The compaction-preservation pattern makes the round survive compaction: **save the round contract to disk before compaction, re-inject it after compaction**.
+
+### The Pattern
+
+```
+round-contract.md (≤50 lines, always current)
+        │   updated at the start of each round
+        ▼
+  PreCompact hook (matcher: auto | user)
+        │   archives round-contract.md + compact trigger JSON
+        │   to .claude/compaction-state/ (prunes to newest 20)
+        ▼
+        ── context window compacted ──
+        ▼
+  SessionStart hook (matcher: compact)
+        │   cat round-contract.md back into context
+        ▼
+   agent resumes with the contract intact
+```
+
+### Round Contract File (`.claude/round-contract.md`)
+
+A tight file (≤50 lines) holding only the facts that MUST survive compaction:
+
+| Section | Content |
+|---------|---------|
+| Current task | task name, one-line goal, target module |
+| Key contract fields | API endpoints, request BO fields, response VO fields, enums |
+| File list | backend (adapter/application/domain/infra) + frontend (api/pages/components) |
+| Current TODO | the first steps of this round |
+
+Rules: keep it ≤50 lines; only facts the agent must still know after compaction; no prose. The `SessionStart(matcher=compact)` hook re-injects this file so the round survives.
+
+### Hook Wiring (`settings.json`)
+
+```json
+{
+  "hooks": {
+    "PreCompact": [
+      { "matcher": "auto", "hooks": [{ "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/save-state.sh" }] },
+      { "matcher": "user", "hooks": [{ "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/save-state.sh" }] }
+    ],
+    "SessionStart": [
+      { "matcher": "compact", "hooks": [{ "type": "command", "command": "cat ${CLAUDE_PROJECT_DIR}/.claude/round-contract.md 2>/dev/null || true" }] }
+    ]
+  }
+}
+```
+
+### Save-State Hook (`.claude/hooks/save-state.sh`)
+
+- Archives `round-contract.md` → `.claude/compaction-state/round-contract-<timestamp>.md`
+- Captures the compact trigger JSON → `.claude/compaction-state/compact-<timestamp>.json`
+- Prunes to the newest 20 archives (bounded growth)
+- Never blocks compaction (always `exit 0`)
+
+Deployable templates: `templates/compaction/` (round-contract, save-state hook, settings fragment).
+
+Codex currently has no project-level equivalent of Claude's `PreCompact` / `SessionStart` hook. Use the explicit fallback shipped in the same directory: keep `.codex/round-contract.md` current, run `bash .codex/hooks/save-state.sh` before long-round compaction, and re-read the contract plus the newest `.codex-state/round-contract-*.md` after recovery. Do not add unsupported hook keys to `.codex/config.toml`.
+
+### Relationship to Memory
+
+Memory (Component 4) persists *facts* across sessions; compaction preservation persists the *in-flight round* across a compaction event within a session. They are complementary: memory answers "what do I know", the round contract answers "what am I doing right now".

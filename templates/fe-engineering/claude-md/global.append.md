@@ -16,6 +16,8 @@
 
 ## 多 Agent 并行模式（前后端联动）
 
+> 详见 `docs/methodology/core/multi-agent.md`。可一键触发：`/multi-agent <需求描述>`（前后端联动时自动启用，包含契约定义 → 双 Agent 并行 → 合并验证全流程）。
+
 当任务**同时涉及前端和后端**代码变更时，自动启用双 Agent 并行执行。
 
 ### 流程

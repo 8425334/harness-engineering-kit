@@ -1,0 +1,333 @@
+#!/usr/bin/env python3
+"""Self-test for check_code_block_simple_class_names.py.
+
+Python standard library only. Covers fence parsing, language filtering,
+qualified-type positions, imports, comments, strings, URLs, multiline fences,
+generics, valid/empty/cross-fence exemption markers, and changed-path
+discovery filtering (ignored / excluded / deleted / archived / generated /
+dependency / non-markdown) without mutating the worktree.
+
+Run: python3 docs/fitness/scripts/test_code_block_simple_class_names.py
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import check_code_block_simple_class_names as checker  # noqa: E402
+
+FAILURES: list[str] = []
+
+
+def expect(ok: bool, message: str) -> None:
+    if ok:
+        print(f"  PASS: {message}")
+    else:
+        FAILURES.append(message)
+        print(f"  FAIL: {message}")
+
+
+def tokens_of(text: str) -> list[str]:
+    return [v.token for v in checker.scan_text(text)]
+
+
+# --- 1. Compliant simple names ---------------------------------------------
+
+
+def test_compliant_simple_names() -> None:
+    text = "```java\nList<String> items = new ArrayList<>();\nMap<String, Object> map;\n```\n"
+    expect(not checker.scan_text(text), "compliant simple names are not flagged")
+
+
+def test_qualified_field_fails() -> None:
+    text = "```java\nprivate java.util.Map cache;\n```\n"
+    toks = tokens_of(text)
+    expect("java.util.Map" in toks, f"qualified field flagged; got {toks}")
+
+
+def test_qualified_param_fails() -> None:
+    text = "```java\nvoid go(org.dromara.Foo arg) {}\n```\n"
+    toks = tokens_of(text)
+    expect("org.dromara.Foo" in toks, f"qualified parameter flagged; got {toks}")
+
+
+def test_qualified_generic_fails() -> None:
+    text = "```java\nList<java.util.Map> data;\n```\n"
+    toks = tokens_of(text)
+    expect("java.util.Map" in toks, f"qualified generic flagged; got {toks}")
+
+
+def test_qualified_constructor_fails() -> None:
+    text = "```java\nvar x = new com.example.Builder();\n```\n"
+    toks = tokens_of(text)
+    expect("com.example.Builder" in toks, f"qualified constructor flagged; got {toks}")
+
+
+def test_qualified_annotation_fails() -> None:
+    text = "```java\n@org.springframework.Service\npublic class A {}\n```\n"
+    toks = tokens_of(text)
+    expect("org.springframework.Service" in toks, f"qualified annotation flagged; got {toks}")
+
+
+# --- 2. Imports / package / non-type positions -----------------------------
+
+
+def test_import_allowed() -> None:
+    text = "```java\nimport java.util.Map;\nimport static java.util.Collections.emptyList;\n```\n"
+    expect(not checker.scan_text(text), "import declarations are not flagged")
+
+
+def test_package_allowed() -> None:
+    text = "```java\npackage org.dromara.goods;\n```\n"
+    expect(not checker.scan_text(text), "package declarations are not flagged")
+
+
+def test_system_out_not_flagged() -> None:
+    text = "```java\nSystem.out.println(x);\n```\n"
+    expect(not checker.scan_text(text), "System.out member access is not flagged")
+
+
+def test_lowercase_method_chain_not_flagged() -> None:
+    text = "```java\nrequest.getResponse().getBody();\n```\n"
+    expect(not checker.scan_text(text), "lowercase method chains are not flagged")
+
+
+# --- 3. Comments / strings / URLs ------------------------------------------
+
+
+def test_line_comment_ignored() -> None:
+    text = "```java\n// see java.util.Map for details\nList items;\n```\n"
+    expect(not checker.scan_text(text), "qualified name in line comment is ignored")
+
+
+def test_block_comment_ignored() -> None:
+    text = "```java\n/* usage java.util.Map here */\nList items;\n```\n"
+    expect(not checker.scan_text(text), "qualified name in block comment is ignored")
+
+
+def test_multiline_block_comment_ignored() -> None:
+    text = "```java\n/*\n * java.util.Map is referenced\n */\nList items;\n```\n"
+    expect(not checker.scan_text(text), "qualified name in multiline block comment is ignored")
+
+
+def test_string_literal_ignored() -> None:
+    text = '```java\nString s = "java.util.Map";\n```\n'
+    expect(not checker.scan_text(text), "qualified name in string literal is ignored")
+
+
+def test_url_ignored() -> None:
+    text = "```java\n// docs at https://java.util.Map/guide\nList items;\n```\n"
+    expect(not checker.scan_text(text), "URL containing dotted segments is ignored")
+
+
+# --- 4. Language filtering --------------------------------------------------
+
+
+def test_non_java_lang_skipped() -> None:
+    text = "```shell\necho org.dromara.Foo\n```\n```sql\nselect java.util.Map;\n```\n"
+    expect(not checker.scan_text(text), "non-Java fences with dotted text are skipped")
+
+
+def test_omitted_lang_with_cue_scanned() -> None:
+    text = "```\npublic class A {\n  private java.util.Map cache;\n}\n```\n"
+    toks = tokens_of(text)
+    expect("java.util.Map" in toks, f"omitted-lang Java-cue block scanned; got {toks}")
+
+
+def test_omitted_lang_without_cue_skipped() -> None:
+    text = "```\njava.util.Map\n```\n"
+    expect(not checker.scan_text(text), "omitted-lang block without Java cues is skipped")
+
+
+def test_kotlin_lang_scanned() -> None:
+    text = "```kotlin\nval x: java.util.Map = emptyMap()\n```\n"
+    toks = tokens_of(text)
+    expect("java.util.Map" in toks, f"kotlin fence scanned; got {toks}")
+
+
+# --- 5. Multiline / nested fences ------------------------------------------
+
+
+def test_multiple_fences_line_numbers() -> None:
+    text = (
+        "intro\n"
+        "```java\n"
+        "private java.util.List a;\n"
+        "```\n"
+        "middle\n"
+        "```java\n"
+        "private org.foo.Bar b;\n"
+        "```\n"
+    )
+    vs = checker.scan_text(text)
+    lines = sorted(v.line_no for v in vs)
+    expect(lines == [3, 7], f"multiline fences report correct line numbers; got {lines}")
+
+
+def test_tilde_fence_scanned() -> None:
+    text = "~~~java\nprivate java.util.Set s;\n~~~\n"
+    toks = tokens_of(text)
+    expect("java.util.Set" in toks, f"tilde fence scanned; got {toks}")
+
+
+def test_nested_generics_flagged_once() -> None:
+    text = "```java\nMap<String, java.util.List> m;\n```\n"
+    toks = tokens_of(text)
+    expect("java.util.List" in toks, f"nested generic qualified name flagged; got {toks}")
+
+
+# --- 6. Exemption markers ---------------------------------------------------
+
+
+def test_valid_inline_marker_allowed() -> None:
+    text = (
+        "```java\n"
+        "private java.util.Map cache; // fitness: allow-qualified-class-name: collision with foo.Map\n"
+        "```\n"
+    )
+    expect(not checker.scan_text(text), "valid inline marker with reason permits the line")
+
+
+def test_valid_preceding_line_marker_allowed() -> None:
+    text = (
+        "```java\n"
+        "// fitness: allow-qualified-class-name: collision with foo.Map\n"
+        "private java.util.Map cache;\n"
+        "```\n"
+    )
+    expect(not checker.scan_text(text), "valid preceding-line marker permits the line")
+
+
+def test_empty_reason_marker_fails() -> None:
+    text = (
+        "```java\n"
+        "private java.util.Map cache; // fitness: allow-qualified-class-name\n"
+        "```\n"
+    )
+    vs = checker.scan_text(text)
+    expect(
+        any("requires a non-empty reason" in v.reason for v in vs),
+        "marker without a reason is reported",
+    )
+
+
+def test_cross_fence_marker_does_not_apply() -> None:
+    text = (
+        "```java\n"
+        "// fitness: allow-qualified-class-name: collision with foo.Map\n"
+        "```\n"
+        "```java\n"
+        "private java.util.Map cache;\n"
+        "```\n"
+    )
+    toks = tokens_of(text)
+    expect("java.util.Map" in toks, f"marker does not cross fence boundaries; got {toks}")
+
+
+def test_marker_two_lines_before_does_not_apply() -> None:
+    text = (
+        "```java\n"
+        "// fitness: allow-qualified-class-name: collision with foo.Map\n"
+        "int unrelated;\n"
+        "private java.util.Map cache;\n"
+        "```\n"
+    )
+    toks = tokens_of(text)
+    expect("java.util.Map" in toks, f"marker more than one line before does not apply; got {toks}")
+
+
+def test_file_level_marker_does_not_apply() -> None:
+    text = (
+        "<!-- fitness: allow-qualified-class-name: whole file -->\n"
+        "```java\n"
+        "private java.util.Map cache;\n"
+        "```\n"
+    )
+    toks = tokens_of(text)
+    expect("java.util.Map" in toks, f"prose/file-level marker does not apply; got {toks}")
+
+
+# --- 7. Changed-path discovery filtering -----------------------------------
+
+
+def test_is_ignored_filters_build_artifacts() -> None:
+    expect(checker._is_ignored_path("module/target/Foo.md"), "target/ path is ignored")
+    expect(checker._is_ignored_path("a/b/node_modules/x.md"), "node_modules path is ignored")
+    expect(checker._is_ignored_path(".DS_Store"), ".DS_Store is ignored")
+    expect(checker._is_ignored_path("foo.pyc"), ".pyc is ignored")
+    expect(not checker._is_ignored_path("docs/notes.md"), "normal md path is not ignored")
+
+
+def test_is_excluded_filters_archive_and_vcs() -> None:
+    expect(checker._is_excluded_path("openspec/changes/archive/2026-01-01-x/proposal.md"), "archive path excluded")
+    expect(checker._is_excluded_path(".git/config"), ".git path excluded")
+    expect(checker._is_excluded_path("ui/node_modules/pkg/readme.md"), "dependency dir excluded")
+    expect(not checker._is_excluded_path("docs/fitness/README.md"), "fitness docs not excluded")
+
+
+def test_non_markdown_not_collected() -> None:
+    # changed_markdown_paths filters by .md suffix; verify the filter contract
+    # by checking a .py path is not a markdown candidate.
+    expect(not "scripts/foo.py".endswith(".md"), "non-.md paths are filtered out")
+
+
+def test_success_marker_constant() -> None:
+    expect(checker.SUCCESS_MARKER == "Code block simple class names ok", "success marker is stable")
+
+
+# --- Runner -----------------------------------------------------------------
+
+TESTS = [
+    test_compliant_simple_names,
+    test_qualified_field_fails,
+    test_qualified_param_fails,
+    test_qualified_generic_fails,
+    test_qualified_constructor_fails,
+    test_qualified_annotation_fails,
+    test_import_allowed,
+    test_package_allowed,
+    test_system_out_not_flagged,
+    test_lowercase_method_chain_not_flagged,
+    test_line_comment_ignored,
+    test_block_comment_ignored,
+    test_multiline_block_comment_ignored,
+    test_string_literal_ignored,
+    test_url_ignored,
+    test_non_java_lang_skipped,
+    test_omitted_lang_with_cue_scanned,
+    test_omitted_lang_without_cue_skipped,
+    test_kotlin_lang_scanned,
+    test_multiple_fences_line_numbers,
+    test_tilde_fence_scanned,
+    test_nested_generics_flagged_once,
+    test_valid_inline_marker_allowed,
+    test_valid_preceding_line_marker_allowed,
+    test_empty_reason_marker_fails,
+    test_cross_fence_marker_does_not_apply,
+    test_marker_two_lines_before_does_not_apply,
+    test_file_level_marker_does_not_apply,
+    test_is_ignored_filters_build_artifacts,
+    test_is_excluded_filters_archive_and_vcs,
+    test_non_markdown_not_collected,
+    test_success_marker_constant,
+]
+
+
+def main() -> int:
+    print("Running code-block simple-class-names selftest...")
+    for t in TESTS:
+        print(f"[{t.__name__}]")
+        t()
+    if FAILURES:
+        print(f"\nCode block simple class names selftest: {len(FAILURES)} failure(s)")
+        for f in FAILURES:
+            print(f"  - {f}")
+        return 1
+    print("Code block simple class names selftest ok")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

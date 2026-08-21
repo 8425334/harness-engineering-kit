@@ -244,6 +244,8 @@ The `/fe` skill auto-detects the tech stack from `package.json` on startup and a
 
 ## 7. Multi-Agent Parallel Mode
 
+> Multi-agent coordination is a cross-cutting orchestration pattern, not frontend-specific. Full treatment (contract template, launch rules, merge verification, degradation): **`core/multi-agent.md`** + Skill `/multi-agent` (`templates/multi-agent/SKILL.md.template`).
+
 When a task spans **both frontend and backend** code changes, dual-agent parallel execution is automatically enabled instead of sequential execution.
 
 ### 7.1 Execution Architecture

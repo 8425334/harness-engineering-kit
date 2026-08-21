@@ -1,0 +1,45 @@
+---
+dimension: object_mapping
+weight: 10
+tier: fast
+metrics:
+  - name: manual_object_mapping_check
+    command: python3 docs/fitness/scripts/check_manual_object_mapping.py
+    pattern: "Manual object mapping check ok"
+    hard_gate: false
+    tier: fast
+  - name: manual_object_mapping_selftest
+    command: python3 docs/fitness/scripts/test_manual_object_mapping.py
+    pattern: "OK"
+    hard_gate: true
+    tier: fast
+---
+
+# 对象映射规则
+
+## 当前目标
+
+- 生产代码中的 BO、DTO、VO 与 Entity 同名字段转换统一使用 MapStruct-Plus。
+- 业务生成值、默认状态、时间戳、字段别名和领域计算继续显式赋值。
+- 避免用机械 getter/setter 搬运掩盖字段遗漏和契约漂移。
+
+## 当前检查
+
+- 只扫描当前变更中的 `src/main/java/` Java 文件。
+- 通过 `@TableName` 或继承 `{{ENTITY_BASE_CLASS}}` 识别持久化类型，不依赖 `Entity` 类名后缀。
+- 识别持久化对象创建后，同一来源对象向其直接复制同名属性的代码。
+- 同一代码块内达到 4 个不同同名字段时报告，提示声明 `@AutoMapper` 并使用 `{{MAPPER_UTIL}}`（如 `MapstructUtils.convert`）。
+- 不合并不同来源对象的赋值，不统计字段改名、常量、枚举、当前时间、ID 生成或其他计算表达式。
+- 新聚合初始化、审计快照、copy-on-write 等有意显式映射可在对象创建前使用
+  `fitness: allow-manual-object-mapping -- <reason>` 标记，并必须写明业务原因。
+
+全量审计命令：
+
+```bash
+python3 docs/fitness/scripts/check_manual_object_mapping.py --all --root {{BACKEND_SOURCE_ROOT}}
+```
+
+## 推进策略
+
+- 第一阶段为 fast-tier 软门禁，先阻止新增重复映射并观察误报。
+- 存量清理和规则稳定后再升级为 hard gate。

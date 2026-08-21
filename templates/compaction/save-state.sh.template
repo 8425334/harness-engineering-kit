@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# PreCompact hook — 压缩前把本轮契约与关键状态存档到磁盘。
+# 压缩不可逆；本脚本保证契约在压缩后仍可恢复。
+# 不阻断压缩：始终 exit 0。
+#
+# 部署为 .claude/hooks/save-state.sh（chmod +x），并在 settings.json 的
+# PreCompact hooks 中引用（见 settings-hooks.json.template）。
+# Codex 等价变体：把环境变量换为 ${CODEX_PROJECT_DIR:-${CODEX_PROJECT_ROOT}}，
+# 状态目录换为 .codex-state，契约文件换为 .codex/round-contract.md。
+set -uo pipefail
+
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+STATE_DIR="${PROJECT_DIR}/.claude/compaction-state"
+CONTRACT="${PROJECT_DIR}/.claude/round-contract.md"
+
+mkdir -p "${STATE_DIR}"
+
+STAMP="$(date +%Y%m%d-%H%M%S)"
+
+# 1. 存档本轮契约（若存在）
+if [ -f "${CONTRACT}" ]; then
+  cp "${CONTRACT}" "${STATE_DIR}/round-contract-${STAMP}.md"
+fi
+
+# 2. 记录压缩触发原因（hook 的 stdin 为 JSON 上下文）
+if [ ! -t 0 ]; then
+  cat > "${STATE_DIR}/compact-${STAMP}.json" 2>/dev/null || true
+fi
+
+# 3. 保留最近 20 份存档，避免无限增长
+ls -1t "${STATE_DIR}"/round-contract-*.md 2>/dev/null | tail -n +21 | xargs -r rm -f
+ls -1t "${STATE_DIR}"/compact-*.json 2>/dev/null | tail -n +21 | xargs -r rm -f
+
+exit 0

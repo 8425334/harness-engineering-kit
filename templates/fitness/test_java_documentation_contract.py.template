@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""Self-tests for Java documentation fitness rules."""
+
+from __future__ import annotations
+
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from shutil import rmtree
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import check_java_documentation_contract as contract
+
+
+class JavaDocumentationContractTest(unittest.TestCase):
+    def write_java(self, source: str) -> Path:
+        directory = Path(tempfile.mkdtemp(dir=contract.PROJECT_ROOT))
+        path = directory / "SampleSupport.java"
+        path.write_text(source, encoding="utf-8")
+        self.addCleanup(lambda: rmtree(directory, ignore_errors=True))
+        return path
+
+    def test_core_class_requires_class_and_method_comments(self) -> None:
+        path = self.write_java(
+            """
+            package com.example.order.application.service.support;
+
+            public class SampleSupport {
+                public void dispatch(Long id) {
+                    if (id == null) {
+                        throw new IllegalArgumentException("id");
+                    }
+                }
+            }
+            """
+        )
+
+        violations = contract.check_java_file(path)
+
+        self.assertTrue(any("class is missing class comment" in item for item in violations))
+        self.assertTrue(any("method is missing method comment" in item for item in violations))
+
+    def test_status_branch_method_requires_flow_comment(self) -> None:
+        path = self.write_java(
+            """
+            package com.example.order.application.service.support;
+
+            /** 样例核心支持类。 */
+            public class SampleSupport {
+                private void advance(String taskStatus) {
+                    if ("WAIT".equals(taskStatus)) {
+                        updateStatus("LOADING");
+                    } else {
+                        updateStatus("DONE");
+                    }
+                }
+
+                private void updateStatus(String status) {
+                }
+            }
+            """
+        )
+
+        violations = contract.check_java_file(path)
+
+        self.assertTrue(any("status/branch flow is missing comment" in item for item in violations))
+
+    def test_documented_core_status_flow_passes(self) -> None:
+        path = self.write_java(
+            """
+            package com.example.order.application.service.support;
+
+            /** 样例核心支持类。 */
+            public class SampleSupport {
+                /** 推进调度任务状态。 */
+                public void advance(String taskStatus) {
+                    // 根据确认结果推进状态，失败分支保持原状态交由上游重试。
+                    if ("WAIT".equals(taskStatus)) {
+                        updateStatus("LOADING");
+                    } else {
+                        updateStatus("DONE");
+                    }
+                }
+
+                private void updateStatus(String status) {
+                }
+            }
+            """
+        )
+
+        self.assertEqual([], contract.check_java_file(path))
+
+    def test_unchanged_legacy_method_is_not_reported_for_changed_file(self) -> None:
+        path = self.write_java(
+            """
+            package com.example.order.application.service.support;
+
+            public class SampleSupport {
+                public void legacy(String taskStatus) {
+                    if ("WAIT".equals(taskStatus)) {
+                        updateStatus("LOADING");
+                    } else {
+                        updateStatus("DONE");
+                    }
+                }
+
+                private void updateStatus(String status) {
+                }
+            }
+            """
+        )
+
+        self.assertEqual([], contract.check_java_file(path, changed_lines={13}))
+
+    def test_changed_private_core_method_requires_method_comment(self) -> None:
+        path = self.write_java(
+            """
+            package com.example.order.application.service.support;
+
+            /** 样例核心支持类。 */
+            public class SampleSupport {
+                private void createOrder(String taskStatus) {
+                    // 订单只在核销成功后创建，重复核销分支直接拒绝。
+                    if ("VERIFIED".equals(taskStatus)) {
+                        updateStatus("COMPLETED");
+                    }
+                }
+
+                private void updateStatus(String status) {
+                }
+            }
+            """
+        )
+
+        violations = contract.check_java_file(path)
+
+        self.assertTrue(any("method is missing method comment" in item for item in violations))
+
+
+if __name__ == "__main__":
+    unittest.main()

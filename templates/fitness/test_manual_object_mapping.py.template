@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+"""Self-tests for the repetitive manual object mapping fitness rule."""
+
+from __future__ import annotations
+
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import check_manual_object_mapping as mapping
+
+
+class ManualObjectMappingCheckTest(unittest.TestCase):
+
+    def test_repetitive_same_name_entity_mapping_is_flagged(self) -> None:
+        source = """
+            public class SampleService {
+                void create(SampleBo bo) {
+                    SampleEntity entity = new SampleEntity();
+                    entity.setName(bo.getName());
+                    entity.setStatus(bo.getStatus());
+                    entity.setOwnerId(bo.getOwnerId());
+                    entity.setDeadline(bo.getDeadline());
+                }
+            }
+        """
+
+        violations = mapping.find_manual_mappings(source)
+
+        self.assertEqual(1, len(violations))
+        self.assertEqual(("Name", "Status", "OwnerId", "Deadline"), violations[0].fields)
+
+    def test_business_defaults_and_renamed_fields_are_not_counted(self) -> None:
+        source = """
+            public class SampleService {
+                void create(SampleBo bo) {
+                    SampleEntity entity = new SampleEntity();
+                    entity.setTaskId(UUID.randomUUID().toString());
+                    entity.setRunnerId(bo.getExecutorId());
+                    entity.setStatus(Status.PENDING.getCode());
+                    entity.setVersion(0);
+                    entity.setCreatedAt(LocalDateTime.now());
+                }
+            }
+        """
+
+        self.assertEqual([], mapping.find_manual_mappings(source))
+
+    def test_fewer_than_threshold_same_name_fields_are_allowed(self) -> None:
+        source = """
+            public class SampleService {
+                void create(SampleBo bo) {
+                    SampleEntity entity = new SampleEntity();
+                    entity.setName(bo.getName());
+                    entity.setOwnerId(bo.getOwnerId());
+                    entity.setDeadline(bo.getDeadline());
+                }
+            }
+        """
+
+        self.assertEqual([], mapping.find_manual_mappings(source))
+
+    def test_copies_from_different_sources_are_not_combined(self) -> None:
+        source = """
+            public class SampleService {
+                void create(SampleBo bo, Context context) {
+                    SampleEntity entity = new SampleEntity();
+                    entity.setName(bo.getName());
+                    entity.setOwnerId(bo.getOwnerId());
+                    entity.setTenantId(context.getTenantId());
+                    entity.setRegion(context.getRegion());
+                }
+            }
+        """
+
+        self.assertEqual([], mapping.find_manual_mappings(source))
+
+    def test_comments_and_strings_are_ignored(self) -> None:
+        source = """
+            public class SampleService {
+                void create(SampleBo bo) {
+                    SampleEntity entity = new SampleEntity();
+                    // entity.setName(bo.getName());
+                    String example = "entity.setStatus(bo.getStatus());";
+                    entity.setOwnerId(bo.getOwnerId());
+                    entity.setDeadline(bo.getDeadline());
+                }
+            }
+        """
+
+        self.assertEqual([], mapping.find_manual_mappings(source))
+
+    def test_table_mapped_type_without_entity_suffix_is_flagged(self) -> None:
+        source = """
+            public class SampleService {
+                void create(SampleBo bo) {
+                    Order order = new Order();
+                    order.setName(bo.getName());
+                    order.setStatus(bo.getStatus());
+                    order.setOwnerId(bo.getOwnerId());
+                    order.setDeadline(bo.getDeadline());
+                }
+            }
+        """
+
+        violations = mapping.find_manual_mappings(source, {"Order"})
+
+        self.assertEqual(1, len(violations))
+
+    def test_non_persistent_target_is_not_flagged(self) -> None:
+        source = """
+            public class SampleService {
+                void create(SampleBo bo) {
+                    SampleDto dto = new SampleDto();
+                    dto.setName(bo.getName());
+                    dto.setStatus(bo.getStatus());
+                    dto.setOwnerId(bo.getOwnerId());
+                    dto.setDeadline(bo.getDeadline());
+                }
+            }
+        """
+
+        self.assertEqual([], mapping.find_manual_mappings(source, {"Order"}))
+
+    def test_documented_business_mapping_exemption_is_allowed(self) -> None:
+        source = """
+            public class SampleService {
+                void create(SampleBo bo) {
+                    // fitness: allow-manual-object-mapping -- aggregate initialization
+                    Order order = new Order();
+                    order.setName(bo.getName());
+                    order.setStatus(bo.getStatus());
+                    order.setOwnerId(bo.getOwnerId());
+                    order.setDeadline(bo.getDeadline());
+                }
+            }
+        """
+
+        self.assertEqual([], mapping.find_manual_mappings(source, {"Order"}))
+
+    def test_exemption_without_reason_is_rejected(self) -> None:
+        source = """
+            public class SampleService {
+                void create(SampleBo bo) {
+                    // fitness: allow-manual-object-mapping
+                    Order order = new Order();
+                    order.setName(bo.getName());
+                    order.setStatus(bo.getStatus());
+                    order.setOwnerId(bo.getOwnerId());
+                    order.setDeadline(bo.getDeadline());
+                }
+            }
+        """
+
+        self.assertEqual(1, len(mapping.find_manual_mappings(source, {"Order"})))
+
+
+if __name__ == "__main__":
+    unittest.main()

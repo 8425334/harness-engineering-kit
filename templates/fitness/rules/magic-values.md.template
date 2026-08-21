@@ -1,0 +1,47 @@
+---
+dimension: magic_values
+weight: 15
+tier: fast
+metrics:
+  - name: magic_value_check
+    command: python3 docs/fitness/scripts/check_magic_values.py
+    pattern: "Magic value check ok"
+    hard_gate: false
+    tier: fast
+  - name: magic_value_selftest
+    command: python3 docs/fitness/scripts/test_magic_values.py
+    pattern: "OK"
+    hard_gate: true
+    tier: fast
+---
+
+# 魔法值禁用规则
+
+## 当前目标
+
+- 禁止在代码中直接使用魔法值（硬编码的状态码、类型标识、业务常量、非平凡数字）。
+- 魔法值应替换为枚举常量或 `static final` 命名常量。
+- 枚举类本身（`enum` 关键字声明的文件）豁免检查。
+
+## 配置说明
+
+检查范围：
+- 只扫描当前变更中的 Java 源码（`src/main/java/` 下的 `.java` 文件）
+- 枚举类文件（路径包含 `enums` 或类声明为 `enum`）自动跳过
+- 以下内容不视为魔法值：
+  - `static final` 常量定义行
+  - 日志输出、异常消息、中文描述文本
+  - 注解属性值（如 `@GetMapping("/path")`）
+  - 字符串拼接前缀（如 `"STATUS_" + eventType`）
+  - 常见数字（0, 1, -1, 2, 10, 100, 1000, 1024 等）
+
+## 当前检查
+
+- **魔法字符串**：SHOUT_CASE 格式（如 `"PENDING"`、`"SYNC_ORDERS"`）、snake_case 格式、点分隔路径格式
+- **魔法数字**：非平凡数字字面量（≥3 且不属于常见值集合），排除数组下标、位移操作等上下文
+
+## 后续扩展
+
+- 增加对 Boolean 魔法值的检测（`true`/`false` 作为业务含义）
+- 基于已有枚举类反向检查：枚举值存在但代码中仍使用字符串
+- 接入全量扫描作为 deep tier

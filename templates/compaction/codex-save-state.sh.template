@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+PROJECT_DIR="${CODEX_PROJECT_DIR:-${CODEX_PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}}"
+STATE_DIR="${CODEX_STATE_DIR:-${PROJECT_DIR}/.codex-state}"
+CONTRACT="${PROJECT_DIR}/.codex/round-contract.md"
+
+mkdir -p "${STATE_DIR}"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+
+if [ -f "${CONTRACT}" ]; then
+  cp "${CONTRACT}" "${STATE_DIR}/round-contract-${STAMP}.md"
+fi
+
+if [ ! -t 0 ]; then
+  cat > "${STATE_DIR}/compact-${STAMP}.json" 2>/dev/null || true
+fi
+
+ls -1t "${STATE_DIR}"/round-contract-*.md 2>/dev/null | tail -n +21 | xargs -r rm -f
+ls -1t "${STATE_DIR}"/compact-*.json 2>/dev/null | tail -n +21 | xargs -r rm -f
+
+exit 0

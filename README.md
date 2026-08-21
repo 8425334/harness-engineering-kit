@@ -65,12 +65,13 @@ This directory contains a proven AI-assisted development methodology built from 
 |-----------|----------|-------------|
 | **SDD** (Spec-Driven Development) | `core/sdd-workflow.md` | Spec-first development process — all non-trivial changes require specs before implementation |
 | **Fitness** (Quality Gate) | `core/fitness-framework.md` | Tiered quality check system defining AI Agent "completion conditions" |
-| **Harness Engineering** | `core/harness-engineering.md` | AI Agent engineering system: entry config, path documents, skills, memory |
+| **Harness Engineering** | `core/harness-engineering.md` | AI Agent engineering system: entry config, path documents, skills, memory, compaction preservation |
 | **Mandatory Skills** | `core/mandatory-skills.md` | 3 required Agent skills: OpenSpec, Superpowers, Codegraph |
 
 On top of these components sit unified development methodologies:
 - **Backend**: **RAMER Cycle** (`core/ramer-cycle.md` + `core/ramer-agent.md`) — abstraction-first, contract-before-implementation, fitness gate
-- **Frontend**: **FE-Engineering RADIR Workflow** (`core/frontend-engineering.md`) — 4 iron rules, component decomposition, multi-agent parallel
+- **Frontend**: **FE-Engineering RADIR Workflow** (`core/frontend-engineering.md`) — 4 iron rules, component decomposition
+- **Coordination**: **Multi-Agent Parallel Mode** (`core/multi-agent.md`) — contract-first dual-agent execution for frontend-backend tasks
 - **General**: **Abstraction-First Modeling** (`core/abstraction-first.md`), **DDD Modeling** (`core/ddd-modeling.md`), **Debug Log Discipline** (`core/debug-log-discipline.md`)
 
 ## Who Needs This
@@ -99,14 +100,15 @@ docs/methodology/
 │   ├── ddd-modeling.md                 # Domain-Driven Design modeling
 │   ├── debug-log-discipline.md         # Debug log discipline
 │   ├── frontend-architecture.md        # AI-native frontend architecture (AIDM + FDD + RSC)
-│   ├── frontend-engineering.md         # Frontend engineering capability model (4 iron rules + multi-agent parallel)
+│   ├── frontend-engineering.md         # Frontend engineering capability model (4 iron rules + component decomposition)
+│   ├── multi-agent.md                  # Multi-agent parallel mode (frontend-backend coordination)
 │   ├── mandatory-skills.md             # Mandatory Skill configuration
 │   ├── sdd-workflow.md                 # SDD workflow
 │   ├── fitness-framework.md            # Fitness quality gate
 │   └── harness-engineering.md          # Harness engineering
 ├── i18n/
 │   ├── glossary.md                     # Terminology reference (zh ↔ en)
-│   └── zh/core/                        # Chinese translations (11 files)
+│   └── zh/core/                        # Chinese translations (12 files)
 ├── examples/
 │   └── coil-backend-api/               # Adaptation example: Java Spring Boot + Vue 3 monorepo
 └── templates/                          # Copy-and-use templates
@@ -114,8 +116,10 @@ docs/methodology/
     ├── openspec-config.yaml.template   # SDD config
     ├── sdd-readme.md.template          # SDD process doc
     ├── path-document.md.template       # Path document (AI.md + ai.json)
-    ├── fitness/                        # Fitness framework templates
+    ├── fitness/                        # Fitness checks, executable self-tests, Java AST scanner, rules
     ├── ramer/                          # RAMER Agent templates
+    ├── multi-agent/                    # Claude/Codex multi-agent parallel skill template
+    ├── compaction/                     # Claude hooks + explicit Codex preservation fallback
     ├── fe-engineering/                 # Frontend engineering integration templates
     └── mandatory-skills/               # Mandatory Skill declaration templates
 ```
@@ -129,7 +133,7 @@ docs/methodology/
 5. **Polymorphism over branching** — Nested `if/else` ≥ 2 or `switch` ≥ 3 → Strategy/Factory/Handler
 6. **Three-phase debug logging** — Log after coding, self-check expectations via tests, clean up temporary logs
 7. **Completion conditions must be executable** — Rules in the repo, readable by humans, executable by scripts
-8. **Frontend-backend parallel execution** — After contract definition, dual agents develop in parallel, then merge and verify
+8. **Frontend-backend parallel execution** (`core/multi-agent.md`) — After contract definition, dual agents develop in parallel, then merge and verify
 9. **Complete Agent Skill configuration** — Agent must have OpenSpec, Superpowers, and Codegraph; missing any means degraded capability
 
 ## Relationship with VibeCoding

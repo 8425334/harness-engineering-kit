@@ -1,0 +1,440 @@
+#!/usr/bin/env python3
+"""Check that Markdown Java code blocks use simple class names.
+
+Scans Markdown fenced code blocks in the *current change set* (unstaged,
+staged, and untracked `.md` files) and reports package-qualified class names
+used in type positions — fields, parameters, return types, generics,
+annotations, casts, constructor calls and method references — when a simpler
+imported name should be used instead.
+
+The checker is intentionally lightweight: it does not parse a full Java AST.
+It tracks CommonMark fences, classifies Java-like blocks, blanks comments /
+strings / URLs, ignores `package` and `import` declarations, and matches
+tokens shaped like ``pkg.seg.TypeName``. Necessary qualified names may be
+retained with a precise, same-fence, single-line exemption marker carrying a
+non-empty reason:
+
+    // fitness: allow-qualified-class-name: name collision with foo.Bar
+
+Exit code is non-zero on any unapproved violation. On success the stable
+marker ``Code block simple class names ok`` is printed so the fitness runner
+can match it.
+
+JVM-centric. Skip or replace if your project does not carry JVM-style code
+snippets in Markdown docs. Self-contained — Python standard library only.
+
+Copy to: docs/fitness/scripts/check_code_block_simple_class_names.py
+"""
+# {{CHECK_CODE_BLOCK_SIMPLE_CLASS_NAMES_TEMPLATE}}
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+# --- Fence / language classification ----------------------------------------
+
+# A fence opens with 3+ backticks or 3+ tildes, optionally preceded by up to
+# 3 spaces (CommonMark). The rest of the line is the info string; the first
+# word is the language hint.
+FENCE_OPEN_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})\s*(.*?)\s*$")
+
+# Configure: languages treated as Java-like (JVM family). An *omitted* language
+# is also scanned when the block carries Java syntax cues (see has_java_cues).
+JAVA_LANGS = {  # {{JAVA_LANGS}}
+    "java", "java21", "kotlin", "groovy", "scala",
+}
+
+# Java syntax cues used to scan fences with no (or unknown) language.
+JAVA_CUE_RE = re.compile(
+    r"(?:"
+    r"\bimport\s+(?:static\s+)?[A-Za-z_]|"          # import / import static
+    r"\bpackage\s+[A-Za-z_]|"                       # package
+    r"\b(?:public|private|protected)\s+(?:class|interface|enum|record|final|abstract|static)\b|"
+    r"\b(?:class|interface|enum|record)\s+[A-Za-z_]|"
+    r"@[A-Z][A-Za-z0-9_]*|@"                         # annotations
+    r"\bvoid\s+[A-Za-z_]+\s*\(|"                     # void method
+    r"\b(?:extends|implements)\s+|"
+    r"\bnew\s+[A-Z]"
+    r")"
+)
+
+# A package-qualified type token: one or more lowercase/underscore package
+# segments followed by an UpperCase type segment. e.g. java.util.Map,
+# com.example.Foo, com.example.Bar.Baz (nested).
+QUAL_TOKEN_RE = re.compile(r"(?:[a-z_][a-z0-9_]*\.)+[A-Z][A-Za-z0-9_]*(?:\.[A-Z][A-Za-z0-9_]*)*")
+
+# Declaration lines whose qualified names are not "type positions" and must
+# never be flagged.
+DECL_RE = re.compile(r"^\s*(?:static\s+)?(?:import|package)\s+")
+
+# Exemption marker. Applies to one line only; must carry a non-empty reason.
+MARKER_RE = re.compile(r"fitness:\s*allow-qualified-class-name\b", re.IGNORECASE)
+
+# URLs that may contain dotted segments — never violations.
+URL_RE = re.compile(r"\b(?:https?|ftp)://[^\s)\"']+")
+
+# --- Path discovery -----------------------------------------------------------
+
+# Configure: file names / path parts ignored when collecting the change set.
+IGNORED_CHANGED_NAMES = {".DS_Store"}
+IGNORED_CHANGED_PARTS = {"__pycache__", "target", "node_modules", "dist", "build", ".git"}
+# Configure: directories skipped entirely (archive, VCS metadata, build output,
+# dependency dirs). Add project-specific archive/doc dirs as needed.
+EXCLUDED_PATH_PARTS = {  # {{EXCLUDED_PATH_PARTS}}
+    "archive",
+    ".git",
+    "target",
+    "node_modules",
+    "dist",
+    "build",
+}
+
+
+def git_lines(args: list[str]) -> list[str]:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def _is_ignored_path(path: str) -> bool:
+    parts = Path(path).parts
+    return (
+        Path(path).name in IGNORED_CHANGED_NAMES
+        or any(part in IGNORED_CHANGED_PARTS for part in parts)
+        or path.endswith(".pyc")
+    )
+
+
+def _is_excluded_path(path: str) -> bool:
+    """Archive / VCS / build / dependency directories are out of scope."""
+    parts = Path(path).parts
+    return any(part in EXCLUDED_PATH_PARTS for part in parts)
+
+
+def changed_markdown_paths() -> list[str]:
+    """Return sorted changed (added/modified/untracked) Markdown file paths."""
+    changed: set[str] = set()
+    changed.update(git_lines(["diff", "--name-only", "--diff-filter=ACMR"]))
+    changed.update(git_lines(["diff", "--cached", "--name-only", "--diff-filter=ACMR"]))
+    changed.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
+    result = []
+    for path in sorted(changed):
+        if _is_ignored_path(path):
+            continue
+        if _is_excluded_path(path):
+            continue
+        if not path.endswith(".md"):
+            continue
+        # Skip deleted files (path may appear in diff --name-only but file gone).
+        if not (PROJECT_ROOT / path).is_file():
+            continue
+        result.append(path)
+    return result
+
+
+# --- Sanitization state ------------------------------------------------------
+
+
+@dataclass
+class _SanState:
+    """State carried across lines while blanking comments and strings."""
+
+    in_block_comment: bool = False
+    in_text_block: bool = False
+
+
+def _blank_urls(line: str) -> str:
+    return URL_RE.sub(lambda m: " " * len(m.group(0)), line)
+
+
+def sanitize_line(raw: str, state: _SanState) -> str:
+    """Return ``raw`` with comments, string literals and URLs blanked.
+
+    Column positions are preserved (blanked regions become spaces) so that
+    token offsets still map back to the original line. Block comments and
+    text blocks (``\"\"\"``) span across lines via ``state``.
+    """
+    line = _blank_urls(raw)
+    chars = list(line)
+    n = len(chars)
+    out: list[str] = []
+    i = 0
+    in_block = state.in_block_comment
+
+    if state.in_text_block:
+        # Blank until a closing """ on this line.
+        end = line.find('"""')
+        if end == -1:
+            return " " * n
+        # blank up to and including the closing delimiter
+        out.extend([" "] * (end + 3))
+        i = end + 3
+        state.in_text_block = False
+
+    while i < n:
+        two = line[i : i + 2]
+        three = line[i : i + 3]
+        if in_block:
+            if two == "*/":
+                out.extend([" ", " "])
+                i += 2
+                in_block = False
+                continue
+            out.append(" ")
+            i += 1
+            continue
+        if two == "/*":
+            out.extend([" ", " "])
+            i += 2
+            in_block = True
+            continue
+        if two == "//":
+            out.extend([" "] * (n - i))
+            i = n
+            continue
+        if three == '"""':
+            # text block: blank to end of line; if no close, continue next line.
+            out.extend([" ", " ", " "])
+            i += 3
+            rest = line[i:]
+            close = rest.find('"""')
+            if close == -1:
+                out.extend([" "] * len(rest))
+                state.in_text_block = True
+                i = n
+            else:
+                out.extend([" "] * (close + 3))
+                i = i + close + 3
+            continue
+        c = chars[i]
+        if c in ('"', "'"):
+            quote = c
+            out.append(" ")
+            i += 1
+            while i < n and chars[i] != quote and chars[i] not in "\n":
+                if chars[i] == "\\" and i + 1 < n:
+                    out.extend([" ", " "])
+                    i += 2
+                    continue
+                out.append(" ")
+                i += 1
+            if i < n and chars[i] == quote:
+                out.append(" ")
+                i += 1
+            continue
+        out.append(c)
+        i += 1
+
+    state.in_block_comment = in_block
+    return "".join(out)
+
+
+# --- Marker / reason handling -----------------------------------------------
+
+
+def _marker_reason(text: str) -> str | None:
+    """Return the trimmed reason after a marker on ``text``.
+
+    Returns the reason string (possibly empty) when a marker is present, or
+    ``None`` when no marker is present. An empty reason is invalid.
+    """
+    m = MARKER_RE.search(text)
+    if not m:
+        return None
+    tail = text[m.end():]
+    # Allow separators like : - — # / | before the reason.
+    tail = tail.lstrip(": -—#/| \t")
+    # A reason must contain at least one letter or digit word.
+    if not re.search(r"[A-Za-z0-9]", tail):
+        return ""
+    return tail.strip()
+
+
+def _line_has_valid_marker(text: str) -> bool:
+    """True when ``text`` carries a marker with a non-empty reason."""
+    reason = _marker_reason(text)
+    return reason is not None and reason != ""
+
+
+def _line_has_marker_without_reason(text: str) -> bool:
+    """True when ``text`` carries a marker whose reason is empty/missing."""
+    reason = _marker_reason(text)
+    return reason is not None and reason == ""
+
+
+# --- Fence classification ----------------------------------------------------
+
+
+def _fence_language(info: str) -> str:
+    """First word of the fence info string, lowercased."""
+    info = info.strip()
+    if not info:
+        return ""
+    return info.split()[0].lower()
+
+
+def _is_java_fence(language: str, block_text: str) -> bool:
+    """A fence is Java-like when its language is in JAVA_LANGS or it is
+    omitted/unknown but the block carries Java syntax cues."""
+    if language in JAVA_LANGS:
+        return True
+    if language != "":
+        return False
+    return bool(JAVA_CUE_RE.search(block_text))
+
+
+# --- Scanning ---------------------------------------------------------------
+
+
+@dataclass
+class Violation:
+    path: str
+    fence_start: int
+    line_no: int
+    token: str
+    reason: str
+
+    def format(self) -> str:
+        return (
+            f"  {self.path}:{self.line_no} (fence@{self.fence_start}): "
+            f"qualified class name '{self.token}' — {self.reason}"
+        )
+
+
+def _scan_block(
+    path: str,
+    fence_start: int,
+    body_lines: list[tuple[int, str, str]],
+) -> list[Violation]:
+    """Scan one Java-like fenced block for unapproved qualified class names.
+
+    ``body_lines`` is a list of ``(line_no, raw_line, sanitized_line)`` tuples
+    for lines strictly inside the fence.
+    """
+    violations: list[Violation] = []
+    for idx, (line_no, raw, sanitized) in enumerate(body_lines):
+        if DECL_RE.match(raw):
+            continue
+        for m in QUAL_TOKEN_RE.finditer(sanitized):
+            token = m.group(0)
+            # Marker may be on this line or the immediately preceding line
+            # (within the same fence).
+            preceding_raw = body_lines[idx - 1][1] if idx > 0 else ""
+            if _line_has_valid_marker(raw) or _line_has_valid_marker(preceding_raw):
+                continue
+            if _line_has_marker_without_reason(raw) or _line_has_marker_without_reason(preceding_raw):
+                violations.append(
+                    Violation(
+                        path, fence_start, line_no, token,
+                        "exemption marker 'fitness: allow-qualified-class-name' requires a non-empty reason",
+                    )
+                )
+            else:
+                violations.append(
+                    Violation(
+                        path, fence_start, line_no, token,
+                        f"use simple class name '{token.split('.')[-1]}' after importing it",
+                    )
+                )
+    return violations
+
+
+def scan_text(text: str, path: str = "<string>") -> list[Violation]:
+    """Pure scanner over a Markdown document. Returns all violations."""
+    lines = text.splitlines()
+    violations: list[Violation] = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i]
+        m = FENCE_OPEN_RE.match(line)
+        if not m:
+            i += 1
+            continue
+        fence_chars = m.group(1)
+        fence_lang = _fence_language(m.group(2))
+        fence_start = i + 1  # 1-indexed
+        i += 1
+        # Collect the body until the matching close fence.
+        body_raw: list[tuple[int, str]] = []
+        closed = False
+        while i < n:
+            close_m = FENCE_OPEN_RE.match(lines[i])
+            if close_m and close_m.group(1)[0] == fence_chars[0] and len(close_m.group(1)) >= len(fence_chars):
+                closed = True
+                i += 1
+                break
+            body_raw.append((i + 1, lines[i]))
+            i += 1
+        if not closed:
+            # Unterminated fence — scan what we have.
+            pass
+        body_text = "\n".join(raw for _, raw in body_raw)
+        if not _is_java_fence(fence_lang, body_text):
+            continue
+        # Sanitize preserving line numbers.
+        state = _SanState()
+        sanitized_body: list[tuple[int, str, str]] = []
+        for line_no, raw in body_raw:
+            sanitized = sanitize_line(raw, state)
+            sanitized_body.append((line_no, raw, sanitized))
+        violations.extend(_scan_block(path, fence_start, sanitized_body))
+    return violations
+
+
+def scan_file(rel_path: str) -> list[Violation]:
+    abs_path = PROJECT_ROOT / rel_path
+    try:
+        text = abs_path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return []
+    return scan_text(text, rel_path)
+
+
+# --- Entry point ------------------------------------------------------------
+
+SUCCESS_MARKER = "Code block simple class names ok"
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--check",
+        choices=("changed", "all"),
+        default="changed",
+        help="changed (default, scan current change set) or all (no-op alias)",
+    )
+    args = parser.parse_args(argv)
+
+    paths = changed_markdown_paths()
+    violations: list[Violation] = []
+    for rel_path in paths:
+        violations.extend(scan_file(rel_path))
+
+    if violations:
+        print("Code block qualified-class-name violations:")
+        for v in violations:
+            print(v.format())
+        print(f"  ({len(violations)} violation{'s' if len(violations) != 1 else ''})")
+        return 1
+
+    print(SUCCESS_MARKER)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

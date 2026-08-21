@@ -64,12 +64,13 @@ bash docs/methodology/scripts/init.sh --dry-run    # 预览操作，不实际修
 |------|------|------|
 | **SDD** (Spec-Driven Development) | `core/sdd-workflow.md` | 规范驱动的开发流程，所有非 trivial 变更先写规格再实现 |
 | **Fitness** (质量门禁) | `core/fitness-framework.md` | 分层质量检查体系，定义 AI Agent 的"完成条件" |
-| **Harness Engineering** | `core/harness-engineering.md` | AI Agent 的工程化系统：入口配置、路径文档、技能、记忆 |
+| **Harness Engineering** | `core/harness-engineering.md` | AI Agent 的工程化系统：入口配置、路径文档、技能、记忆、压缩保持 |
 | **Mandatory Skills** | `core/mandatory-skills.md` | Agent 必须具备的 3 个 Skill：OpenSpec、Superpowers、Codegraph |
 
 四个组件之上是统一的开发方法论：
 - **后端**：**RAMER 循环** (`core/ramer-cycle.md` + `core/ramer-agent.md`) — 抽象优先、契约先于实现、fitness 门禁
-- **前端**：**FE-Engineering RADIR 工作流** (`core/frontend-engineering.md`) — 4 铁律、组件分解、多 Agent 并行
+- **前端**：**FE-Engineering RADIR 工作流** (`core/frontend-engineering.md`) — 4 铁律、组件分解
+- **协同**：**多 Agent 并行模式** (`core/multi-agent.md`) — 契约先行，前后端联动双 Agent 并行
 - **通用**：**抽象优先建模** (`core/abstraction-first.md`)、**DDD 建模** (`core/ddd-modeling.md`)、**调试日志纪律** (`core/debug-log-discipline.md`)
 
 ## 谁需要用
@@ -93,7 +94,8 @@ docs/methodology/
 │   ├── ddd-modeling.md                 # 领域驱动设计建模
 │   ├── debug-log-discipline.md         # 调试日志纪律
 │   ├── frontend-architecture.md        # AI 原生前端架构（AIDM + FDD + RSC）
-│   ├── frontend-engineering.md         # 前端工程能力模型（4铁律 + 多Agent并行）
+│   ├── frontend-engineering.md         # 前端工程能力模型（4铁律 + 组件分解）
+│   ├── multi-agent.md                  # 多 Agent 并行模式（前后端联动）
 │   ├── mandatory-skills.md             # 强制性 Skill 配置
 │   ├── sdd-workflow.md                 # SDD 流程
 │   ├── fitness-framework.md            # Fitness 质量门禁
@@ -106,13 +108,25 @@ docs/methodology/
     ├── fitness/                        # Fitness 框架模板
     │   ├── README.md                   # 占位符参考 + 迁移步骤
     │   ├── fitness.py.template         # Fitness runner
-    │   ├── check_*.py.template         # 10 个可移植检查脚本
-    │   └── rules/*.md.template         # 11 个维度规则模板
+    │   ├── check_*.py.template         # 18 个可移植检查脚本
+    │   ├── test_*.py.template          # 6 个通用复杂门禁可执行自测
+    │   ├── JavaParameterScanner.java.template # Java 21 AST 参数扫描器
+    │   └── rules/*.md.template         # 14 个维度规则模板
     ├── ramer/                          # RAMER Agent 模板
     │   ├── README.md                   # 迁移步骤
-    │   ├── SKILL.md.template           # /ramer skill 定义
-    │   ├── ramer-design.js.template    # 设计工作流
-    │   └── ramer-implement.js.template # 实现工作流
+    │   ├── SKILL.md.template           # /ramer skill 定义（自包含）
+    │   ├── ramer-design.js.template    # 可选：设计工作流
+    │   └── ramer-implement.js.template # 可选：实现工作流
+    ├── multi-agent/                    # Claude/Codex 多 Agent 并行模板
+    │   ├── README.md                   # 迁移步骤
+    │   └── SKILL.md.template           # /multi-agent skill 定义（自包含）
+    ├── compaction/                     # Token 压缩保持模板
+    │   ├── README.md                   # 迁移步骤
+    │   ├── round-contract.md.template  # 本轮契约文件
+    │   ├── save-state.sh.template      # PreCompact 存盘 hook
+    │   ├── settings-hooks.json.template # PreCompact + SessionStart 接线片段
+    │   ├── codex-round-contract.md.template # Codex 本轮契约
+    │   └── codex-save-state.sh.template # Codex 显式存档脚本
     ├── fe-engineering/                 # 前端工程集成模板
     │   ├── README.md                   # 迁移步骤
     │   ├── SKILL.md                    # /fe skill 定义
@@ -131,7 +145,7 @@ docs/methodology/
 5. **多态优于分支** — 嵌套 if/else ≥ 2 或 switch ≥ 3 → Strategy/Factory/Handler
 6. **调试日志三阶段** — 编码后打日志、跑测试自检预期、通过后清理临时日志
 7. **完成条件必须可执行** — 规则在仓库中，可被人阅读，也可被脚本执行
-8. **前后端联动并行执行** — 契约定义后，前后端双 Agent 并行开发，合并验证
+8. **前后端联动并行执行** (`core/multi-agent.md`) — 契约定义后，前后端双 Agent 并行开发，合并验证
 9. **完备的 Agent Skill 配置** — Agent 必须具备 OpenSpec、Superpowers、Codegraph 三项基础能力，缺失即降级
 
 ## 与 VibeCoding 的关系

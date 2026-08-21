@@ -1,0 +1,46 @@
+---
+dimension: java_documentation
+weight: 15
+tier: fast
+metrics:
+  - name: java_documentation_contract
+    command: python3 docs/fitness/scripts/check_java_documentation_contract.py
+    pattern: "Java documentation contract ok"
+    hard_gate: false
+    tier: fast
+  - name: java_documentation_selftest
+    command: python3 docs/fitness/scripts/test_java_documentation_contract.py
+    pattern: "OK"
+    hard_gate: true
+    tier: fast
+---
+
+# Java 文档契约规则
+
+## 当前目标
+
+- 对当前变更集中新增或修改的 Java 生产代码做文档注释校验。
+- 核心类（Service、Controller、Handler、Adapter 等）必须有关注释。
+- 包含状态流转或分支逻辑的方法必须有流程注释。
+- 数据模型类（BO/DTO/VO/Entity）的字段必须有注释或注解说明。
+
+## 配置说明
+
+检查范围：
+- 只扫描当前变更中的 Java 源码（`src/main/java/` 下的 `.java` 文件）
+- 数据模型类：`domain` 路径下的类，或文件名以 `Bo.java`、`DTO.java`、`Vo.java`、`VO.java`、`Query.java` 等结尾的类
+- 核心代码类：`controller`、`service`、`support`、`application`、`infrastructure`、`adapter`、`job` 路径下的类，或文件名以 `ServiceImpl.java`、`Controller.java`、`Adapter.java`、`Handler.java` 等结尾的类
+
+## 当前检查
+
+- 新增/修改的类必须有类注释（`/** ... */`）
+- 新增/修改的核心方法必须有方法注释
+- 状态流转方法（包含 `status`/`state` 等关键字 + 分支逻辑）必须有流程注释
+- 分支数 ≥ 4 或包含 `switch` 的方法必须有流程注释
+- 新增/修改的数据模型字段必须有注释或 `@Schema`/`@ExcelProperty` 等注解说明
+- 跳过：`@Override` 方法、getter/setter、简单委托方法、构造器
+
+## 后续扩展
+
+- 增加注释质量评分（注释长度、完整性）
+- 接入全量校验作为 deep tier

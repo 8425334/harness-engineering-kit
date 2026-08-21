@@ -245,6 +245,8 @@ user-management/
 
 ## 7. 多 Agent 并行模式
 
+> 多 Agent 协调是跨切面编排模式，并非前端专属。完整说明（契约模板、启动规则、合并验证、降级策略）：**`core/multi-agent.md`** + Skill `/multi-agent`（`templates/multi-agent/SKILL.md.template`）。
+
 当任务**同时涉及前端和后端**代码变更时，自动启用双 Agent 并行执行，而非序列执行。
 
 ### 7.1 执行架构

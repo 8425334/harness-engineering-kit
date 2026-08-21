@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+"""Self-tests for magic value fitness rules."""
+
+from __future__ import annotations
+
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from shutil import rmtree
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import check_magic_values as magic
+
+
+class MagicValueCheckTest(unittest.TestCase):
+    def write_java(self, source: str, subdir: str = "service") -> Path:
+        directory = Path(tempfile.mkdtemp(
+            dir=magic.PROJECT_ROOT,
+            prefix=f"src_main_java_test_{subdir}_"
+        ))
+        src_dir = directory / "src" / "main" / "java" / "test"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        path = src_dir / "SampleService.java"
+        path.write_text(source, encoding="utf-8")
+        self.addCleanup(lambda: rmtree(directory, ignore_errors=True))
+        return path
+
+    def test_enum_class_is_exempt(self) -> None:
+        path = self.write_java(
+            """
+            package test;
+
+            public enum OrderStatus {
+                PENDING,
+                COMPLETED,
+                CANCELLED
+            }
+            """,
+            subdir="enums",
+        )
+        self.assertTrue(magic.is_enum_class(path))
+
+    def test_magic_shout_case_string_is_flagged(self) -> None:
+        path = self.write_java(
+            """
+            package test;
+
+            public class SampleService {
+                public void process() {
+                    String status = "PENDING";
+                    if ("COMPLETED".equals(status)) {
+                        return;
+                    }
+                }
+            }
+            """,
+        )
+        violations = magic.check_java_file(path)
+        self.assertTrue(any("PENDING" in v for v in violations))
+        self.assertTrue(any("COMPLETED" in v for v in violations))
+
+    def test_constant_definition_is_not_flagged(self) -> None:
+        path = self.write_java(
+            """
+            package test;
+
+            public class SampleService {
+                private static final String STATUS_ACTIVE = "ACTIVE";
+                private static final int MAX_RETRIES = 3;
+
+                public void process() {
+                    String status = STATUS_ACTIVE;
+                    for (int i = 0; i < MAX_RETRIES; i++) {
+                        doWork();
+                    }
+                }
+
+                private void doWork() {}
+            }
+            """,
+        )
+        violations = magic.check_java_file(path)
+        self.assertEqual([], violations)
+
+    def test_chinese_description_is_not_flagged(self) -> None:
+        path = self.write_java(
+            """
+            package test;
+
+            public class SampleService {
+                public void process() {
+                    String msg = "订单状态流转完成，进入下一阶段";
+                    log.info("处理结果: {}", msg);
+                }
+
+                private void log(String fmt, Object... args) {}
+            }
+            """,
+        )
+        violations = magic.check_java_file(path)
+        self.assertEqual([], violations)
+
+    def test_log_and_exception_lines_are_not_flagged(self) -> None:
+        path = self.write_java(
+            """
+            package test;
+
+            public class SampleService {
+                public void process() {
+                    log.info("SYNC_ORDERS completed successfully");
+                    throw new RuntimeException("ORDER_FAILED");
+                }
+
+                private void log(String fmt, Object... args) {}
+            }
+            """,
+        )
+        violations = magic.check_java_file(path)
+        self.assertEqual([], violations)
+
+    def test_magic_number_is_flagged(self) -> None:
+        path = self.write_java(
+            """
+            package test;
+
+            public class SampleService {
+                public void process() {
+                    int timeout = 3000;
+                    int maxSize = 50000;
+                }
+            }
+            """,
+        )
+        violations = magic.check_java_file(path)
+        self.assertTrue(any("3000" in v for v in violations))
+        self.assertTrue(any("50000" in v for v in violations))
+
+    def test_common_numbers_are_not_flagged(self) -> None:
+        path = self.write_java(
+            """
+            package test;
+
+            public class SampleService {
+                public void process() {
+                    int count = 0;
+                    int flag = 1;
+                    int neg = -1;
+                    int small = 2;
+                    int percent = 100;
+                    int kb = 1024;
+                }
+            }
+            """,
+        )
+        violations = magic.check_java_file(path)
+        self.assertEqual([], violations)
+
+    def test_prefix_string_for_concatenation_is_not_flagged(self) -> None:
+        path = self.write_java(
+            """
+            package test;
+
+            public class SampleService {
+                public void process(String eventType) {
+                    String key = "RPA_" + eventType;
+                    String full = "PREFIX_" + key;
+                }
+            }
+            """,
+        )
+        violations = magic.check_java_file(path)
+        self.assertEqual([], violations)
+
+
+if __name__ == "__main__":
+    unittest.main()
