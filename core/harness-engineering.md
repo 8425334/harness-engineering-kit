@@ -176,6 +176,8 @@ type: user | feedback | project | reference
 
 Auto-compaction is lossy — when the context window is compacted, the in-flight task's contract and state can be silently dropped, and the agent loses the thread mid-task. The compaction-preservation pattern makes the round survive compaction: **save the round contract to disk before compaction, re-inject it after compaction**.
 
+> For the byte-stable prompt-caching prefix invariant and the full five-dimension context capability model, see `context-capability.md`.
+
 ### The Pattern
 
 ```

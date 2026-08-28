@@ -84,6 +84,17 @@ grep -r "codegraph" ~/.claude/settings.* 2>/dev/null || echo "TODO: add codegrap
 
 See `docs/methodology/core/mandatory-skills.md` for full details on responsibilities, fallback behavior, and the skill dependency matrix.
 
+## Context Capability
+
+Keep the prompt prefix byte-stable and the per-request delta small — that is what drives ~99%+ prompt-cache hit rates. Never rewrite the top-level system prompt mid-session; append `{"role":"system",...}` messages instead, and consolidate tool calls (≤ ~15 content blocks per turn) so the cache breakpoint can still find the prefix. Read docs as a map (targeted reads) so compaction stays rare.
+
+```bash
+# Read the full model and the caching invariant:
+# docs/methodology/core/context-capability.md
+```
+
+See `docs/methodology/core/context-capability.md` for the byte-stable prefix invariant and the five-dimension context capability model (window & compression, cross-session memory, injection precision, caching efficiency, reasoning depth per token).
+
 ## Build & Run Commands
 
 ```bash
