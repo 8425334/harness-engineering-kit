@@ -63,6 +63,17 @@ Key terms used across the methodology, with Chinese-English equivalents.
 | Auto-Trigger | 自动触发 | Global CLAUDE.md detects file context and auto-applies RAMER or FE-Engineering |
 | Memory System | 记忆系统 | Persistent file-based memory indexed by MEMORY.md |
 
+## Context & Caching / 上下文与缓存
+
+| English | 中文 | Description |
+|---------|------|-------------|
+| Prompt Caching | 提示词缓存 | Anthropic server-side cache; byte-exact prefix match; cache reads bill ~0.1× base input |
+| Context Capability | 上下文能力 | Five-dimension model: window & compression, cross-session memory, injection precision, caching efficiency, reasoning depth per token |
+| Compaction | 上下文压缩 | Lossy auto-summarization of the context window; rewriting history invalidates the cache prefix |
+| Cache Read | 缓存读取 | Tokens served from a cached prefix instead of reprocessed; billed at a reduced rate |
+| Token | 令牌 | Basic unit of LLM context and billing |
+| 20-block lookback | 20 块回看窗口 | A cache breakpoint can only walk back ≤20 content blocks to find the longest prefix match; exceeding it causes a silent cache miss |
+
 ## Transplant & Init / 移植与初始化
 
 | English | 中文 | Description |

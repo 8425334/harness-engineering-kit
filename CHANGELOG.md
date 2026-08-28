@@ -20,3 +20,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Portable templates for CLAUDE.md, OpenSpec config, fitness, RAMER agent, FE-engineering, mandatory skills
 - Chinese translations in `i18n/zh/core/`
 - Example adaptation: coil-backend-api in `examples/coil-backend-api/`
+- Context capability & prompt caching: new core doc `core/context-capability.md` (Chinese mirror `i18n/zh/core/context-capability.md`) — byte-stable prompt-caching prefix invariant, five-dimension context capability model, glossary terms, and a CLAUDE.md template section

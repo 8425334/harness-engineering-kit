@@ -72,7 +72,7 @@ On top of these components sit unified development methodologies:
 - **Backend**: **RAMER Cycle** (`core/ramer-cycle.md` + `core/ramer-agent.md`) — abstraction-first, contract-before-implementation, fitness gate
 - **Frontend**: **FE-Engineering RADIR Workflow** (`core/frontend-engineering.md`) — 4 iron rules, component decomposition
 - **Coordination**: **Multi-Agent Parallel Mode** (`core/multi-agent.md`) — contract-first dual-agent execution for frontend-backend tasks
-- **General**: **Abstraction-First Modeling** (`core/abstraction-first.md`), **DDD Modeling** (`core/ddd-modeling.md`), **Debug Log Discipline** (`core/debug-log-discipline.md`)
+- **General**: **Abstraction-First Modeling** (`core/abstraction-first.md`), **DDD Modeling** (`core/ddd-modeling.md`), **Debug Log Discipline** (`core/debug-log-discipline.md`), **Context Capability** (`core/context-capability.md`)
 
 ## Who Needs This
 
@@ -105,10 +105,11 @@ docs/methodology/
 │   ├── mandatory-skills.md             # Mandatory Skill configuration
 │   ├── sdd-workflow.md                 # SDD workflow
 │   ├── fitness-framework.md            # Fitness quality gate
+│   ├── context-capability.md           # Context capability & prompt caching
 │   └── harness-engineering.md          # Harness engineering
 ├── i18n/
 │   ├── glossary.md                     # Terminology reference (zh ↔ en)
-│   └── zh/core/                        # Chinese translations (12 files)
+│   └── zh/core/                        # Chinese translations (13 files)
 ├── examples/
 │   └── coil-backend-api/               # Adaptation example: Java Spring Boot + Vue 3 monorepo
 └── templates/                          # Copy-and-use templates
@@ -135,6 +136,7 @@ docs/methodology/
 7. **Completion conditions must be executable** — Rules in the repo, readable by humans, executable by scripts
 8. **Frontend-backend parallel execution** (`core/multi-agent.md`) — After contract definition, dual agents develop in parallel, then merge and verify
 9. **Complete Agent Skill configuration** — Agent must have OpenSpec, Superpowers, and Codegraph; missing any means degraded capability
+10. **Context Capability & Prompt Caching** (`core/context-capability.md`) — Keep the prompt prefix byte-stable and the per-request delta small; five-dimension context capability model (window, memory, injection, caching, reasoning depth)
 
 ## Relationship with VibeCoding
 

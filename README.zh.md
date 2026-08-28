@@ -99,6 +99,7 @@ docs/methodology/
 │   ├── mandatory-skills.md             # 强制性 Skill 配置
 │   ├── sdd-workflow.md                 # SDD 流程
 │   ├── fitness-framework.md            # Fitness 质量门禁
+│   ├── context-capability.md           # 上下文能力与提示词缓存
 │   └── harness-engineering.md          # Harness 工程化
 └── templates/                          # 复制即用的模板
     ├── CLAUDE.md.template              # AI 入口配置
@@ -147,6 +148,7 @@ docs/methodology/
 7. **完成条件必须可执行** — 规则在仓库中，可被人阅读，也可被脚本执行
 8. **前后端联动并行执行** (`core/multi-agent.md`) — 契约定义后，前后端双 Agent 并行开发，合并验证
 9. **完备的 Agent Skill 配置** — Agent 必须具备 OpenSpec、Superpowers、Codegraph 三项基础能力，缺失即降级
+10. **上下文能力与提示词缓存** (`core/context-capability.md`) — 保持提示词前缀字节稳定、单轮增量最小；五维上下文能力模型（窗口、记忆、注入、缓存、推理深度）
 
 ## 与 VibeCoding 的关系
 
