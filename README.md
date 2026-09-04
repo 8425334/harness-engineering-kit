@@ -50,6 +50,16 @@ npx --yes --package /path/to/harness-engineering-kit hek init
 
 Choose an installed AI agent, confirm the plan, and the selected agent panel opens with an onboarding prompt. Plain `npx hek init` requires an npm-published package or a locally installed dependency; this project does not rely on that form.
 
+If you want to type `hek init` directly in any target project, install the command globally from GitHub once (this does not use the npm package registry or require publishing a package):
+
+```bash
+npm install --global git+https://github.com/8425334/harness-engineering-kit.git
+cd target-project
+hek init
+```
+
+The `npx` form is intentionally ephemeral; without a global install, use the full `npx --package ... hek init` command each time.
+
 Claude Code, Codex, Cursor, and Gemini CLI are supported. For scripts or explicit selection:
 
 ```bash

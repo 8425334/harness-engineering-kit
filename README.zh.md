@@ -50,6 +50,16 @@ npx --yes --package /path/to/harness-engineering-kit hek init
 
 执行后选择已安装的 AI Agent，确认计划，程序会自动打开对应的 Agent 面板并带上初始化提示词。`npx hek init` 仅适用于已发布 npm 包或项目已安装该依赖，本项目不依赖这种方式。
 
+如果希望在任意 target 项目目录直接输入 `hek init`，先从 GitHub 安装一次全局命令（不会访问 npm 包仓库，也不需要发布 npm 包）：
+
+```bash
+npm install --global git+https://github.com/8425334/harness-engineering-kit.git
+cd target-project
+hek init
+```
+
+`npx` 方式不会持久安装命令；若不想全局安装，每次使用完整的 `npx --package ... hek init` 命令即可。
+
 支持 `Claude Code`、`Codex`、`Cursor` 和 `Gemini CLI`。也可以显式指定 Agent 或用于 CI：
 
 ```bash
