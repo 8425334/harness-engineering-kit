@@ -36,6 +36,78 @@ class OnboardTests(unittest.TestCase):
         self.assertEqual(scanner[0].source, "templates/fitness/JavaParameterScanner.java.template")
         self.assertTrue(any(action.target == "docs/fitness/verification-ledger.md" for action in actions))
 
+    def test_tier_one_plan_installs_production_controls(self) -> None:
+        """agent-policy.yaml references the production policy at every tier."""
+        actions = onboard.source_actions(self.source, self.source / "tests", 1, "fresh")
+        targets = {action.target for action in actions}
+        self.assertIn("docs/methodology/production/policy.yaml", targets)
+        self.assertIn("docs/methodology/production/README.md", targets)
+        self.assertIn("docs/methodology/production/change-record.template.json", targets)
+        self.assertNotIn("docs/fitness/scripts/fitness.py", targets)
+
+    def test_tier_one_install_passes_agent_policy_check(self) -> None:
+        """A Tier 1 install with filled placeholders must satisfy check_agent_policy."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".git").mkdir()
+            onboard.apply_actions(root, self.source, onboard.source_actions(self.source, root, 1, "fresh"))
+            policy = root / "docs/methodology/agent-policy.yaml"
+            text = policy.read_text(encoding="utf-8")
+            for placeholder, value in {
+                "{{PROJECT_NAME}}": "tier-one",
+                "{{TEAM_OR_OWNER}}": "team-a",
+                "{{LANGUAGE_OR_FRAMEWORK}}": "python",
+                "{{FAST_TEST_COMMAND}}": "pytest -x",
+                "{{TEST_COMMAND}}": "pytest",
+                "{{BUILD_COMMAND}}": "make build",
+                "{{FITNESS_COMMAND}}": "pytest fitness",
+                "{{READABLE_PATHS}}": ".",
+                "{{WRITABLE_PATHS}}": "src",
+                "{{DENIED_PATHS_OR_SECRETS}}": ".env",
+            }.items():
+                text = text.replace(placeholder, value)
+            policy.write_text(text, encoding="utf-8")
+            from scripts.check_agent_policy import validate
+
+            self.assertEqual(validate(policy), [])
+
+    def test_apply_reports_created_and_unchanged_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".git").mkdir()
+            actions = onboard.source_actions(self.source, root, 1, "fresh")
+            first = onboard.apply_actions(root, self.source, actions)
+            created = {entry["target"] for entry in first if entry["result"] == "created"}
+            self.assertIn("AGENTS.md", created)
+            self.assertIn("docs/methodology/core/change-lifecycle.md", created)
+            second = onboard.apply_actions(root, self.source, actions)
+            unchanged = {entry["target"] for entry in second if entry["result"] == "unchanged"}
+            self.assertIn("docs/methodology/VERSION", unchanged)
+            preserved = {entry["target"] for entry in second if entry["result"] == "preserved"}
+            self.assertIn("AGENTS.md", preserved)
+
+    def test_apply_rolls_back_created_files_and_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            actions = [
+                onboard.Action("create", "VERSION", "docs/methodology/VERSION", "test"),
+                onboard.Action("mkdir", None, "docs/methodology/production/changes", "test"),
+                onboard.Action("sync", "VERSION", "docs/methodology/policy.yaml", "test"),
+            ]
+            original = onboard.copy_file
+            calls = {"count": 0}
+
+            def flaky(source, target, overwrite):
+                calls["count"] += 1
+                if calls["count"] == 1:
+                    return original(source, target, overwrite)
+                raise OSError("simulated failure")
+
+            with patch.object(onboard, "copy_file", side_effect=flaky):
+                with self.assertRaises(OSError):
+                    onboard.apply_actions(root, self.source, actions)
+            self.assertFalse((root / "docs").exists())
+
     def test_apply_is_idempotent_and_preserves_existing_config(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

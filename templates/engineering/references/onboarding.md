@@ -37,7 +37,7 @@ Use this playbook when a repository is not integrated, contains the previous arc
 | `legacy` | Previous Skill or methodology markers are present | Add current controls and provide a migration report; do not delete legacy files |
 | `current` | Version, policy, and Engineering Skill are present | Sync canonical resources and run drift checks |
 
-Tier 1 installs the core controls. Tier 2 also installs Fitness, production, and lesson-memory templates. Choose Tier 2 for a complete integration unless the user explicitly requests a minimal bootstrap.
+Tier 1 installs the core controls together with the production policy scaffold that `agent-policy.yaml` references. Tier 2 additionally installs Fitness gate scripts, Fitness rules, and lesson-memory templates. Choose Tier 2 for a complete integration unless the user explicitly requests a minimal bootstrap.
 
 ## Safety Boundaries
 

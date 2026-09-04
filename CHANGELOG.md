@@ -4,11 +4,17 @@ All notable changes to the AI-Assisted Development Methodology will be documente
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.3.0] — Unreleased
+## [0.3.0] — 2026-09-05
 
 ### Changed
 - Added the standalone Node.js `hek` CLI alias with interactive AI-agent selection, deterministic PATH detection, safe non-interactive behavior, and optional post-onboarding agent panel launch.
 - Added conversational onboarding: `scripts/onboard.py` classifies fresh, partial, legacy, and current projects, presents a read-only plan, applies only after confirmation, preserves legacy entries, and records `docs/methodology/onboarding.json`. The old `init.sh` is now a compatibility forwarder.
+- Tier 1 now installs the production control scaffold (`docs/methodology/production/README.md`, `policy.yaml`, and the change-record template) so the `agent-policy.yaml` reference resolves at every tier; Fitness gate scripts, Fitness rules, and lesson memory remain Tier 2.
+- `hek init --json` is a real machine mode now: without `--yes` it prints the read-only plan and exits 2; with `--yes` it applies, checks, and prints one JSON receipt instead of silently skipping the install.
+- Interactive `hek init` falls back to the deterministic flow when no AI agent is installed, and `0`/`skip` at the prompt declines agent-driven onboarding; invalid selections are retried before failing.
+- `--direct` fully disables agent launching and ignores `--agent`/`HEK_AGENT` with a notice; non-interactive `--open` without an agent selection is rejected.
+- `hek` resolves the target project through the same plan step in every flow, so running from a subdirectory opens the Agent at the repository root, and the agent prompt uses the resolved Python executable (respecting `HARNESS_PYTHON`, with a Windows `py -3` fallback).
+- `--list-agents` now works without a subcommand, and value options accept `--option=value`.
 - Added project Lesson Memory: structured failure capture, reviewed lesson promotion, Explore preflight retrieval, and archive learning closure.
 - Added a bounded, profile-controlled Self-Refine inner loop with auditable evidence and optional independent checking; it cannot replace approval or deterministic gates.
 - Restored root `ai.json` as a strict, compact machine-readable context index capped at 4096 bytes; every maintained `AI.md` must be indexed.
@@ -17,6 +23,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added deterministic context validation to installation, change initialization, every lifecycle phase, Fitness, and Skill guidance.
 - Added fail-closed `resolve_context.py` assembly for target paths and `read_when` routes, with mandatory root context and parent-to-child detail loading.
 - Protected `docs/fitness/**` from project-Agent changes with full-delta digest binding, narrow bootstrap/syntax-repair exemptions, and externally injected human approval.
+
+### Fixed
+- Onboarding receipts label newly created files as `created` and byte-identical syncs as `unchanged` instead of reporting every copy as `updated`.
+- A failed `--apply` rolls back every file and workspace directory it created, not only previously existing files it overwrote.
+- Agent launch arguments are quoted on Windows so prompts containing spaces are delivered intact.
 
 ## [0.2.0]
 

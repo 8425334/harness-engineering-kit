@@ -120,6 +120,17 @@ def source_actions(source: Path, root: Path, tier: int, status: str) -> list[Act
     if version_file.is_file():
         actions.append(Action("sync", "VERSION", "docs/methodology/VERSION", "installed methodology version"))
 
+    # agent-policy.yaml references the production policy at every tier, so the
+    # production control scaffold must be installed at every tier as well.
+    for relative in sorted((source / "templates/production").glob("*.template")):
+        target = {
+            "README.md.template": "docs/methodology/production/README.md",
+            "policy.yaml.template": "docs/methodology/production/policy.yaml",
+            "change-record.json.template": "docs/methodology/production/change-record.template.json",
+        }.get(relative.name)
+        if target:
+            actions.append(Action("create", str(relative.relative_to(source)), target, "production control"))
+
     if tier >= 2:
         for relative in sorted((source / "templates/fitness").glob("*.py.template")):
             actions.append(Action("create", str(relative.relative_to(source)), f"docs/fitness/scripts/{relative.stem}", "optional Fitness control"))
@@ -130,14 +141,6 @@ def source_actions(source: Path, root: Path, tier: int, status: str) -> list[Act
             actions.append(Action("create", str(fitness_readme.relative_to(source)), "docs/fitness/README.md", "optional Fitness control"))
         for relative in sorted((source / "templates/fitness/rules").glob("*.md.template")):
             actions.append(Action("create", str(relative.relative_to(source)), f"docs/fitness/{relative.stem}", "optional Fitness rule"))
-        for relative in sorted((source / "templates/production").glob("*.template")):
-            target = {
-                "README.md.template": "docs/methodology/production/README.md",
-                "policy.yaml.template": "docs/methodology/production/policy.yaml",
-                "change-record.json.template": "docs/methodology/production/change-record.template.json",
-            }.get(relative.name)
-            if target:
-                actions.append(Action("create", str(relative.relative_to(source)), target, "production control"))
         lessons_readme = source / "templates/lessons/README.md.template"
         if lessons_readme.is_file():
             actions.append(Action("create", str(lessons_readme.relative_to(source)), "docs/methodology/lessons/README.md", "lesson memory"))
@@ -169,11 +172,13 @@ def render_plan(root: Path, source: Path, tier: int, status: str, actions: list[
 
 
 def copy_file(source: Path, target: Path, overwrite: bool) -> str:
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if target.is_file() and not overwrite:
+    existed = target.is_file()
+    if existed and not overwrite:
         return "preserved"
+    if existed and sha256(source) == sha256(target):
+        return "unchanged"
     shutil.copy2(source, target)
-    return "updated" if target.exists() else "created"
+    return "updated" if existed else "created"
 
 
 def validate_action_sources(source: Path, actions: list[Action]) -> list[str]:
@@ -186,11 +191,11 @@ def validate_action_sources(source: Path, actions: list[Action]) -> list[str]:
     required.extend(path.relative_to(source).as_posix() for path in (source / "core").glob("*.md"))
     required.extend(path.relative_to(source).as_posix() for path in (source / "scripts").glob("*.py"))
     required.extend(path.relative_to(source).as_posix() for path in (source / "templates/workflow").glob("*.template"))
+    required.extend(path.relative_to(source).as_posix() for path in (source / "templates/production").glob("*.template"))
     if any(action.target == "docs/fitness/README.md" for action in actions):
         required.extend(path.relative_to(source).as_posix() for path in (source / "templates/fitness").glob("*.py.template"))
         required.extend(path.relative_to(source).as_posix() for path in (source / "templates/fitness").glob("*.template"))
         required.extend(path.relative_to(source).as_posix() for path in (source / "templates/fitness/rules").glob("*.md.template"))
-        required.extend(path.relative_to(source).as_posix() for path in (source / "templates/production").glob("*.template"))
         required.append("templates/lessons/README.md.template")
     for relative in sorted(set(required)):
         if not (source / relative).is_file():
@@ -207,7 +212,20 @@ def validate_action_sources(source: Path, actions: list[Action]) -> list[str]:
 def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[str, str]]:
     results: list[dict[str, str]] = []
     snapshots: dict[Path, tuple[bytes, int]] = {}
-    created: list[Path] = []
+    created_files: list[Path] = []
+    created_dirs: list[Path] = []
+
+    def ensure_dir(directory: Path) -> None:
+        missing: list[Path] = []
+        current = directory
+        while not current.exists():
+            missing.append(current)
+            if current.parent == current:
+                break
+            current = current.parent
+        directory.mkdir(parents=True, exist_ok=True)
+        # Record ancestors shallowest-first so rollback removes deepest-first.
+        created_dirs.extend(reversed(missing))
 
     def snapshot(target: Path) -> None:
         if target in snapshots:
@@ -215,7 +233,7 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
         if target.is_file():
             snapshots[target] = (target.read_bytes(), target.stat().st_mode)
         elif not target.exists():
-            created.append(target)
+            created_files.append(target)
 
     try:
         for action in actions:
@@ -223,7 +241,7 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
                 results.append({"target": action.target, "result": action.kind})
                 continue
             if action.kind == "mkdir":
-                (root / action.target).mkdir(parents=True, exist_ok=True)
+                ensure_dir(root / action.target)
                 results.append({"target": action.target, "result": "ready"})
                 continue
             if action.kind == "create-empty":
@@ -231,19 +249,19 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
                 if target.exists():
                     results.append({"target": action.target, "result": "preserved"})
                 else:
-                    target.parent.mkdir(parents=True, exist_ok=True)
+                    ensure_dir(target.parent)
                     target.write_text("# Fitness Verification Ledger\n\n", encoding="utf-8")
-                    created.append(target)
+                    created_files.append(target)
                     results.append({"target": action.target, "result": "created", "sha256": sha256(target)})
                 continue
             if action.kind == "sync-tree":
                 source_dir = source / "templates/engineering"
                 target_dir = root / action.target
-                target_dir.mkdir(parents=True, exist_ok=True)
+                ensure_dir(target_dir)
                 for item in source_dir.rglob("*"):
                     if item.is_file():
                         destination = target_dir / item.relative_to(source_dir)
-                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        ensure_dir(destination.parent)
                         snapshot(destination)
                         shutil.copy2(item, destination)
                 results.append({"target": action.target, "result": "updated"})
@@ -253,8 +271,8 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
             source_file = source / action.source
             target = root / action.target
             overwrite = action.kind == "sync"
-            if overwrite:
-                snapshot(target)
+            snapshot(target)
+            ensure_dir(target.parent)
             result = copy_file(source_file, target, overwrite)
             results.append({"target": action.target, "result": result, "sha256": sha256(target)})
     except (OSError, shutil.Error):
@@ -262,9 +280,16 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
             target.chmod(mode)
-        for target in reversed(created):
-            if target.is_file():
+        for target in reversed(created_files):
+            try:
                 target.unlink()
+            except FileNotFoundError:
+                pass
+        for directory in reversed(created_dirs):
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
         raise
     return results
 

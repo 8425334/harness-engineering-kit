@@ -63,15 +63,17 @@ hek init
 支持 `Claude Code`、`Codex`、`Cursor` 和 `Gemini CLI`。也可以显式指定 Agent 或用于 CI：
 
 ```bash
-npx --yes --package github:8425334/harness-engineering-kit hek init --agent codex --yes
-npx --yes --package github:8425334/harness-engineering-kit hek init --agent claude --yes --no-open
+npx --yes --package github:8425334/harness-engineering-kit hek init --agent codex --open --yes
+npx --yes --package github:8425334/harness-engineering-kit hek init --direct --yes
 npx --yes --package github:8425334/harness-engineering-kit hek agents                 # 查看支持的 Agent 和安装状态
 npx --yes --package github:8425334/harness-engineering-kit hek init --plan --json     # 只读输出机器可读计划
 ```
 
-交互式 `init` 会先启动所选 Agent，由 Agent 完成接入；非交互环境不会意外拉起外部程序，使用 `--open` 可显式开启。`HEK_AGENT` 可作为 `--agent` 的环境变量替代，`--prompt` 可覆盖传给终端 Agent 的首条提示词。
+交互式 `init` 会先启动所选 Agent，由 Agent 完成接入；在提示处输入 `0` 或 `skip` 可跳过 Agent 走确定性流程，未检测到已安装 Agent 时自动回退。非交互环境不会意外拉起外部程序，使用 `--open` 可显式开启（需配合 `--agent`/`HEK_AGENT`）。`--json` 切换为机器可读输出：不带 `--yes` 时打印只读计划并以退出码 2 结束；带 `--yes` 时执行安装、检查并输出单一 JSON 回执。`HEK_AGENT` 可作为 `--agent` 的环境变量替代，`--prompt` 可覆盖传给终端 Agent 的首条提示词。
 
-`hek init` 采用 Agent 驱动：先选择已安装的 Agent，在 target 目录打开该 Agent 的 CLI，并传入 Kit 路径和接入契约。由 Agent 读取项目事实、生成只读计划、请求确认、填写项目专属配置、执行 canonical 脚本并运行确定性检查。Tier 1 安装核心控制面；默认 Tier 2 还包含 Fitness、生产控制和经验记忆。每次接入都会写入 `docs/methodology/onboarding.json`，记录版本、文件摘要、保留的旧文件和校验结果。只有明确需要无 Agent 的确定性安装时才使用 `--direct`。
+全新项目的占位符必须依据真实仓库事实填写后才能通过接入检查，因此无人值守的 `init --direct --yes` 在全新项目上会先安装脚手架再以退出码 2 结束（fail-closed）；已配置项目的升级则会直接通过。仅需安装脚手架的自动化场景使用 `--no-check`，或在确定性安装后打开 Agent（`--agent <id> --open --yes`）完成"填写-检查"闭环。
+
+`hek init` 采用 Agent 驱动：先选择已安装的 Agent，在解析出的项目根目录打开该 Agent 的 CLI，并传入 Kit 路径和接入契约。由 Agent 读取项目事实、生成只读计划、请求确认、填写项目专属配置、执行 canonical 脚本并运行确定性检查。Tier 1 安装核心控制面（含 `agent-policy.yaml` 引用的生产策略脚手架）；默认 Tier 2 额外安装 Fitness 门禁脚本、Fitness 规则和经验记忆。每次接入都会写入 `docs/methodology/onboarding.json`，记录版本、文件摘要、创建/更新/保留的文件和校验结果。只有明确需要无 Agent 的确定性安装时才使用 `--direct`；它会忽略 `--agent` 和 `HEK_AGENT`。
 
 `ai.json` 超限或结构非法、`AI.md` 未索引或超限、策略缺失、占位符未填、引用路径断裂、Profile 非法、Skill 资源缺失、安装内容过期或平台适配不支持都会失败。Cursor 以及旧 `ramer`、`fe-engineering`、`multi-agent` 入口不再兼容。
 
