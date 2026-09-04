@@ -69,9 +69,9 @@ npx --yes --package github:8425334/harness-engineering-kit hek agents           
 npx --yes --package github:8425334/harness-engineering-kit hek init --plan --json     # 只读输出机器可读计划
 ```
 
-交互式 `init` 默认只在接入成功后启动面板；非交互环境不会意外拉起外部程序，使用 `--open` 可显式开启。`HEK_AGENT` 可作为 `--agent` 的环境变量替代，`--prompt` 可覆盖传给终端 Agent 的首条提示词。
+交互式 `init` 会先启动所选 Agent，由 Agent 完成接入；非交互环境不会意外拉起外部程序，使用 `--open` 可显式开启。`HEK_AGENT` 可作为 `--agent` 的环境变量替代，`--prompt` 可覆盖传给终端 Agent 的首条提示词。
 
-`hek init` 会先生成只读计划，并将项目识别为 `fresh`、`partial`、`legacy` 或 `current`。交互式运行随后请求确认、应用计划、执行确定性检查，并打开所选 Agent。Tier 1 安装核心控制面；默认 Tier 2 还包含 Fitness、生产控制和经验记忆。每次接入都会写入 `docs/methodology/onboarding.json`，记录版本、文件摘要、保留的旧文件和校验结果。
+`hek init` 采用 Agent 驱动：先选择已安装的 Agent，在 target 目录打开该 Agent 的 CLI，并传入 Kit 路径和接入契约。由 Agent 读取项目事实、生成只读计划、请求确认、填写项目专属配置、执行 canonical 脚本并运行确定性检查。Tier 1 安装核心控制面；默认 Tier 2 还包含 Fitness、生产控制和经验记忆。每次接入都会写入 `docs/methodology/onboarding.json`，记录版本、文件摘要、保留的旧文件和校验结果。只有明确需要无 Agent 的确定性安装时才使用 `--direct`。
 
 `ai.json` 超限或结构非法、`AI.md` 未索引或超限、策略缺失、占位符未填、引用路径断裂、Profile 非法、Skill 资源缺失、安装内容过期或平台适配不支持都会失败。Cursor 以及旧 `ramer`、`fe-engineering`、`multi-agent` 入口不再兼容。
 

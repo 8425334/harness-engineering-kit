@@ -38,6 +38,7 @@ Options:
   --agent <name>         AI agent to open after init (claude, codex, cursor, gemini)
   --open                 Open the selected agent in non-interactive mode
   --no-open              Do not open an agent after init
+  --direct               Run the deterministic installer without opening an agent
   --prompt <text>        Initial prompt sent to a terminal agent
   --list-agents          List supported agents and installation status
   --json                 Emit machine-readable output
@@ -67,6 +68,7 @@ function parseArgs(argv) {
     else if (token === '--no-check') result.options.noCheck = true;
     else if (token === '--open') result.options.open = true;
     else if (token === '--no-open') result.options.noOpen = true;
+    else if (token === '--direct') result.options.direct = true;
     else if (token === '--list-agents') result.options.listAgents = true;
     else if (token === '--agent' || token === '--prompt' || token === '--project-root' || token === '--source-root' || token === '--tier') {
       const value = args.shift();
@@ -155,6 +157,25 @@ function openAgent(agent, projectRoot, prompt) {
   return typeof child.status === 'number' ? child.status : 2;
 }
 
+function buildAgentPrompt(projectRoot, options) {
+  const sourceRoot = path.resolve(options.sourceRoot || packageRoot);
+  const tier = options.tier || '2';
+  const approval = options.yes || options.apply
+    ? '用户已通过命令参数预先确认；完成只读检查后直接应用。'
+    : '先展示只读计划并等待用户明确确认，确认前不得写入文件。';
+  return options.prompt || [
+    '请作为 Harness Engineering Kit 的项目接入 Agent，完成当前项目初始化。',
+    `目标项目：${projectRoot}`,
+    `Kit 源码：${sourceRoot}`,
+    `安装范围：Tier ${tier}`,
+    approval,
+    '先读取项目事实（包括现有的 AGENTS.md、CLAUDE.md、ai.json、AI.md 和项目配置），识别真实技术栈、命令、目录边界与已有接入状态。',
+    `使用 canonical onboarding 脚本生成计划：python3 "${path.join(sourceRoot, 'scripts', 'onboard.py')}" --project-root "${projectRoot}" --source-root "${sourceRoot}" --tier ${tier} --plan --json`,
+    '根据项目事实补齐或调整配置占位符；保留已有配置和旧入口，不要盲目覆盖或删除。得到确认后，使用同一脚本执行 --apply，再执行 --check。',
+    '最后汇报创建、更新、保留的文件、检查结果和仍需人工决策的事项。',
+  ].join('\n');
+}
+
 function findPython() {
   const configured = process.env.HARNESS_PYTHON;
   const candidates = configured ? [configured] : ['python3', 'python'];
@@ -220,6 +241,20 @@ function askForConfirmation() {
 }
 
 async function runInit(options) {
+  const interactive = process.stdin.isTTY && process.stdout.isTTY;
+  let agent;
+  if (!options.direct && !options.plan && !options.json && interactive) {
+    try {
+      agent = await selectAgent(options);
+    } catch (error) {
+      console.error(`Agent 选择失败: ${error.message}`);
+      return 2;
+    }
+    if (agent && !options.noOpen) {
+      const projectRoot = options.projectRoot ? path.resolve(options.projectRoot) : process.cwd();
+      return openAgent(agent, projectRoot, buildAgentPrompt(projectRoot, options));
+    }
+  }
   const planOptions = { ...options, json: true };
   const planned = invoke('plan', planOptions, true);
   if (planned.status !== 0) {
@@ -232,12 +267,13 @@ async function runInit(options) {
     if (options.json) process.stdout.write(planned.stdout);
     return 0;
   }
-  let agent;
-  try {
-    agent = await selectAgent(options);
-  } catch (error) {
-    console.error(`Agent 选择失败: ${error.message}`);
-    return 2;
+  if (!agent && options.agent) {
+    try {
+      agent = await selectAgent(options);
+    } catch (error) {
+      console.error(`Agent 选择失败: ${error.message}`);
+      return 2;
+    }
   }
   const confirmed = options.yes || options.apply || await askForConfirmation();
   if (!confirmed) {
@@ -255,7 +291,8 @@ async function runInit(options) {
     if (checked.status !== 0) return checked.status || 2;
   }
   if (!options.noOpen && agent && (options.open || process.stdin.isTTY)) {
-    return openAgent(agent, plan && plan.project_root ? plan.project_root : process.cwd(), options.prompt);
+    const projectRoot = plan && plan.project_root ? plan.project_root : process.cwd();
+    return openAgent(agent, projectRoot, buildAgentPrompt(projectRoot, options));
   }
   return 0;
 }
@@ -300,6 +337,7 @@ module.exports = {
   AGENTS,
   DEFAULT_AGENT_PROMPT,
   availableAgents,
+  buildAgentPrompt,
   commandAvailable,
   findAgent,
   findPython,

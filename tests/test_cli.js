@@ -46,6 +46,14 @@ test('parses agent and opening controls', () => {
   assert.equal(parsed.options.prompt, 'hello');
 });
 
+test('builds an agent-first onboarding prompt', () => {
+  const prompt = cliModule.buildAgentPrompt('/tmp/target-project', { sourceRoot: root, tier: '1' });
+  assert.match(prompt, /读取项目事实/);
+  assert.match(prompt, /--plan --json/);
+  assert.match(prompt, /--apply/);
+  assert.match(prompt, /等待用户明确确认/);
+});
+
 test('plan delegates to the packaged Python core', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-cli-'));
   const planned = run(['plan', '--project-root', directory, '--source-root', root, '--tier', '1'], { cwd: directory });

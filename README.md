@@ -69,9 +69,9 @@ npx --yes --package github:8425334/harness-engineering-kit hek agents
 npx --yes --package github:8425334/harness-engineering-kit hek init --plan --json
 ```
 
-Interactive `init` opens an agent only after onboarding succeeds. Non-interactive runs never launch an external process unless `--open` is supplied. Use `HEK_AGENT` instead of `--agent`, or `--prompt` to customize the first prompt sent to terminal agents.
+Interactive `init` opens the selected Agent first and lets that Agent perform onboarding. Non-interactive runs never launch an external process unless `--open` is supplied. Use `HEK_AGENT` instead of `--agent`, or `--prompt` to customize the first prompt sent to terminal agents.
 
-`hek init` first produces a read-only plan and classifies the project as `fresh`, `partial`, `legacy`, or `current`. Interactive runs then ask for confirmation, apply the plan, run deterministic checks, and open the selected Agent. Tier 1 installs core controls; the default Tier 2 also includes Fitness, production controls, and lesson memory. Each run writes `docs/methodology/onboarding.json` with the source version, file digests, preserved legacy files, and verification result.
+`hek init` is Agent-driven: it selects an installed Agent first, opens that Agent's CLI in the target directory, and passes the Kit path plus the onboarding contract. The Agent reads project facts, generates the read-only plan, asks for confirmation, fills project-specific values, applies the canonical script, and runs deterministic checks. Tier 1 installs core controls; the default Tier 2 also includes Fitness, production controls, and lesson memory. Each run writes `docs/methodology/onboarding.json` with the source version, file digests, preserved legacy files, and verification result. Use `--direct` only when a headless deterministic install is explicitly wanted.
 
 The check fails for an oversized or structurally invalid `ai.json`, unindexed or oversized `AI.md`, missing policy, placeholders, broken referenced paths, invalid profiles, missing Skill resources, stale installed Skill content, or unsupported platform adapters. Cursor and the legacy `ramer`, `fe-engineering`, and `multi-agent` entries are intentionally not supported.
 
