@@ -58,8 +58,8 @@ Task: 实现 <UserList /> 组件。
 
 检查点：
 
-- **Security Baseline**：AI 生成的代码不能包含 `eval()` 或 `innerHTML`。
-- **Arch Boundary Check**：静态分析（如 ESLint 插件）检查 Import 路径，确保 ui 层未导入 infrastructure 层。
+- **Security Baseline**：AI 生成的代码不能包含 `eval()` 或 `innerHTML`；启用该门禁时配置 `docs/fitness/scripts/check_security_baseline.py`。
+- **Arch Boundary Check**：配置 `docs/fitness/scripts/check_architecture_boundary.py` 检查 Import 路径，确保 ui 层未导入 infrastructure 层。
 - **Log Cleanup**：自动检测 AI 是否残留了 `console.log`。
 
 ## 3. 现代化前端架构设计
@@ -70,10 +70,7 @@ Task: 实现 <UserList /> 组件。
 
 ```
 src/
-├── kernel/                   # AI 静态态分析配置与规则
-│   ├── fitness/              # 自动化测试脚本
-│   │   ├── check_safety.py   # 安全基线检查
-│   │   └── check_boundary.py # 架构边界检查
+├── kernel/                   # 应用代码与项目规则
 │   └── prompts/              # 预设的高质量 System Prompts
 ├── domain/                   # 领域层 (High Precision)
 │   ├── aggregates/           # 实体聚合根

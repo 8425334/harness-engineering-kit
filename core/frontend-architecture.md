@@ -56,8 +56,8 @@ Integrate Fitness Framework thinking into AI interaction. AI-delivered code must
 
 Check points:
 
-- **Security Baseline**: AI-generated code must not contain `eval()` or `innerHTML`.
-- **Arch Boundary Check**: Static analysis (e.g., ESLint plugin) verifies import paths, ensuring the UI layer doesn't import infrastructure.
+- **Security Baseline**: AI-generated code must not contain `eval()` or `innerHTML`; configure `docs/fitness/scripts/check_security_baseline.py` when this gate is enabled.
+- **Arch Boundary Check**: Configure `docs/fitness/scripts/check_architecture_boundary.py` to verify import paths, ensuring the UI layer doesn't import infrastructure.
 - **Log Cleanup**: Auto-detect whether AI left `console.log` behind.
 
 ## 3. Modern Frontend Architecture Design
@@ -68,10 +68,7 @@ To maximize AI effectiveness while keeping code clean, use a feature-based direc
 
 ```
 src/
-├── kernel/                   # AI static analysis config & rules
-│   ├── fitness/              # Automated test scripts
-│   │   ├── check_safety.py   # Security baseline check
-│   │   └── check_boundary.py # Architecture boundary check
+├── kernel/                   # Application code and project-owned rules
 │   └── prompts/              # Pre-built high-quality System Prompts
 ├── domain/                   # Domain layer (High Precision)
 │   ├── aggregates/           # Entity aggregate roots

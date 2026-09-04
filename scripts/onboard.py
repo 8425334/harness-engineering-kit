@@ -31,6 +31,7 @@ ROOT_FILES = {
 }
 
 LEGACY_MARKERS = (
+    "docs/sdd",
     ".cursor/skills",
     ".codex/skills/ramer",
     ".codex/skills/fe-engineering",
@@ -41,6 +42,8 @@ LEGACY_MARKERS = (
     "docs/methodology/core/ramer-agent.md",
     "docs/methodology/core/ramer-cycle.md",
 )
+
+JAVA_SCANNER = "templates/fitness/JavaParameterScanner.java.template"
 
 
 @dataclass(frozen=True)
@@ -71,16 +74,16 @@ def project_root(value: Path | None) -> Path:
 
 
 def detect_status(root: Path) -> str:
+    legacy = any((root / marker).exists() for marker in LEGACY_MARKERS)
+    if legacy:
+        return "legacy"
     canonical = (
         (root / "docs/methodology/VERSION").is_file()
         and (root / "docs/methodology/agent-policy.yaml").is_file()
         and (root / ".agents/skills/engineering/SKILL.md").is_file()
     )
-    legacy = any((root / marker).exists() for marker in LEGACY_MARKERS)
     if canonical:
         return "current"
-    if legacy:
-        return "legacy"
     if any((root / target).exists() for target in ROOT_FILES.values()):
         return "partial"
     return "fresh"
@@ -120,6 +123,8 @@ def source_actions(source: Path, root: Path, tier: int, status: str) -> list[Act
     if tier >= 2:
         for relative in sorted((source / "templates/fitness").glob("*.py.template")):
             actions.append(Action("create", str(relative.relative_to(source)), f"docs/fitness/scripts/{relative.stem}", "optional Fitness control"))
+        actions.append(Action("create", JAVA_SCANNER, "docs/fitness/scripts/JavaParameterScanner.java", "Java Fitness scanner"))
+        actions.append(Action("create-empty", None, "docs/fitness/verification-ledger.md", "Fitness verification ledger"))
         fitness_readme = source / "templates/fitness/README.md"
         if fitness_readme.is_file():
             actions.append(Action("create", str(fitness_readme.relative_to(source)), "docs/fitness/README.md", "optional Fitness control"))
@@ -142,6 +147,8 @@ def source_actions(source: Path, root: Path, tier: int, status: str) -> list[Act
 
     if status == "legacy":
         actions.append(Action("report", None, "legacy architecture", "preserve legacy files; route future work to engineering Skill"))
+    if (root / "docs/sdd").exists():
+        actions.append(Action("report", None, "docs/sdd", "legacy SDD workspace requires manual migration to openspec/changes; no files are deleted automatically"))
     return actions
 
 
@@ -169,34 +176,96 @@ def copy_file(source: Path, target: Path, overwrite: bool) -> str:
     return "updated" if target.exists() else "created"
 
 
+def validate_action_sources(source: Path, actions: list[Action]) -> list[str]:
+    errors: list[str] = []
+    for directory in ("core", "scripts", "templates/engineering", "templates/workflow"):
+        if not (source / directory).is_dir():
+            errors.append(f"missing required source directory: {directory}")
+    required = list(ROOT_FILES)
+    required.append("VERSION")
+    required.extend(path.relative_to(source).as_posix() for path in (source / "core").glob("*.md"))
+    required.extend(path.relative_to(source).as_posix() for path in (source / "scripts").glob("*.py"))
+    required.extend(path.relative_to(source).as_posix() for path in (source / "templates/workflow").glob("*.template"))
+    if any(action.target == "docs/fitness/README.md" for action in actions):
+        required.extend(path.relative_to(source).as_posix() for path in (source / "templates/fitness").glob("*.py.template"))
+        required.extend(path.relative_to(source).as_posix() for path in (source / "templates/fitness").glob("*.template"))
+        required.extend(path.relative_to(source).as_posix() for path in (source / "templates/fitness/rules").glob("*.md.template"))
+        required.extend(path.relative_to(source).as_posix() for path in (source / "templates/production").glob("*.template"))
+        required.append("templates/lessons/README.md.template")
+    for relative in sorted(set(required)):
+        if not (source / relative).is_file():
+            errors.append(f"missing required source asset: {relative}")
+    for action in actions:
+        if action.kind == "sync-tree":
+            if not (source / "templates/engineering").is_dir():
+                errors.append("missing source directory: templates/engineering")
+        elif action.source and not (source / action.source).is_file():
+            errors.append(f"missing source file: {action.source}")
+    return errors
+
+
 def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[str, str]]:
     results: list[dict[str, str]] = []
-    for action in actions:
-        if action.kind == "preserve" or action.kind == "report":
-            results.append({"target": action.target, "result": action.kind})
-            continue
-        if action.kind == "mkdir":
-            (root / action.target).mkdir(parents=True, exist_ok=True)
-            results.append({"target": action.target, "result": "ready"})
-            continue
-        if action.kind == "sync-tree":
-            source_dir = source / "templates/engineering"
-            target_dir = root / action.target
-            target_dir.mkdir(parents=True, exist_ok=True)
-            for item in source_dir.rglob("*"):
-                if item.is_file():
-                    destination = target_dir / item.relative_to(source_dir)
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(item, destination)
-            results.append({"target": action.target, "result": "updated"})
-            continue
-        if not action.source:
-            continue
-        source_file = source / action.source
-        target = root / action.target
-        overwrite = action.kind == "sync"
-        result = copy_file(source_file, target, overwrite)
-        results.append({"target": action.target, "result": result, "sha256": sha256(target)})
+    snapshots: dict[Path, tuple[bytes, int]] = {}
+    created: list[Path] = []
+
+    def snapshot(target: Path) -> None:
+        if target in snapshots:
+            return
+        if target.is_file():
+            snapshots[target] = (target.read_bytes(), target.stat().st_mode)
+        elif not target.exists():
+            created.append(target)
+
+    try:
+        for action in actions:
+            if action.kind == "preserve" or action.kind == "report":
+                results.append({"target": action.target, "result": action.kind})
+                continue
+            if action.kind == "mkdir":
+                (root / action.target).mkdir(parents=True, exist_ok=True)
+                results.append({"target": action.target, "result": "ready"})
+                continue
+            if action.kind == "create-empty":
+                target = root / action.target
+                if target.exists():
+                    results.append({"target": action.target, "result": "preserved"})
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text("# Fitness Verification Ledger\n\n", encoding="utf-8")
+                    created.append(target)
+                    results.append({"target": action.target, "result": "created", "sha256": sha256(target)})
+                continue
+            if action.kind == "sync-tree":
+                source_dir = source / "templates/engineering"
+                target_dir = root / action.target
+                target_dir.mkdir(parents=True, exist_ok=True)
+                for item in source_dir.rglob("*"):
+                    if item.is_file():
+                        destination = target_dir / item.relative_to(source_dir)
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        snapshot(destination)
+                        shutil.copy2(item, destination)
+                results.append({"target": action.target, "result": "updated"})
+                continue
+            if not action.source:
+                continue
+            source_file = source / action.source
+            target = root / action.target
+            overwrite = action.kind == "sync"
+            if overwrite:
+                snapshot(target)
+            result = copy_file(source_file, target, overwrite)
+            results.append({"target": action.target, "result": result, "sha256": sha256(target)})
+    except (OSError, shutil.Error):
+        for target, (content, mode) in snapshots.items():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            target.chmod(mode)
+        for target in reversed(created):
+            if target.is_file():
+                target.unlink()
+        raise
     return results
 
 
@@ -251,9 +320,23 @@ def main() -> int:
     plan = render_plan(root, source, effective_tier, status, actions)
 
     if args.apply:
+        source_errors = validate_action_sources(source, actions)
+        if source_errors:
+            if args.as_json:
+                plan["errors"] = source_errors
+                print(json.dumps(plan, ensure_ascii=False, indent=2))
+            else:
+                print("HARNESS ONBOARDING BLOCKED: source preflight failed", file=sys.stderr)
+                for error in source_errors:
+                    print(f"- {error}", file=sys.stderr)
+            return 2
         plan["read_only"] = False
         plan["confirmed_at"] = datetime.now(timezone.utc).isoformat()
-        plan["results"] = apply_actions(root, source, actions)
+        try:
+            plan["results"] = apply_actions(root, source, actions)
+        except (OSError, shutil.Error) as exc:
+            print(f"HARNESS ONBOARDING FAILED AND ROLLED BACK: {exc}", file=sys.stderr)
+            return 2
         (root / "docs/methodology").mkdir(parents=True, exist_ok=True)
         (root / "docs/methodology/onboarding.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if args.check:

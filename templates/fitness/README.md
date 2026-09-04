@@ -44,39 +44,23 @@ fitness/
     └── object-mapping.md.template
 ```
 
-## 迁移步骤
+## 接入步骤
 
-### 1. 拷贝脚本
+不要手动复制模板或执行旧版 `init.sh`。在项目 Agent 对话中请求 Harness 接入；Agent 会先生成只读计划，得到确认后通过 `scripts/onboard.py --apply` 安装本目录中的脚本、Java 扫描器和规则。
 
-```bash
-mkdir -p docs/fitness/scripts docs/fitness
-cp docs/methodology/templates/fitness/fitness.py.template docs/fitness/scripts/fitness.py
-cp docs/methodology/templates/fitness/check_*.py.template docs/fitness/scripts/
-cp docs/methodology/templates/fitness/test_*.py.template docs/fitness/scripts/
-cp docs/methodology/templates/fitness/JavaParameterScanner.java.template docs/fitness/scripts/
-# 重命名：去掉 .template 后缀
-cd docs/fitness/scripts && for f in *.template; do mv "$f" "${f%.template}"; done && cd -
-chmod +x docs/fitness/scripts/fitness.py
-```
-
-### 2. 拷贝规则
+完整接入命令（由 Agent 执行）：
 
 ```bash
-mkdir -p docs/fitness
-cp docs/methodology/templates/fitness/rules/*.md.template docs/fitness/
-cd docs/fitness && for f in *.md.template; do mv "$f" "${f%.template}"; done && cd -
+python3 <kit>/scripts/onboard.py --project-root . --source-root <kit> --tier 2 --plan --json
+python3 <kit>/scripts/onboard.py --project-root . --source-root <kit> --tier 2 --apply --json
+python3 <kit>/scripts/onboard.py --project-root . --source-root <kit> --check --json
 ```
 
-按需删除不适用的规则文件（例如 Java 项目删除 `frontend-quality.md`，非 Java 项目删除 `backend-quality.md`、`test-coverage.md`、`permission-management.md` 等基于 Java 的检查）。
+接入后的实际文件位于 `docs/fitness/scripts/` 和 `docs/fitness/`。Java 项目使用 `docs/fitness/scripts/JavaParameterScanner.java`；非 Java 项目可在 Agent 计划中明确排除不适用规则，但不能修改保护脚本绕过门禁。
 
-### 3. 创建文档基础设施
+### 3. 文档基础设施
 
-```bash
-# 规则手册和验证账本（docs-quality 规则要求这两个文件存在）
-touch docs/fitness/README.md docs/fitness/verification-ledger.md
-# 可选：职责显著不同的目录增加一个补充 AI.md
-touch docs/fitness/AI.md
-```
+Tier 2 onboarding 会自动创建规则手册和验证账本（`docs/fitness/README.md`、`docs/fitness/verification-ledger.md`）。只有在不使用 onboarding 的特殊迁移场景，才需要手动补齐这两个文件。职责显著不同的目录如需增加 `AI.md`，必须同时在根 `ai.json` 的 `modules` 中登记。
 
 新增 `AI.md` 后，必须同时在根 `ai.json` 的 `modules` 中登记对应路径、摘要和 `read_when` 路由条件。
 
