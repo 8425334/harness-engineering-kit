@@ -1,0 +1,35 @@
+{
+  "name": "harness-engineering-kit",
+  "version": "0.3.0",
+  "description": "Repository-native controls for AI-assisted software changes",
+  "license": "MIT",
+  "type": "commonjs",
+  "bin": {
+    "harness-engineering-kit": "bin/harness-engineering-kit.js",
+    "hek": "bin/harness-engineering-kit.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin/",
+    "core/",
+    "docs/",
+    "i18n/",
+    "scripts/**/*.py",
+    "scripts/init.sh",
+    "templates/**/*.md",
+    "templates/**/*.yaml",
+    "templates/**/*.json",
+    "templates/**/*.template",
+    "VERSION",
+    "README.md",
+    "README.zh.md",
+    "CHANGELOG.md",
+    "TRANSPLANT.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test tests/test_cli.js"
+  }
+}

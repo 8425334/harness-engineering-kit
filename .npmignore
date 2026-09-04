@@ -1,0 +1,7 @@
+.git
+.github
+.idea
+.fastRequest
+tests
+**/__pycache__/**
+**/*.pyc

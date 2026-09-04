@@ -35,27 +35,37 @@ Self-Refine is an optional or Profile-required inner loop for draft and implemen
 
 Project Lesson Memory extends this loop across changes: failures become reviewed, retrievable prevention guidance and can later be promoted to deterministic controls. See [Project Lesson Memory](core/lesson-memory.md).
 
-## Conversational Onboarding
+## CLI Onboarding
 
-Project members no longer need to run `init.sh` manually. In the target repository's Agent conversation, ask:
+### Standalone CLI (`hek`)
 
-```text
-Onboard this project to the Harness Engineering Kit. First inspect read-only and classify it as fresh, partial, legacy, or current. Show the files to create, update, and preserve. Do not delete old ramer/fe-engineering/multi-agent or Cursor entries; wait for my confirmation before applying and verifying the complete onboarding.
-```
-
-The `engineering` Skill routes integrated projects to the onboarding playbook. The Agent first runs a read-only plan:
+The repository ships a dependency-free Node.js entry point. It does not need to be published to npm: run it from GitHub or a local checkout with `npx`:
 
 ```bash
-python3 <kit>/scripts/onboard.py --project-root . --source-root <kit> --plan --json
+cd your-project
+npx --yes --package github:8425334/harness-engineering-kit hek init
+# or use a local checkout
+npx --yes --package /path/to/harness-engineering-kit hek init
 ```
 
-After confirmation it runs `--apply` and then `--check`. Tier 1 installs core controls; complete onboarding defaults to Tier 2 (Fitness, production controls, and lesson memory). Each run writes `docs/methodology/onboarding.json` with the source version, file digests, preserved legacy files, and verification result. `scripts/init.sh` remains only as a compatibility forwarder for old automation, not as the onboarding entrypoint.
+Choose an installed AI agent, confirm the plan, and the selected agent panel opens with an onboarding prompt. Plain `npx hek init` requires an npm-published package or a locally installed dependency; this project does not rely on that form.
+
+Claude Code, Codex, Cursor, and Gemini CLI are supported. For scripts or explicit selection:
+
+```bash
+npx --yes --package github:8425334/harness-engineering-kit hek init --agent codex --yes
+npx --yes --package github:8425334/harness-engineering-kit hek init --agent claude --yes --no-open
+npx --yes --package github:8425334/harness-engineering-kit hek agents
+npx --yes --package github:8425334/harness-engineering-kit hek init --plan --json
+```
+
+Interactive `init` opens an agent only after onboarding succeeds. Non-interactive runs never launch an external process unless `--open` is supplied. Use `HEK_AGENT` instead of `--agent`, or `--prompt` to customize the first prompt sent to terminal agents.
+
+`hek init` first produces a read-only plan and classifies the project as `fresh`, `partial`, `legacy`, or `current`. Interactive runs then ask for confirmation, apply the plan, run deterministic checks, and open the selected Agent. Tier 1 installs core controls; the default Tier 2 also includes Fitness, production controls, and lesson memory. Each run writes `docs/methodology/onboarding.json` with the source version, file digests, preserved legacy files, and verification result.
 
 The check fails for an oversized or structurally invalid `ai.json`, unindexed or oversized `AI.md`, missing policy, placeholders, broken referenced paths, invalid profiles, missing Skill resources, stale installed Skill content, or unsupported platform adapters. Cursor and the legacy `ramer`, `fe-engineering`, and `multi-agent` entries are intentionally not supported.
 
-Resolve task context directly with `python3 docs/methodology/scripts/resolve_context.py <target-path> [<target-path> ...]`. Add exact semantic routes with repeated `--keyword <read_when>` arguments.
-
-See the [Conversational Onboarding Playbook](templates/engineering/references/onboarding.md) for the execution contract. The copy-ready Chinese conversation guide is [here](docs/onboarding-conversation.zh.md).
+Resolve task context with the installed project controls. See the [CLI Onboarding Playbook](templates/engineering/references/onboarding.md) for the execution contract.
 
 ## Change Controls
 

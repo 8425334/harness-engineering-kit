@@ -35,27 +35,37 @@ Self-Refine 是草稿和实现质量的可选或按 Profile 要求启用的内�
 
 项目经验记忆把这一循环扩展到多次变更：将失败转化为经过审核、可检索的预防指导，必要时再升级为确定性控制。详见 [项目经验记忆](i18n/zh/core/lesson-memory.md)。
 
-## 对话式接入
+## CLI 接入
 
-不再要求项目成员手动执行 `init.sh`。在目标仓库的 Agent 对话中发送：
+### 独立 CLI（`hek`）
 
-```text
-请把当前项目接入 Harness Engineering Kit。先只读检查并识别是全新、部分接入、老架构还是当前版本；给出将创建、更新、保留的文件清单。不要删除旧的 ramer/fe-engineering/multi-agent 或 Cursor 配置，等我确认后再执行完整接入并校验。
-```
-
-已接入项目会通过 `engineering` Skill 自动路由到接入流程。Agent 会先运行只读计划：
+本仓库也提供一个不依赖第三方 Node 包的独立入口。不需要发布到 npm，可直接通过 `npx` 从 GitHub 或本地目录运行：
 
 ```bash
-python3 <kit>/scripts/onboard.py --project-root . --source-root <kit> --plan --json
+cd your-project
+npx --yes --package github:8425334/harness-engineering-kit hek init
+# 或使用本地 checkout
+npx --yes --package /path/to/harness-engineering-kit hek init
 ```
 
-得到用户确认后才运行 `--apply`，随后运行 `--check`。Tier 1 安装核心控制面；完整接入默认使用 Tier 2（包含 Fitness、生产控制和经验记忆）。每次接入都会写入 `docs/methodology/onboarding.json`，记录版本、文件摘要、保留的旧文件和校验结果。`scripts/init.sh` 仅作为旧自动化的兼容转发，不是接入入口。
+执行后选择已安装的 AI Agent，确认计划，程序会自动打开对应的 Agent 面板并带上初始化提示词。`npx hek init` 仅适用于已发布 npm 包或项目已安装该依赖，本项目不依赖这种方式。
+
+支持 `Claude Code`、`Codex`、`Cursor` 和 `Gemini CLI`。也可以显式指定 Agent 或用于 CI：
+
+```bash
+npx --yes --package github:8425334/harness-engineering-kit hek init --agent codex --yes
+npx --yes --package github:8425334/harness-engineering-kit hek init --agent claude --yes --no-open
+npx --yes --package github:8425334/harness-engineering-kit hek agents                 # 查看支持的 Agent 和安装状态
+npx --yes --package github:8425334/harness-engineering-kit hek init --plan --json     # 只读输出机器可读计划
+```
+
+交互式 `init` 默认只在接入成功后启动面板；非交互环境不会意外拉起外部程序，使用 `--open` 可显式开启。`HEK_AGENT` 可作为 `--agent` 的环境变量替代，`--prompt` 可覆盖传给终端 Agent 的首条提示词。
+
+`hek init` 会先生成只读计划，并将项目识别为 `fresh`、`partial`、`legacy` 或 `current`。交互式运行随后请求确认、应用计划、执行确定性检查，并打开所选 Agent。Tier 1 安装核心控制面；默认 Tier 2 还包含 Fitness、生产控制和经验记忆。每次接入都会写入 `docs/methodology/onboarding.json`，记录版本、文件摘要、保留的旧文件和校验结果。
 
 `ai.json` 超限或结构非法、`AI.md` 未索引或超限、策略缺失、占位符未填、引用路径断裂、Profile 非法、Skill 资源缺失、安装内容过期或平台适配不支持都会失败。Cursor 以及旧 `ramer`、`fe-engineering`、`multi-agent` 入口不再兼容。
 
-可用 `python3 docs/methodology/scripts/resolve_context.py <目标路径> [<目标路径> ...]` 直接解析任务上下文；显式语义路由通过重复的 `--keyword <read_when>` 参数传入。
-
-完整接入、升级和旧架构迁移规则见 [对话式接入指南](docs/onboarding-conversation.zh.md)；Skill 执行细节见 [Onboarding Playbook](templates/engineering/references/onboarding.md)。
+任务上下文由接入后的项目控制面解析；执行契约见 [CLI 接入指南](templates/engineering/references/onboarding.md)。
 
 ## 变更控制
 
