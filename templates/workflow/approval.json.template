@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "status": "approved",
+  "actor": "{{APPROVER}}",
+  "at": "{{YYYY-MM-DDTHH:MM:SSZ}}",
+  "source": "{{APPROVAL_SYSTEM_OR_CHANNEL}}",
+  "approval_id": "{{STABLE_APPROVAL_ID}}",
+  "artifacts": {
+    "context-pack.md": "{{SHA256}}",
+    "impact-analysis.md": "{{SHA256}}",
+    "context-impact.json": "{{SHA256}}",
+    "proposal.md": "{{SHA256}}",
+    "specs/{{CAPABILITY}}/spec.md": "{{SHA256}}",
+    "design.md": "{{SHA256}}",
+    "tasks.md": "{{SHA256}}"
+  }
+}

@@ -1,0 +1,34 @@
+# Impact Analysis
+
+## Change classification
+- Type: `{{NEW_FEATURE_OR_FIX_OR_REFACTOR}}`
+- Non-trivial reason: `{{REASON}}`
+- Reversible in one commit: `{{YES_OR_NO}}`
+
+## Affected surface
+- Modules/packages: `{{MODULES}}`
+- Public APIs/events: `{{PUBLIC_CONTRACTS}}`
+- Data/schema/migrations: `{{DATA_CHANGES}}`
+- Authorization and sensitive data: `{{SECURITY_IMPACT}}`
+- Performance/concurrency/reliability: `{{RUNTIME_IMPACT}}`
+
+## Coordination
+- Frontend/backend or consumer owners: `{{OWNERS}}`
+- Compatibility/versioning decision: `{{COMPATIBILITY_DECISION}}`
+- Required approvals: `{{APPROVALS}}`
+
+## Context maintenance
+- Root index impact: `{{AI_JSON_IMPACT_AND_REASON}}`
+- Detailed path context impact: `{{AI_MD_IMPACT_AND_REASON}}`
+- Machine-readable decision: `context-impact.json`
+
+## Risks and evidence
+| Risk | Failure mode | Evidence or mitigation | Owner |
+|------|--------------|------------------------|-------|
+| `{{RISK_1}}` | `{{FAILURE_MODE_1}}` | `{{EVIDENCE_1}}` | `{{OWNER_1}}` |
+
+## Spec readiness
+- [ ] All critical ambiguities have decisions.
+- [ ] Context Pack is complete and fresh.
+- [ ] Acceptance scenarios cover happy path, limits, errors, and rollback impact.
+- [ ] Non-goals are explicit.

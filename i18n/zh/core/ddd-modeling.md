@@ -131,6 +131,6 @@ AI Agent 在面对复杂业务时最容易犯的错误是跳过建模直接写 C
 | 现有方法论 | 与 DDD 的关系 |
 |------------|----------------|
 | `abstraction-first.md` | ACL 翻译 + 契约优先 = DDD 建模的工程化入口；先写领域契约（接口 / DTO / 领域对象）再写实现，正是 DDD 战术设计的执行顺序 |
-| `ramer-cycle.md` | M (Model) 阶段的产出物应是领域模型（聚合 / 上下文图），不是数据表 ER 图 |
+| `backend-profile.md` | 后端 Model 应产出领域模型（聚合 / 上下文图），而不只是数据表 ER 图 |
 | `sdd-workflow.md` | proposal 的 design 节应用 DDD 词汇描述变更影响的上下文与聚合 |
 | `fitness-framework.md` | `check_ddd_compliance.py` 校验"领域对象不依赖基础设施"（领域层纯度）；本工程已部署为 fast hard gate，规则见 `docs/fitness/ddd-compliance.md`，模板见 `templates/fitness/rules/ddd-compliance.md.template` |

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "kind": "context-index",
+  "project": "{{PROJECT_NAME}}",
+  "summary": "{{ONE_SENTENCE_PROJECT_SUMMARY}}",
+  "modules": [
+    {
+      "path": ".",
+      "summary": "{{ROOT_MODULE_SUMMARY}}",
+      "context": "AI.md",
+      "read_when": ["{{ROUTING_KEYWORD}}"]
+    }
+  ],
+  "entrypoints": {
+    "policy": "docs/methodology/agent-policy.yaml",
+    "lifecycle": "docs/methodology/core/change-lifecycle.md"
+  }
+}

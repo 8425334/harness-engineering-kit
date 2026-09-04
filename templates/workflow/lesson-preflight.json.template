@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "actor": "{{ACTOR}}",
+  "at": "{{YYYY-MM-DDTHH:MM:SSZ}}",
+  "keywords": ["{{TASK_KEYWORD}}"],
+  "rules": ["{{RULE_ID_OR_EMPTY}}"],
+  "paths": ["{{PROJECT_RELATIVE_TARGET_PATH}}"],
+  "scope": "{{MODE_OR_SCOPE}}",
+  "matched_lessons": [],
+  "actions": ["{{REVIEWED_MATCHED_LESSONS_OR_NO_MATCH}}"]
+}

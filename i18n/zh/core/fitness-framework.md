@@ -10,6 +10,12 @@ Fitness 是一套分层质量检查体系，核心作用是**定义 AI Agent 的
 
 Fitness 不是 CI 系统的附属配置，而是代码库的一部分。AI Agent 可以读取规则、理解约束、在失败时知道需要修复什么。
 
+### 受保护的控制面
+
+项目 Agent 可以读取和执行 `docs/fitness/**`，但不得修改。变更规模没有豁免：任何新增、编辑、重命名或删除都必须取得与精确变更摘要绑定的外部人工确认。自动例外只有两类：基线尚无 Fitness 目录时通过标准安装器首次安装；以及所有变更文件都是基线无法解析、修复后可解析的既有 Python 文件时，进行可证明的语法修复。
+
+`check_fitness_protection.py` 默认比较工作区与 `HEAD`，CI 中使用 `--base` 或 `FITNESS_BASE_REF`。人工确认信息必须由受保护的人工/CI 流程通过 `FITNESS_CHANGE_APPROVED_BY`、`FITNESS_CHANGE_APPROVAL_SOURCE`、`FITNESS_CHANGE_APPROVAL_ID` 和门禁输出的精确 `FITNESS_CHANGE_APPROVAL_DIGEST` 注入。摘要绑定基线提交、完整变更路径、状态和修改后内容。脚本只能证明确认与内容一致，不能证明人工身份；分支保护与 CI 权限必须禁止 PR 代码自行注入确认变量。
+
 ### 三层分级体系
 
 | Tier | 名称 | 耗时 | 典型检查 | 触发时机 |

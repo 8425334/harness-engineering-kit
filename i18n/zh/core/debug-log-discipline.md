@@ -56,7 +56,7 @@ AI Agent 在编码后必须经过"打日志 → 自检 → 清理"三阶段，�
 
 | 现有方法论 | 关系 |
 |------------|------|
-| `ramer-cycle.md` | 阶段 1 在 EXECUTE，阶段 2/3 在 REVIEW |
+| `change-lifecycle.md` | 临时观测发生在 Apply；清理和证据在 Review 通过前完成 |
 | TDD (`test-driven-development`) | 阶段 2 的自检是 TDD 红绿循环的扩展 —— 不仅看测试红绿，还要看日志数据流符合预期 |
 | `verification-before-completion` | 阶段 3 的清理验证是该 skill 的具体应用 |
 | `abstraction-first.md` | 临时调试日志不污染契约层；清理后保留的框架日志属于实现层 |

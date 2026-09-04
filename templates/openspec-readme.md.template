@@ -1,0 +1,36 @@
+# Engineering Change Workspace
+
+Canonical lifecycle:
+
+```text
+Explore → Propose (Spec → Design → Approval) → Apply → Sync → Archive
+```
+
+Each non-trivial change lives at `openspec/changes/<change-id>/` and contains both OpenSpec artifacts and Harness governance evidence:
+
+```text
+change.json
+context-pack.md
+impact-analysis.md
+context-impact.json
+proposal.md
+specs/<capability>/spec.md
+design.md
+tasks.md
+lesson-candidate.json
+lesson-decision.json
+approval.json
+review-evidence.json
+self-refine-evidence.json
+sync-evidence.json
+archive-evidence.json
+evidence/events.jsonl
+evidence/failure-events.jsonl
+evidence/lesson-preflight.json
+```
+
+Use `init_change.py` to create it, `approve_design.py` to bind external approval to every contract artifact, and `methodology_state.py` to advance state. Never edit state directly.
+
+Behavior specs use `#### Scenario`, `WHEN`, and `THEN`. Sync evidence maps every source spec to its canonical destination and matching SHA-256. Production scope also links an absolute production record path with the same `change_id`; Archive remains blocked until that record is `CLOSED`.
+
+See `docs/methodology/core/change-lifecycle.md` for the complete phase and state contract.

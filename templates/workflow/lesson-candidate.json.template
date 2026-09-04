@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "lesson_id": "{{LESSON_ID}}",
+  "title": "{{LESSON_TITLE}}",
+  "pattern": "{{RECURRING_FAILURE_PATTERN}}",
+  "root_cause": "{{ROOT_CAUSE}}",
+  "prevention": "{{PREVENTION}}",
+  "verification": "{{VERIFICATION_COMMAND_OR_EVIDENCE}}",
+  "scope": "{{SCOPE}}",
+  "keywords": ["{{KEYWORD}}"],
+  "rules": ["{{FITNESS_OR_GATE_RULE}}"],
+  "paths": ["{{PROJECT_RELATIVE_PATH}}"],
+  "source_changes": ["{{CHANGE_ID}}"],
+  "source_events": ["{{FAILURE_EVENT_ID}}"],
+  "failure_events_digest": "{{SHA256}}",
+  "status": "candidate",
+  "owner": "{{OWNER}}",
+  "created_at": "{{YYYY-MM-DDTHH:MM:SSZ}}"
+}

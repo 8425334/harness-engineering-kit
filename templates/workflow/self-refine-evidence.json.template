@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "actor": "{{ACTOR}}",
+  "at": "{{YYYY-MM-DDTHH:MM:SSZ}}",
+  "policy": "{{SELF_REFINE_POLICY}}",
+  "iterations": 1,
+  "artifacts": [
+    {
+      "path": "{{ARTIFACT_PATH}}",
+      "findings": "{{SELF_CRITIQUE_FINDINGS}}",
+      "resolution": "{{REFINEMENT_RESOLUTION}}"
+    }
+  ],
+  "uncovered_risks": [],
+  "independent_check": {
+    "status": "not-required",
+    "actor": "{{OPTIONAL_ACTOR_OR_NA}}",
+    "evidence": "{{OPTIONAL_EVIDENCE_OR_NA}}"
+  }
+}

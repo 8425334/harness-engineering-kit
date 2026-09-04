@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "analyzed_paths": ["{{PROJECT_RELATIVE_PLANNED_CHANGED_FILE}}"],
+  "signals": ["{{CONTEXT_IMPACT_SIGNAL_OR_NONE}}"],
+  "ai_json": {
+    "required": false,
+    "paths": [],
+    "reason": "{{WHY_THE_GLOBAL_INDEX_IS_OR_IS_NOT_AFFECTED}}"
+  },
+  "ai_md": {
+    "required": false,
+    "paths": [],
+    "reason": "{{WHY_DETAILED_PATH_CONTEXT_IS_OR_IS_NOT_AFFECTED}}"
+  }
+}

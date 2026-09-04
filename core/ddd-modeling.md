@@ -131,6 +131,6 @@ An aggregate is a cluster of closely related objects treated as a consistency bo
 | Existing Methodology | Relationship to DDD |
 |---------------------|---------------------|
 | `abstraction-first.md` | ACL translation + contract-first = the engineering entry point for DDD modeling; writing domain contracts (interfaces / DTOs / domain objects) before implementation is exactly DDD tactical design execution order |
-| `ramer-cycle.md` | The output of the M (Model) phase should be a domain model (aggregates / context map), not a table ER diagram |
+| `backend-profile.md` | Backend Model should be a domain model (aggregates / context map), not only a table ER diagram |
 | `sdd-workflow.md` | The design section of proposals should use DDD vocabulary to describe which contexts and aggregates the change affects |
 | `fitness-framework.md` | `check_ddd_compliance.py` validates "domain objects don't depend on infrastructure" (domain layer purity); deployed as fast hard gate, template at `templates/fitness/rules/ddd-compliance.md.template` |

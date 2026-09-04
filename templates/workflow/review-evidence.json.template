@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "actor": "{{REVIEWER}}",
+  "at": "{{YYYY-MM-DDTHH:MM:SSZ}}",
+  "change_digest": "{{GIT_DIFF_OR_COMMIT_DIGEST}}",
+  "tasks_complete": true,
+  "files": {
+    "{{PROJECT_RELATIVE_CHANGED_FILE}}": "{{SHA256_OR_DELETED}}"
+  },
+  "commands": [
+    {
+      "command": "{{EXACT_COMMAND}}",
+      "exit_code": 0,
+      "evidence": "{{LOG_OR_REPORT_PATH}}"
+    }
+  ],
+  "uncovered_cases": [],
+  "exceptions": []
+}

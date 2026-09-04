@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "actor": "{{ACTOR}}",
+  "at": "{{YYYY-MM-DDTHH:MM:SSZ}}",
+  "targets": [
+    {
+      "source": "specs/{{CAPABILITY}}/spec.md",
+      "destination": "openspec/specs/{{CAPABILITY}}/spec.md",
+      "sha256": "{{SYNCED_SPEC_SHA256}}"
+    }
+  ]
+}

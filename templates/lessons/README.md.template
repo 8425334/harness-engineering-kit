@@ -1,0 +1,5 @@
+# Project Lesson Memory
+
+This directory contains reviewed, active lessons promoted from change evidence. Lesson files are JSON and must be created through the lesson approval flow; Agents may propose candidates in a change workspace but must not activate lessons without external approval.
+
+Use `retrieve_lessons.py` during Explore and `preflight_lessons.py` to record the matching lessons before implementation. Retire stale lessons through an approved methodology change.

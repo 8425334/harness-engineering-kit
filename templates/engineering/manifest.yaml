@@ -1,0 +1,9 @@
+name: engineering
+version: 0.3.0
+entry: SKILL.md
+platforms: [claude, codex]
+routes: [backend, frontend, fullstack, api, database, ui, cross-module]
+modes: [backend, frontend, fullstack]
+required_sections: [Route, Lifecycle, Evidence]
+capabilities: [onboarding, context-index, context-impact, behavior-spec, technical-design, cross-stack-execution, review-evidence, self-refine-evidence]
+fallback: manual-engineering-with-identical-gates

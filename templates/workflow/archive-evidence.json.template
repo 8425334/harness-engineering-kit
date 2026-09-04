@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "actor": "{{ACTOR}}",
+  "at": "{{YYYY-MM-DDTHH:MM:SSZ}}",
+  "destination": "openspec/changes/archive/{{YYYY-MM-DD}}-{{CHANGE_ID}}"
+}

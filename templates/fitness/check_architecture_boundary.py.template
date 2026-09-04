@@ -56,10 +56,10 @@ def main() -> int:
                     f"{APP_MODULE} must not contain orchestration entry: {rel}"
                 )
 
-    # Verify the fitness directory itself has Harness entry docs (self-discipline).
+    # Verify the fitness directory itself has its rulebook.
     fitness_dir = PROJECT_ROOT / "docs" / "fitness"
     if fitness_dir.exists():
-        for required in ["AI.md", "ai.json", "README.md"]:
+        for required in ["README.md"]:
             if not (fitness_dir / required).exists():
                 violations.append(f"docs/fitness missing required entry: {required}")
 

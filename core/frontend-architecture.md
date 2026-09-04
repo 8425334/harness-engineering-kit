@@ -148,7 +148,7 @@ Forbid AI from introducing the following patterns unless explicitly authorized:
 
 ### 5.3 Self-Correction Loop
 
-Configure Agent mode in the IDE (VS Code / Cursor):
+Configure Agent mode in the supported IDE or coding harness:
 
 1. **Write Code**: AI generates code.
 2. **Trigger Linter**: IDE auto-runs ESLint.

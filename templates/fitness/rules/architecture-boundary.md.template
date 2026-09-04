@@ -21,7 +21,7 @@ metrics:
 
 - 基础设施/共享模块（`{{INFRA_MODULE}}`）下不应出现业务包（路径含 `{{INFRA_FORBIDDEN_PART}}`）。
 - 应用/领域模块（`{{APP_MODULE}}`）下不应出现编排入口（`{{APP_FORBIDDEN_GLOB}}`）。
-- 新增非 trivial 目录 `docs/fitness` 必须包含 `AI.md` 和 `ai.json`。
+- `docs/fitness` 必须包含规则手册；只有局部职责显著不同才增加补充 `AI.md`，且必须登记到根 `ai.json`。
 
 ## 后续扩展
 

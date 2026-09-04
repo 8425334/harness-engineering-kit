@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug in fitness scripts, templates, or init.sh
+about: Report a bug in fitness scripts, templates, or conversational onboarding
 title: "[BUG] "
 labels: bug
 assignees: ""
@@ -11,7 +11,7 @@ A clear description of what went wrong.
 
 **To Reproduce**
 Steps to reproduce the behavior:
-1. Run `bash scripts/init.sh --tier 1`
+1. Run `python3 scripts/onboard.py --plan --json`
 2. See error: `...`
 
 **Expected behavior**

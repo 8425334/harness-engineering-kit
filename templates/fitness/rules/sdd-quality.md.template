@@ -3,9 +3,9 @@ dimension: sdd_quality
 weight: 10
 tier: fast
 metrics:
-  - name: sdd_directory_exists
-    command: test -d docs/sdd && test -f docs/sdd/README.md && test -f docs/sdd/AI.md && test -f docs/sdd/ai.json && echo "SDD directory present"
-    pattern: "SDD directory present"
+  - name: openspec_workspace_exists
+    command: test -d openspec/changes && test -d openspec/specs && test -f openspec/README.md && echo "OpenSpec workspace present"
+    pattern: "OpenSpec workspace present"
     hard_gate: true
     tier: fast
   - name: openspec_config_populated
@@ -30,7 +30,7 @@ metrics:
 
 | 规则 | 门控 | 说明 |
 |------|------|------|
-| sdd_directory_exists | HARD | docs/sdd/ 目录存在，含 README.md + AI.md + ai.json |
+| openspec_workspace_exists | HARD | `openspec/changes/`、`openspec/specs/` 与 `openspec/README.md` 存在 |
 | openspec_config_populated | HARD | openspec/config.yaml 有非空的 context 和 rules 配置 |
 | openspec_change_structure | SOFT | 活跃 change 有 proposal.md + tasks.md |
 

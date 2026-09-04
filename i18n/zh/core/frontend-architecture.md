@@ -150,7 +150,7 @@ AI 生成模式：
 
 ### 5.3 自我修正循环
 
-在 IDE（VS Code / Cursor）中配置 Agent 模式：
+在受支持的 IDE 或编码 Harness 中配置 Agent 模式：
 
 1. **编写代码**：AI 生成代码。
 2. **触发 Linter**：IDE 自动运行 ESLint。

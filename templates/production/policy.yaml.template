@@ -1,0 +1,12 @@
+# Runtime enforcement is provider-specific. This file is the project policy source.
+network: deny-by-default
+production_writes: approval-required
+destructive_operations: approval-required
+secret_output: deny
+workspace:
+  readable: ["src/**", "tests/**", "docs/**"]
+  writable: ["src/**", "tests/**", "docs/methodology/production/**"]
+  denied: [".env*", "secrets/**", "production-dumps/**"]
+commands:
+  allow: []
+  approval_required: ["git push", "migration", "deployment", "production API write"]

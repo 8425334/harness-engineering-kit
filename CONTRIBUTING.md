@@ -15,7 +15,7 @@ Thanks for your interest in contributing to the AI-Assisted Development Methodol
 1. Fork the repo and create a feature branch from `main`.
 2. Make your changes. Keep them focused — one concern per PR.
 3. If you're adding or modifying a fitness check script, include a test.
-4. Run `bash scripts/init.sh --check` to verify nothing is broken.
+4. Run `python3 scripts/onboard.py --plan --json` and, for an existing integration, `python3 scripts/onboard.py --check` to verify nothing is broken.
 5. Update `CHANGELOG.md` under the `[Unreleased]` section.
 6. Open a PR with a clear description of what changed and why.
 
@@ -35,11 +35,8 @@ Thanks for your interest in contributing to the AI-Assisted Development Methodol
 ## Development
 
 ```bash
-# Verify setup
-bash scripts/init.sh --check
-
-# Dry-run Tier 1 to preview changes
-bash scripts/init.sh --tier 1 --dry-run
+# Preview onboarding changes (read-only)
+python3 scripts/onboard.py --plan --json
 ```
 
 ## License

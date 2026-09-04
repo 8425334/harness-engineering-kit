@@ -1,0 +1,10 @@
+# Design
+
+## Decisions
+
+### D1: {{DECISION}}
+
+- Choice: {{CHOICE}}
+- Reason: {{REASON}}
+- Alternatives: {{ALTERNATIVES}}
+- Owner: {{MODULE_OR_COMPONENT}}

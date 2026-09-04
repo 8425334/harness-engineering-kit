@@ -1,0 +1,7 @@
+mode: backend
+reference: references/backend.md
+design_stage: MODEL
+execution_stage: EXECUTE
+verification: [compile, unit-test, fitness-gate, boundary-check, api-contract]
+rules: [domain-purity, dependency-inversion, acl-mapping, permission-audit, mapper-xml-parity]
+path_signals: ["**/*.java", "**/*.py", "**/*.go", "**/*.sql", "**/*Mapper.xml", "**/server/**", "**/service/**"]

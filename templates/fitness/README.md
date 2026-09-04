@@ -8,7 +8,6 @@
 fitness/
 ├── README.md                              # 本文件
 ├── fitness.py.template                    # Fitness runner（跨平台，零依赖）
-├── check_ai_json_sync.py.template         # AI.md ↔ ai.json 漂移检查
 ├── check_architecture_boundary.py.template # 架构边界基线检查
 ├── check_security_baseline.py.template    # Agent 危险配置扫描
 ├── check_sql_updates.py.template          # SQL 迁移位置检查
@@ -75,9 +74,11 @@ cd docs/fitness && for f in *.md.template; do mv "$f" "${f%.template}"; done && 
 ```bash
 # 规则手册和验证账本（docs-quality 规则要求这两个文件存在）
 touch docs/fitness/README.md docs/fitness/verification-ledger.md
-# Fitness 目录自身的 AI 入口（架构边界规则要求）
-touch docs/fitness/AI.md docs/fitness/ai.json
+# 可选：职责显著不同的目录增加一个补充 AI.md
+touch docs/fitness/AI.md
 ```
+
+新增 `AI.md` 后，必须同时在根 `ai.json` 的 `modules` 中登记对应路径、摘要和 `read_when` 路由条件。
 
 ### 4. 替换占位符
 
@@ -90,11 +91,29 @@ python3 docs/fitness/scripts/fitness.py --tier fast --dry-run   # 只打印命�
 python3 docs/fitness/scripts/fitness.py --tier fast              # 实际执行
 ```
 
+## Fitness 层保护
+
+项目 Agent 只能读取和执行 `docs/fitness/**`，不得为了通过门禁而修改规则、脚本、基线或例外。保护不设增量阈值，任意数量、任意大小的新增、修改、重命名和删除都需要人工确认。仅首次标准安装（Git 基线没有 `docs/fitness`）和可证明的既有 Python 语法错误修复自动放行。
+
+本地工作区检查：
+
+```bash
+python3 docs/methodology/scripts/check_fitness_protection.py
+```
+
+CI 必须使用可信 PR 基线执行，例如：
+
+```bash
+FITNESS_BASE_REF="$TRUSTED_BASE_SHA" \
+  python3 docs/methodology/scripts/check_fitness_protection.py
+```
+
+需要修改时，先运行门禁取得 `Approval digest`，由人工在受保护环境中确认后注入 `FITNESS_CHANGE_APPROVED_BY`、`FITNESS_CHANGE_APPROVAL_SOURCE`、`FITNESS_CHANGE_APPROVAL_ID` 和完全匹配的 `FITNESS_CHANGE_APPROVAL_DIGEST`。不得把这些值写入仓库、PR 脚本或 Agent 可控制的 CI 配置。
+
 ## 占位符参考
 
 | 占位符 | 出现位置 | 含义 / 示例 |
 |--------|----------|-------------|
-| `{{AI_MD_CONVERTER}}` | check_ai_json_sync.py | AI.md → ai.json 转换脚本的相对路径，如 `scripts/ai_md_to_json.py`。该脚本依赖项目的 AI.md 标题约定，需自备。 |
 | `{{INFRA_MODULE}}` | check_architecture_boundary.py / rules | 基础设施模块目录名，如 `ruoyi-common` / `common`。空串可禁用该检查。 |
 | `{{INFRA_FORBIDDEN_PART}}` | check_architecture_boundary.py | 不应出现在基础设施模块中的业务包路径片段，如 `org/dromara/coil` 中的 `coil`。 |
 | `{{APP_MODULE}}` | check_architecture_boundary.py | 应用/领域模块目录名，如 `coil-app` / `app`。空串可禁用该检查。 |
@@ -126,7 +145,6 @@ python3 docs/fitness/scripts/fitness.py --tier fast              # 实际执行
 | `{{FORBIDDEN_INFRA_IMPORTS}}` | check_ddd_compliance.py / rules | 领域层禁止 import 的基础设施包前缀元组（Spring DI、Controller、JdbcTemplate、MyBatis Mapper 等）。 |
 | `{{FORBIDDEN_INFRA_ANNOTATIONS}}` | check_ddd_compliance.py / rules | 领域层禁止使用的注解名元组（`@Service` / `@Component` / `@Mapper` 等）。 |
 | `{{FORBIDDEN_DEBUG_PATTERNS}}` | check_debug_log_cleanup.py | 调试日志禁止模式元组，形式 `(suffix, regex, label)`，按文件后缀匹配。框架级 logger 不在内。 |
-| `{{AI_CONTEXT_SCRIPT}}` | rules/docs-quality.md | 路径文档加载脚本路径，如 `$HOME/.codex/skills/<project>-guide/scripts/find_ai_context.py`。无该工具可删除对应 metric。 |
 | `{{BACKEND_TEST_COMMAND}}` | rules/backend-quality.md | 后端测试命令，如 `mvn -pl app/business -am test -DskipTests=false`。 |
 | `{{FRONTEND_DIR}}` | rules/frontend-quality.md | 前端项目目录，如 `web/`、`frontend/`。 |
 | `{{TYPECHECK_COMMAND}}` | rules/frontend-quality.md | 前端类型检查命令，如 `pnpm typecheck`、`tsc --noEmit`。 |

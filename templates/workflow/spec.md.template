@@ -1,0 +1,12 @@
+# {{CAPABILITY}} Specification
+
+## Requirements
+
+### Requirement: {{REQUIREMENT}}
+
+The system MUST {{OBSERVABLE_BEHAVIOR}}.
+
+#### Scenario: {{SCENARIO}}
+
+WHEN {{PRECONDITION_OR_ACTION}}
+THEN {{OBSERVABLE_RESULT}}

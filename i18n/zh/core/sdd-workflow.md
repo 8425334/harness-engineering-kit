@@ -1,62 +1,17 @@
-# SDD 工作流（Spec-Driven Development）
+# 规格驱动交付
 
-SDD 是一种规范驱动的开发流程：非 trivial 的变更必须先文档化为规格（spec），再进入实现。它解决 AI Agent 开发的根本问题 — "从哪里开始"和"什么时候算完成"。
+SDD 是统一 Engineering 生命周期中负责产出契约的部分，不是第二套生命周期。
 
-## 通用原则
+`openspec/changes/<change-id>/` 是唯一的活跃变更工作区。OpenSpec 的 proposal/spec/design/tasks 与 Harness 的上下文、状态、审批和证据产物共置于此。
 
-### 五阶段工作流
+- Explore 产出上下文、影响证据，以及覆盖全部计划文件并受审批绑定的 `context-impact.json` 决策。
+- Propose 产出业务提案、可观测行为 Spec、技术 Design、依赖有序 Tasks 和外部审批。
+- Apply 实现已审批契约并记录结构化 Review 证据。
+- Sync 把已验证行为同步到权威 Spec/文档并证明摘要相同。
+- Archive 在关联生产记录关闭后结束技术记录。
 
-```
-Explore (可选) → Propose → Apply → Sync → Archive
-```
+行为 Spec 使用 `#### Scenario`、`WHEN`、`THEN`，保持实现中立，并按需覆盖校验、错误、权限、精度/时间、兼容和失败行为。Design 记录实现这些行为所需的选择。审批同时绑定两者，因此任一变化都会使执行授权失效。
 
-| 阶段 | 职责 | 产出 |
-|------|------|------|
-| **Explore** | 思考问题、澄清需求、探索方案 | 无强制产出（可选步骤） |
-| **Propose** | 创建变更提案，生成全套产物 | proposal + specs + design + tasks |
-| **Apply** | 按任务清单逐步实现 | 代码变更 + 测试 |
-| **Sync** | 将 delta specs 合入主规格库 | 更新的 `specs/` 目录 |
-| **Archive** | 归档完成的变更 | 归档目录 `archive/YYYY-MM-DD-<name>/` |
+Review 必须精确摘要 `context-impact.json` 声明的全部文件。项目摘要、模块拓扑、上下文路由或入口变化必须更新 `ai.json`；职责、边界、不变量、依赖、契约或局部验证变化必须更新受影响且已索引的 `AI.md`。
 
-### 四类产物
-
-每个 SDD 变更按依赖顺序生成：
-
-| 产物 | 顺序 | 回答的问题 |
-|------|------|-----------|
-| **Proposal** | 第 1 | 为什么做？做什么？影响什么？ |
-| **Specs** | 第 2 | 系统应该做什么？每个需求的具体场景是什么？ |
-| **Design** | 第 3 | 怎么实现？技术决策是什么？为什么选 X 不选 Y？ |
-| **Tasks** | 第 4 | 分几步做？每步做什么？依赖顺序是什么？ |
-
-### Spec 编写规范
-
-- 需求用 **SHALL** / **MUST**（不用 should/may）
-- 每个需求至少一个场景：`#### Scenario: <name>` + `WHEN/THEN`
-- 需求按 capability（能力域）分文件夹组织
-- 场景是未来测试用例的源头
-
-### 任务分组顺序
-
-任务必须按架构依赖顺序排列（每个任务只依赖前面的任务）：
-
-```
-1. 契约层（接口 / DTO / Entity）
-2. 领域逻辑层（Service / Support）
-3. API 层（Controller）
-4. 数据访问层（Mapper / XML）
-5. 数据库迁移（SQL）
-6. 验证（编译 + 测试 + fitness gate）
-7. 前端（组件 + API 文件）
-```
-
-### 什么情况下不需要走 SDD
-
-| 变更类型 | 是否走 SDD |
-|----------|-----------|
-| 新功能 / 新领域对象 | **是** |
-| 跨模块修改 | **是** |
-| Bug 修复 / 单行修改 | **否**（直接 RAMER + fitness） |
-| 小范围重构 | **视规模** |
-
-**判定标准**：如果变更只涉及单个文件、不新增领域对象、不改变模块间契约，可以跳过 SDD。
+申请阶段门禁前，作者可以针对需求、场景、设计决策、任务或实现运行有界 Self-Refine 循环（`生成 → 自我批判 → 优化 → 再检查`）。Profile 要求时，在 Review 阶段记录 `self-refine-evidence.json`。自反馈可以发现缺口并准备修复，但测试、摘要、审批和外部 Review 仍是权威依据。

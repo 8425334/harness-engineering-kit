@@ -1,62 +1,17 @@
-# SDD Workflow (Spec-Driven Development)
+# Specification-Driven Delivery
 
-SDD is a spec-driven development process: non-trivial changes must be documented as specs before entering implementation. It solves the fundamental problems of AI Agent development — "where to start" and "when is it done."
+SDD is the contract-producing part of the canonical Engineering lifecycle, not a second lifecycle.
 
-## Universal Principles
+`openspec/changes/<change-id>/` is the only active change workspace. OpenSpec proposal/spec/design/tasks and Harness context, state, approval, and evidence artifacts are co-located there.
 
-### Five-Phase Workflow
+- Explore produces context, impact evidence, and an approval-bound `context-impact.json` decision covering every planned file.
+- Propose produces the business proposal, observable behavior specs, technical design, dependency-ordered tasks, and external approval.
+- Apply implements the approved contract and records structured review evidence.
+- Sync copies verified behavior into canonical specs/docs and proves equal digests.
+- Archive closes the technical record after any linked production record is closed.
 
-```
-Explore (optional) → Propose → Apply → Sync → Archive
-```
+Behavior specs use `#### Scenario`, `WHEN`, and `THEN`, remain implementation-neutral, and include validation, errors, authorization, precision/time, compatibility, and failure behavior as applicable. Design records the choices needed to realize those behaviors. Approval covers both, so changing either invalidates execution authorization.
 
-| Phase | Responsibility | Output |
-|-------|---------------|--------|
-| **Explore** | Think through the problem, clarify requirements, explore solutions | No mandatory output (optional step) |
-| **Propose** | Create change proposal, generate full artifact set | proposal + specs + design + tasks |
-| **Apply** | Implement step by step per task list | Code changes + tests |
-| **Sync** | Merge delta specs into main spec repository | Updated `specs/` directory |
-| **Archive** | Archive completed change | Archive directory `archive/YYYY-MM-DD-<name>/` |
+Review must digest exactly the files declared in `context-impact.json`. Changes to project summary, module topology, context routes, or entrypoints require `ai.json`; changes to responsibilities, boundaries, invariants, dependencies, contracts, or local verification require the affected indexed `AI.md`.
 
-### Four Artifact Types
-
-Each SDD change generates artifacts in dependency order:
-
-| Artifact | Order | Question It Answers |
-|----------|-------|---------------------|
-| **Proposal** | 1st | Why do it? What to do? What's affected? |
-| **Specs** | 2nd | What should the system do? What are the specific scenarios for each requirement? |
-| **Design** | 3rd | How to implement? What are the technical decisions? Why X not Y? |
-| **Tasks** | 4th | How many steps? What to do in each? What's the dependency order? |
-
-### Spec Writing Conventions
-
-- Requirements use **SHALL** / **MUST** (not should/may)
-- Every requirement has at least one scenario: `#### Scenario: <name>` + `WHEN/THEN`
-- Requirements organized by capability in folders
-- Scenarios are the source of future test cases
-
-### Task Grouping Order
-
-Tasks must be ordered by architecture dependency (each task only depends on previous ones):
-
-```
-1. Contract Layer (Interfaces / DTOs / Entities)
-2. Domain Logic Layer (Services / Support)
-3. API Layer (Controllers)
-4. Data Access Layer (Mappers / XML)
-5. Database Migration (SQL)
-6. Verification (Compile + Test + Fitness Gate)
-7. Frontend (Components + API files)
-```
-
-### When NOT to Use SDD
-
-| Change Type | Use SDD? |
-|-------------|----------|
-| New feature / new domain object | **Yes** |
-| Cross-module modification | **Yes** |
-| Bug fix / single-line change | **No** (go directly RAMER + fitness) |
-| Small refactoring | **Depends on scope** |
-
-**Decision criterion**: If the change involves only a single file, adds no new domain objects, and doesn't change cross-module contracts, you can skip SDD.
+Before requesting a phase gate, the author may run the bounded Self-Refine loop (`Generate → Self-Critique → Refine → Re-check`) against the requirement, scenarios, design decisions, tasks, or implementation. A required Profile records this in `self-refine-evidence.json` at Review. Self-feedback can identify gaps and prepare remediation, but tests, digests, approval, and external review remain authoritative.

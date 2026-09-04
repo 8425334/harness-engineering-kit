@@ -1,0 +1,7 @@
+mode: fullstack
+reference: references/fullstack.md
+design_stage: MODEL_AND_DECOMPOSE
+execution_stage: PARALLEL_OR_SEQUENTIAL
+verification: [api-contract, enum-alignment, error-schema, auth-alignment, backend-gates, frontend-gates, integration-test]
+rules: [shared-contract-first, isolated-scopes, coordinator-merge, cross-agent-evidence]
+path_signals: ["**/api/**", "**/service/**", "**/views/**", "**/components/**", "**/frontend/**", "**/backend/**"]

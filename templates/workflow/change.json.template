@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "change_id": "{{CHANGE_ID}}",
+  "title": "{{TITLE}}",
+  "profile": "standard",
+  "risk": "medium",
+  "skill": "engineering",
+  "mode": "{{MODE}}",
+  "trigger": "explicit-selection",
+  "delivery_scope": "technical",
+  "production_record": null,
+  "project_root": "{{ABSOLUTE_PROJECT_ROOT}}",
+  "state": "INTAKE",
+  "owner": "{{OWNER}}",
+  "created_at": "{{YYYY-MM-DDTHH:MM:SSZ}}",
+  "updated_at": "{{YYYY-MM-DDTHH:MM:SSZ}}",
+  "events": []
+}

@@ -1,0 +1,31 @@
+# Production Change Records
+
+Each production-impacting change gets one JSON record under `docs/methodology/production/changes/<change-id>.json`.
+
+Validate a record before review:
+
+```bash
+python3 docs/methodology/scripts/check_production_readiness.py docs/methodology/production/changes/<change-id>.json
+```
+
+Move the record through the lifecycle with the state tool:
+
+```bash
+python3 docs/methodology/scripts/change_state.py <record> CLASSIFIED --actor <name>
+python3 docs/methodology/scripts/change_state.py <record> CONTEXT_READY --actor <name>
+python3 docs/methodology/scripts/change_state.py <record> CONTRACT_READY --actor <name>
+python3 docs/methodology/scripts/change_state.py <record> PLAN_APPROVED --actor <name>
+python3 docs/methodology/scripts/change_state.py <record> IMPLEMENTING --actor <name>
+python3 docs/methodology/scripts/change_state.py <record> VERIFYING --actor <name>
+python3 docs/methodology/scripts/change_state.py <record> REVIEW_REQUIRED --actor <name>
+python3 docs/methodology/scripts/change_state.py <record> RELEASE_READY --actor <name> --evidence <url-or-path>
+# Repeat DEPLOYED once per declared rollout stage, in order.
+python3 docs/methodology/scripts/change_state.py <record> DEPLOYED --actor <name> --rollout-stage 1% --evidence <dashboard-snapshot>
+python3 docs/methodology/scripts/change_state.py <record> DEPLOYED --actor <name> --rollout-stage 5% --evidence <dashboard-snapshot>
+python3 docs/methodology/scripts/change_state.py <record> DEPLOYED --actor <name> --rollout-stage 25% --evidence <dashboard-snapshot>
+python3 docs/methodology/scripts/change_state.py <record> DEPLOYED --actor <name> --rollout-stage 100% --evidence <dashboard-snapshot>
+python3 docs/methodology/scripts/change_state.py <record> OBSERVING --actor <name> --evidence <dashboard-or-report>
+python3 docs/methodology/scripts/change_state.py <record> CLOSED --actor <name> --evidence <dashboard-or-report>
+```
+
+The record must use the same `change_id` as its Engineering change. `RELEASE_READY` requires technical and operational readiness evidence. `DEPLOYED` starts the observation window; `CLOSED` requires observation or rollback evidence. Keep the record and its audit log in version control, excluding secrets and personal data. These templates do not provision a monitoring system or deployment platform; connect the dashboard, alerting, canary controller, and rollback runbook used by your project.

@@ -1,0 +1,7 @@
+mode: frontend
+reference: references/frontend.md
+design_stage: DECOMPOSE
+execution_stage: IMPLEMENT
+verification: [typecheck, build, lint, accessibility, three-state, api-contract]
+rules: [layer-discipline, typed-contract, component-size, controlled-components, loading-empty-error]
+path_signals: ["**/*.vue", "**/*.tsx", "**/*.jsx", "**/*.svelte", "**/components/**", "**/views/**"]

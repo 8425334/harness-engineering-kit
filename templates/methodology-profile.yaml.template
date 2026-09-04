@@ -1,0 +1,25 @@
+version: 2
+profile: standard # light | standard | regulated | experimental
+project_risk: medium # low | medium | high | critical
+owner: "{{METHODOLOGY_OWNER}}"
+
+non_trivial_definition: "{{PROJECT_SPECIFIC_DEFINITION_OR_DEFAULT}}"
+
+evidence:
+  required_gates: ["{{FAST_NORMAL_OR_DEEP}}"]
+  approval: external-reference-required
+  production: linked-record-required
+
+self_refine:
+  policy: required # disabled | recommended | required | required-independent
+  max_iterations: 3
+
+exceptions:
+  record_path: "{{EXCEPTION_RECORD_PATH}}"
+  owner_required: true
+  expiry_required: true
+
+review:
+  rule_owner: "{{RULE_OWNER}}"
+  methodology_version: "{{METHODOLOGY_VERSION}}"
+  next_review: "{{YYYY-MM-DD}}"

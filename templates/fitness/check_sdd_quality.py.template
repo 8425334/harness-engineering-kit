@@ -20,7 +20,6 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 OPENSPEC_DIR = PROJECT_ROOT / "openspec"
 CONFIG_FILE = OPENSPEC_DIR / "config.yaml"
-SDD_DIR = PROJECT_ROOT / "docs" / "sdd"
 
 
 def check_config_populated() -> int:

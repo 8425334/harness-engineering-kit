@@ -8,11 +8,11 @@
 
 ## Checklist
 
-- [ ] Ran `bash scripts/init.sh --check` and it passes
+- [ ] Ran `python3 scripts/onboard.py --check` (or documented why onboarding checks are not applicable)
 - [ ] Updated `CHANGELOG.md` under `[Unreleased]`
 - [ ] If adding/modifying a fitness check script, included a test
 - [ ] If changing core documents, updated corresponding translations in `i18n/`
-- [ ] If touching templates, verified they render correctly with `--dry-run`
+- [ ] If touching templates, verified the onboarding plan with `--plan --json`
 
 ## Test Plan
 

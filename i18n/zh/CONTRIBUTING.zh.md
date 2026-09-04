@@ -15,7 +15,7 @@
 1. Fork 仓库并从 `main` 创建 feature 分支。
 2. 进行修改。保持专注 — 一个 PR 只解决一个问题。
 3. 如果添加或修改 fitness 检查脚本，请包含测试。
-4. 运行 `bash scripts/init.sh --check` 验证无损坏。
+4. 运行 `python3 scripts/onboard.py --plan --json`；已有接入时再运行 `python3 scripts/onboard.py --check` 验证无损坏。
 5. 在 `[Unreleased]` 部分更新 `CHANGELOG.md`。
 6. 提交 PR，清晰描述改了什么以及为什么。
 
@@ -35,11 +35,8 @@
 ## 开发
 
 ```bash
-# 验证配置
-bash scripts/init.sh --check
-
-# 预览 Tier 1 操作
-bash scripts/init.sh --tier 1 --dry-run
+# 只读预览接入操作
+python3 scripts/onboard.py --plan --json
 ```
 
 ## 许可证

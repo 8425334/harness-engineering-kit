@@ -56,7 +56,7 @@ Phase 1 and Phase 2 cannot be statically verified and rely on agent discipline. 
 
 | Existing Methodology | Relationship |
 |---------------------|-------------|
-| `ramer-cycle.md` | Phase 1 in EXECUTE, Phase 2/3 in REVIEW |
+| `change-lifecycle.md` | Temporary observation occurs during Apply; cleanup and evidence occur before Review passes |
 | TDD (`test-driven-development`) | Phase 2 self-check extends the TDD red-green cycle — not just checking test pass/fail, but also log data flow matches expectations |
 | `verification-before-completion` | Phase 3 cleanup verification is a concrete application of that skill |
 | `abstraction-first.md` | Temporary debug logs don't pollute the contract layer; retained framework logs belong to the implementation layer |

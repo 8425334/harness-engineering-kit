@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "change_id": "{{CHANGE_ID}}",
+  "title": "{{TITLE}}",
+  "environment": "production",
+  "profile": "standard",
+  "risk": "medium",
+  "owner": "{{OWNER}}",
+  "service": "{{SERVICE}}",
+  "state": "INTAKE",
+  "technical_done": false,
+  "operational_done": false,
+  "evidence": {
+    "spec": "{{SPEC_PATH}}",
+    "tests": ["{{TEST_EVIDENCE}}"],
+    "gates": ["{{GATE_EVIDENCE}}"],
+    "review": "{{REVIEW_APPROVAL}}",
+    "threat_model": "{{THREAT_MODEL_EVIDENCE_OR_NOT_APPLICABLE}}",
+    "audit": "{{AUDIT_REVIEW_OR_NOT_APPLICABLE}}"
+  },
+  "observability": {
+    "dashboard": "{{DASHBOARD_URL_OR_PATH}}",
+    "alerts": ["{{ALERT_NAME_AND_THRESHOLD}}"],
+    "baseline": "{{BASELINE_REPORT}}",
+    "correlation": "{{VERSION_OR_CHANGE_ID}}",
+    "observation_window_minutes": 30
+  },
+  "rollout": {
+    "strategy": "canary",
+    "stages": ["1%", "5%", "25%", "100%"],
+    "stop_conditions": ["{{STOP_CONDITION}}"],
+    "operator": "{{ROLLOUT_OPERATOR}}"
+  },
+  "rollback": {
+    "strategy": "{{VERSION_REVERT_OR_FEATURE_FLAG}}",
+    "runbook": "{{ROLLBACK_RUNBOOK}}",
+    "owner": "{{ROLLBACK_OWNER}}",
+    "tested_at": "{{YYYY-MM-DD}}",
+    "data_plan": "{{MIGRATION_COMPENSATION_OR_NOT_APPLICABLE}}",
+    "target_minutes": 15
+  },
+  "approvals": {
+    "reviewer": "{{REVIEWER}}",
+    "approved_at": "{{YYYY-MM-DDTHH:MM:SSZ}}"
+  },
+  "audit_log": "docs/methodology/production/audit/{{CHANGE_ID}}.jsonl",
+  "events": []
+}

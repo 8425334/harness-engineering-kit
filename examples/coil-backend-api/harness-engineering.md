@@ -1,40 +1,7 @@
-# harness-engineering.md — coil-backend-api Adaptation
+# coil-backend-api Harness Adaptation
 
-## CLAUDE.md Instance
+The root `AGENTS.md` and `CLAUDE.md` stay as short native adapters. The project stores Maven/pnpm commands, module paths, writable boundaries, production policy, and methodology references in `docs/methodology/agent-policy.yaml`.
 
-This project's `CLAUDE.md` (~135 lines) contains:
-- 5-step RAMER cycle with detailed instructions
-- Module dependency diagram (ASCII art showing `ruoyi-admin → coil-* → ruoyi-common` chain)
-- Exact build commands (single-module compile, single-class test, full package)
-- Entity Quartet pattern detail table
-- Key architectural patterns (Dispatch Lifecycle, Domain Events, Support Classes, WMS Integration)
-- SDD 5-step workflow + commands
-- Fitness gate invocation and check item list
+Root `ai.json` gives Agents a compact project map during initialization and routes them to detailed context. Path `AI.md` files exist only for modules whose responsibilities, dependency boundaries, entry points, or local verification differ materially; every one is indexed by root `ai.json`. Both layers supplement native instructions and project policy.
 
-## Path Document Distribution
-
-This repository has 100+ `ai.json`/`AI.md` pairs covering:
-- Root (global architecture constraints)
-- Every top-level module (`coil-app/`, `coil-service/`, `ruoyi-modules/`)
-- Key sub-modules and business directories
-
-## Memory System
-
-Memory is stored at `~/.claude/projects/<project-path>/memory/`, managed via `MEMORY.md` index file.
-
-## Skills
-
-This project provides through Claude Code Skills system:
-
-**Mandatory Skills (all projects must have):**
-- OpenSpec — `/opsx:explore`, `/opsx:propose`, `/opsx:apply`, `/opsx:sync`, `/opsx:archive` — SDD change lifecycle
-- Superpowers — `docs/superpowers/plans/` + `docs/superpowers/specs/` — long-term reference docs
-- Codegraph — MCP code intelligence tool (explore/search/impact)
-
-**Workflow Skills:**
-- `/opsx:continue` — continue unfinished apply
-- `/ramer` — RAMER full-auto design-implement cycle (READ→ANALYZE→MODEL→confirm→EXECUTE→REVIEW), supports CRUD/DDD/Hexagonal/Hybrid architecture
-- `/fe` — FE-Engineering RADIR workflow (READ→ANALYZE→DECOMPOSE→IMPLEMENT→VERIFY), auto-detects tech stack
-
-**Auxiliary Skills:**
-- review, security-review, etc.
+One project-local `engineering` Skill routes backend, frontend, and fullstack changes. Backend model rules, frontend decomposition rules, and fullstack contract coordination are references loaded only for the selected mode. OpenSpec, code navigation, browsers, and parallel agents are supporting capabilities rather than competing workflow Skills.

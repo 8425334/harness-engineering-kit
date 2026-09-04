@@ -10,6 +10,12 @@ Fitness is a tiered quality check system whose core purpose is to **define the A
 
 Fitness is not ancillary CI configuration — it is part of the codebase. The AI Agent can read the rules, understand constraints, and know what to fix on failure.
 
+### Protected Control Plane
+
+Project Agents may read and execute `docs/fitness/**`, but must not modify it. There is no change-size exemption: adding, editing, renaming, or deleting any protected file requires external human approval bound to the exact change digest. The only automatic exceptions are canonical first installation when the baseline has no Fitness directory, and a demonstrable repair where every changed file is an existing Python file that fails baseline parsing and passes after the repair.
+
+`check_fitness_protection.py` compares the working tree with `HEAD`, or with `--base` / `FITNESS_BASE_REF` in CI. Approval metadata must come from a protected human/CI workflow through `FITNESS_CHANGE_APPROVED_BY`, `FITNESS_CHANGE_APPROVAL_SOURCE`, `FITNESS_CHANGE_APPROVAL_ID`, and the exact `FITNESS_CHANGE_APPROVAL_DIGEST` printed by the blocked check. The digest binds approval to the base commit, complete changed-path set, status, and resulting content. The script proves integrity, not human identity; branch protection and CI permissions must prevent pull-request code from supplying approval variables.
+
 ### Three-Tier System
 
 | Tier | Name | Duration | Typical Checks | Trigger |
