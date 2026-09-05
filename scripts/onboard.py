@@ -156,7 +156,7 @@ def source_actions(source: Path, root: Path, tier: int, status: str) -> list[Act
         if lessons_readme.is_file():
             actions.append(Action("create", str(lessons_readme.relative_to(source)), "docs/methodology/lessons/README.md", "lesson memory"))
 
-    for platform in (".claude/skills", ".agents/skills"):
+    for platform in (".claude/skills", ".agents/skills", ".opencode/skills"):
         actions.append(Action("sync-tree", "templates/engineering", f"{platform}/engineering", "project-local Skill discovery"))
 
     if status == "legacy":
@@ -423,6 +423,7 @@ def run_check(root: Path, source: Path) -> tuple[int, list[str]]:
         ("check_change_workspace.py", ["check_change_workspace.py", "--root", str(root)]),
         ("verify_skill.py (claude)", ["verify_skill.py", "engineering", "--project-root", str(root), "--platform", "claude", "--source-root", str(source)]),
         ("verify_skill.py (codex)", ["verify_skill.py", "engineering", "--project-root", str(root), "--platform", "codex", "--source-root", str(source)]),
+        ("verify_skill.py (opencode)", ["verify_skill.py", "engineering", "--project-root", str(root), "--platform", "opencode", "--source-root", str(source)]),
     ]
     failures: list[str] = []
     for name, command in checks:
@@ -436,7 +437,7 @@ def run_check(root: Path, source: Path) -> tuple[int, list[str]]:
     return (2 if failures else 0), failures
 
 
-CHECK_SUMMARY = "Deterministic checks passed: root context, context docs, agent policy, profile, context resolution, fitness protection, engineering Skill (claude, codex)."
+CHECK_SUMMARY = "Deterministic checks passed: root context, context docs, agent policy, profile, context resolution, fitness protection, engineering Skill (claude, codex, opencode)."
 
 
 def print_apply_summary(plan: dict[str, object]) -> None:

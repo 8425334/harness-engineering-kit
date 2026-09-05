@@ -20,5 +20,6 @@
 | Operational done | 运营完成 | Deployment has completed observation or rollback closure, beyond technical verification |
 | Self-Refine | 自反馈迭代 | Bounded Generate → Self-Critique → Refine → Re-check loop inside a lifecycle phase |
 | Self-Critique | 自我批判 | Structured inspection that names concrete findings against requirements and risk criteria |
+| Requirement Reflection | 需求反思 | Response-level check that pauses consequential work when intent, evidence, authorization, or constraints are unclear or inconsistent |
 | Reflexion | 反思记忆 | Advisory lessons retained across tasks; never an automatic authority or approval source |
 | Lesson memory | 项目经验记忆 | Reviewed, scoped prevention guidance retrieved during Explore and verified by normal gates |

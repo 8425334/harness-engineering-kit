@@ -14,6 +14,7 @@ from pathlib import Path
 PLATFORMS = {
     "claude": (Path(".claude/skills"), Path.home() / ".claude/skills"),
     "codex": (Path(".agents/skills"), Path.home() / ".codex/skills"),
+    "opencode": (Path(".opencode/skills"), Path.home() / ".config/opencode/skills"),
 }
 REQUIRED_MANIFEST_KEYS = ("name", "version", "entry", "platforms", "required_sections", "fallback")
 
@@ -77,8 +78,8 @@ def validate_source(skill: str, source_dir: Path, version: str | None) -> tuple[
         errors.append("manifest name does not match Skill")
     if version and manifest.get("version") != version:
         errors.append("manifest version does not match methodology VERSION")
-    if manifest.get("platforms") != ["claude", "codex"]:
-        errors.append("manifest platforms must be [claude, codex]")
+    if manifest.get("platforms") != ["claude", "codex", "opencode"]:
+        errors.append("manifest platforms must be [claude, codex, opencode]")
 
     entry = source_dir / str(manifest.get("entry", "SKILL.md"))
     if not entry.is_file():

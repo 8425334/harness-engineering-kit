@@ -12,6 +12,7 @@ const metadata = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json
 const AGENTS = [
   { id: 'claude', label: 'Claude Code', command: 'claude', kind: 'terminal' },
   { id: 'codex', label: 'Codex', command: 'codex', kind: 'terminal' },
+  { id: 'opencode', label: 'OpenCode', command: 'opencode', kind: 'terminal' },
   { id: 'cursor', label: 'Cursor', command: 'cursor', kind: 'desktop' },
   { id: 'gemini', label: 'Gemini CLI', command: 'gemini', kind: 'terminal' },
   { id: 'workbuddy', label: 'WorkBuddy', aliases: ['work-buddy'], command: null, kind: 'manual' },
@@ -46,7 +47,7 @@ Options:
   --apply                Apply init without an interactive confirmation
   --plan                 Make init read-only
   --no-check             Skip the post-init check
-  --agent <name>         Agent to open or hand off (claude, codex, cursor, gemini, workbuddy, trae-work)
+  --agent <name>         Agent to open or hand off (claude, codex, opencode, cursor, gemini, workbuddy, trae-work)
   --open                 Open the selected agent in non-interactive mode
   --no-open              Do not open an agent after init
   --direct               Run the deterministic installer; --agent and HEK_AGENT are ignored
@@ -277,7 +278,9 @@ function openAgent(agent, projectRoot, prompt) {
     // cmd.exe treats newlines as command separators; keep the argument single-line.
     text = String(text).replace(/\r?\n/g, ' ');
   }
-  const args = agent.kind === 'desktop' ? [projectRoot] : [text];
+  const args = agent.kind === 'desktop'
+    ? [projectRoot]
+    : (agent.id === 'opencode' ? ['run', text] : [text]);
   console.log(`正在打开 ${agent.label}…`);
   let child;
   if (process.platform === 'win32') {
@@ -331,6 +334,7 @@ function buildAgentPrompt(projectRoot, options) {
     `安装范围：Tier ${tier}（${tier === '1' ? '轻量接入' : '完整接入'}）`,
     approval,
     '先读取项目事实（包括现有的 AGENTS.md、CLAUDE.md、ai.json、AI.md 和项目配置），识别真实技术栈、命令、目录边界与已有接入状态；Tier 只表示本次期望的安装范围，不表示 Tier 1 已经安装，任何低版本到高版本升级都必须核对并同步所有 Tier 1 核心资源。',
+    '每次回答或执行前都进行需求反思：将结果判定为 ready、clarify、correct 或 blocked；如果需求有会影响结果的歧义、与仓库事实冲突、缺少授权或证据，先停止有后果的操作，说明依据，给出最佳方案并向用户确认，不要暴露私有思维链。',
     `使用 canonical onboarding 脚本生成计划：${pythonCommand()} "${path.join(sourceRoot, 'scripts', 'onboard.py')}" --project-root "${projectRoot}" --source-root "${sourceRoot}" --tier ${tier} --plan --json`,
     '根据项目事实补齐或调整配置占位符；保留已有配置和旧入口，不要盲目覆盖或删除。得到确认后，使用同一脚本执行 --apply，再执行 --check。',
     '最后汇报创建、更新、保留的文件、检查结果和仍需人工决策的事项。',

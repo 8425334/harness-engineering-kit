@@ -121,9 +121,13 @@ def prepare_project(project: Path, repository: Path) -> Path:
         encoding="utf-8",
     )
     assert not validate_agent_policy(policy), validate_agent_policy(policy)
-    for target in (project / ".claude/skills/engineering", project / ".agents/skills/engineering"):
+    for target in (
+        project / ".claude/skills/engineering",
+        project / ".agents/skills/engineering",
+        project / ".opencode/skills/engineering",
+    ):
         shutil.copytree(repository / "templates/engineering", target)
-    for platform in ("claude", "codex"):
+    for platform in ("claude", "codex", "opencode"):
         result = verify("engineering", project, platform, source_root=repository)
         assert result["status"] == "PASS", result
     return profile
@@ -595,7 +599,7 @@ def run() -> None:
             stream.write("not-json\n")
         code, _ = invoke(metrics_main, ["skill_metrics.py", str(project / "openspec/changes")])
         assert code == 2, "invalid metrics input must fail closed"
-        print("SKILL SMOKE PASS: context guards, deterministic resolution, Fitness protection, two platforms, three modes, drift, sync, rollout, rollback, closure, metrics")
+        print("SKILL SMOKE PASS: context guards, deterministic resolution, Fitness protection, three platforms, three modes, drift, sync, rollout, rollback, closure, metrics")
 
 
 if __name__ == "__main__":

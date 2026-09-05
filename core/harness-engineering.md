@@ -33,6 +33,8 @@ The lifecycle is defined only in `change-lifecycle.md`. Every non-trivial change
 
 Self-Refine is a supporting inner loop for improving work before a gate. It is profile-controlled and bounded, with optional or required `self-refine-evidence.json`. It improves discovery and remediation but does not weaken authority, approval, deterministic verification, or production controls.
 
+Requirement Reflection is the response-level gate before an Agent sends a task answer or takes a side effect. It classifies the draft as `ready`, `clarify`, `correct`, or `blocked`; ambiguity or conflict that can change the outcome requires focused user confirmation and a recommended plan. It reports conclusions and evidence, not private chain-of-thought. See [Requirement Reflection and Clarification](requirement-reflection.md).
+
 Project Lesson Memory extends that loop across changes. Failures are captured as evidence, promoted only after external review, and retrieved during Explore through `preflight_lessons.py`; active lessons remain advisory until a deterministic control is separately approved.
 
 ## Workspace Ownership
@@ -53,4 +55,4 @@ where installed, as a Claude Code PreToolUse hook.
 
 ## Platform Boundary
 
-Claude project discovery uses `.claude/skills/engineering`; the Codex adapter uses `.agents/skills/engineering`. `manifest.yaml` is a Harness availability contract. File checks prove installation integrity, while runtime `skill.triggered` and `skill.fallback` events reveal actual selection behavior.
+Claude project discovery uses `.claude/skills/engineering`; the Codex adapter uses `.agents/skills/engineering`; the OpenCode adapter uses `.opencode/skills/engineering`. `manifest.yaml` is a Harness availability contract. File checks prove installation integrity, while runtime `skill.triggered` and `skill.fallback` events reveal actual selection behavior.

@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.4.0] — 2026-09-06
 
 ### Added
+- Added response-level Requirement Reflection: Agents classify task answers as ready, clarify, correct, or blocked, and must confirm outcome-changing ambiguity or repository conflicts with a recommended plan before consequential work.
 - Added a machine-readable Harness-parent/OpenSpec-child contract to `change.json` schema version 3 and a phase-aware `dispatch_openspec.py` allowlist for JSON authoring/validation operations.
 - Added `record_task_completion.py` and per-task run templates so every verified task completion records evidence and immediately checks its matching OpenSpec `tasks.md` item.
 - Added approval-bound `task-plan.json` DAGs with stable task ids, dependencies, explicit write ownership, contract references, acceptance criteria, focused verification, and deterministic integration order.

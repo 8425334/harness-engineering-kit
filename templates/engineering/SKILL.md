@@ -11,6 +11,17 @@ Operate as the task-level orchestrator. Project policy and code rules come from 
 
 When the user asks to接入、初始化、升级或迁移 Harness, use [references/onboarding.md](references/onboarding.md) before routing a code change. This is a repository operation performed in the conversation, not a request for the user to run `init.sh` manually. First run the read-only plan; show the detected state and file actions; ask for confirmation before `--apply`; then run the deterministic checks and report evidence. Legacy files are preserved unless the user explicitly approves a separate cleanup change.
 
+## Requirement Reflection
+
+After drafting every task response, run the response-level requirement reflection described in `docs/methodology/core/requirement-reflection.md` before sending the response or taking a side effect. Classify the result as `ready`, `clarify`, `correct`, or `blocked`.
+
+- For `ready`, state material assumptions, the plan, and verification before acting within the authorized scope.
+- For `clarify`, stop consequential writes and ask focused questions for ambiguities that could change the result; include the recommended option and its trade-off.
+- For `correct`, show the repository or technical evidence that conflicts with the request, propose the smallest viable correction, and wait for confirmation.
+- For `blocked`, explain the missing authorization or evidence and provide the safest next plan.
+
+Never silently select between materially different interpretations or present a recommendation as an approved requirement. After confirmation changes the requirement, update the plan and repeat the reflection. Do not expose private chain-of-thought; report only the finding, evidence, recommendation, and confirmation needed.
+
 ## Route
 
 1. Run `resolve_context.py` for every target path and explicit task keyword, then read its exact parent-to-child load order. A resolution failure blocks implementation.

@@ -39,6 +39,8 @@ Production delivery extends—not replaces—the Engineering lifecycle. A produc
 
 Self-Refine is an optional or Profile-required inner loop for draft and implementation quality: `Generate → Self-Critique → Refine → Re-check`. It produces auditable evidence without replacing approval, deterministic gates, or production controls. See [Self-Refine Feedback Loop](core/self-refine.md).
 
+Requirement Reflection is the response-level gate: before sending a task answer or taking a side effect, the Agent checks whether the request is clear, consistent with repository evidence, and authorized. Ambiguity or conflict pauses consequential work, asks for focused confirmation, and includes the recommended plan. See [Requirement Reflection and Clarification](core/requirement-reflection.md).
+
 Project Lesson Memory extends this loop across changes: failures become reviewed, retrievable prevention guidance and can later be promoted to deterministic controls. See [Project Lesson Memory](core/lesson-memory.md).
 
 ## CLI Onboarding
@@ -117,6 +119,7 @@ Use `preflight_lessons.py` before Explore closes, `record_failure.py` for Fitnes
 - [SDD Workflow](core/sdd-workflow.md)
 - [Governance](core/methodology-governance.md)
 - [Self-Refine Feedback Loop](core/self-refine.md)
+- [Requirement Reflection and Clarification](core/requirement-reflection.md)
 - [Task Graph and Parallel Execution](core/task-orchestration.md)
 - [Project Lesson Memory](core/lesson-memory.md)
 - [Backend Profile](core/backend-profile.md)

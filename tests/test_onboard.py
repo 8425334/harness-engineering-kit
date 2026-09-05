@@ -152,6 +152,14 @@ class OnboardTests(unittest.TestCase):
         self.assertIn("docs/methodology/production/change-record.template.json", targets)
         self.assertNotIn("docs/fitness/scripts/fitness.py", targets)
 
+    def test_install_plan_includes_requirement_reflection_core(self) -> None:
+        actions = onboard.source_actions(self.source, self.source / "tests", 1, "fresh")
+        targets = {action.target for action in actions}
+        self.assertIn("docs/methodology/core/requirement-reflection.md", targets)
+        skill = (self.source / "templates/engineering/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("## Requirement Reflection", skill)
+        self.assertIn("docs/methodology/core/requirement-reflection.md", skill)
+
     def test_tier_one_install_passes_agent_policy_check(self) -> None:
         """A Tier 1 install with filled placeholders must satisfy check_agent_policy."""
         with tempfile.TemporaryDirectory() as directory:

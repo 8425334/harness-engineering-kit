@@ -30,6 +30,8 @@ Design 阶段用 `task-plan.json` 把 Tasks 转为受审批绑定的 DAG，明�
 
 Self-Refine 是门禁前改进工作的辅助内循环，由 Profile 控制并限制次数，可选或要求提供 `self-refine-evidence.json`。它提升发现问题和准备修复的能力，但不会削弱权威层、审批、确定性验证或生产控制。
 
+需求反思是 Agent 发送任务回答或产生副作用前的回答级门。它将草稿分类为 `ready`、`clarify`、`correct` 或 `blocked`；任何可能改变结果的歧义或冲突都必须向用户聚焦确认，并同时给出推荐方案。只报告结论和证据，不暴露私有思维链。详见[需求反思与澄清](requirement-reflection.md)。
+
 项目经验记忆把这一循环扩展到多次变更。失败先作为证据采集，经过外部审核后才能发布，并在 Explore 通过 `preflight_lessons.py` 检索；激活经验仍是辅助指导，升级为确定性控制必须另行审批。
 
 ## 工作区归属
@@ -38,4 +40,4 @@ Self-Refine 是门禁前改进工作的辅助内循环，由 Profile 控制并�
 
 ## 平台边界
 
-Claude 项目发现路径为 `.claude/skills/engineering`，Codex 适配路径为 `.agents/skills/engineering`。`manifest.yaml` 是 Harness 可用性契约；文件检查证明安装完整性，运行时 `skill.triggered` 与 `skill.fallback` 事件反映真实选择行为。
+Claude 项目发现路径为 `.claude/skills/engineering`，Codex 适配路径为 `.agents/skills/engineering`，OpenCode 适配路径为 `.opencode/skills/engineering`。`manifest.yaml` 是 Harness 可用性契约；文件检查证明安装完整性，运行时 `skill.triggered` 与 `skill.fallback` 事件反映真实选择行为。

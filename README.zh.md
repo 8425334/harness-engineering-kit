@@ -39,6 +39,8 @@ Harness Engineering 是父级生命周期，OpenSpec 是子级写作/校验能�
 
 Self-Refine 是草稿和实现质量的可选或按 Profile 要求启用的内层循环：`生成 → 自我批判 → 优化 → 再检查`。它产生可审计证据，但不替代审批、确定性门禁或生产控制。详见 [Self-Refine 反馈闭环](i18n/zh/core/self-refine.md)。
 
+需求反思是回答级质量门：Agent 在发送任务回答或产生副作用前，检查需求是否明确、是否与仓库事实一致、是否已获授权。存在会影响结果的歧义或冲突时，暂停有后果的操作，向用户聚焦确认，并给出最佳推荐方案。详见[需求反思与澄清](i18n/zh/core/requirement-reflection.md)。
+
 项目经验记忆把这一循环扩展到多次变更：将失败转化为经过审核、可检索的预防指导，必要时再升级为确定性控制。详见 [项目经验记忆](i18n/zh/core/lesson-memory.md)。
 
 ## CLI 接入
@@ -117,6 +119,7 @@ Explore 结束前运行 `preflight_lessons.py`；用 `record_failure.py` 记录 
 - [SDD 工作流](i18n/zh/core/sdd-workflow.md)
 - [治理基线](i18n/zh/core/methodology-governance.md)
 - [Self-Refine 反馈闭环](i18n/zh/core/self-refine.md)
+- [需求反思与澄清](i18n/zh/core/requirement-reflection.md)
 - [任务图与并行执行](i18n/zh/core/task-orchestration.md)
 - [项目经验记忆](i18n/zh/core/lesson-memory.md)
 - [后端 Profile](i18n/zh/core/backend-profile.md)

@@ -124,6 +124,9 @@ test('builds an agent-first onboarding prompt', () => {
   assert.match(prompt, /--plan --json/);
   assert.match(prompt, /--apply/);
   assert.match(prompt, /等待用户明确确认/);
+  assert.match(prompt, /需求反思/);
+  assert.match(prompt, /clarify/);
+  assert.match(prompt, /给出最佳方案并向用户确认/);
   // M3: cmd.exe splits commands at newlines, so the prompt must stay single-line.
   assert.ok(!prompt.includes('\n'), 'agent prompt must be a single line');
   const custom = cliModule.buildAgentPrompt('/tmp/target-project', { sourceRoot: root, prompt: 'line1\nline2' });

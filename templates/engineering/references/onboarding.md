@@ -12,7 +12,7 @@ Use this playbook when a repository is not integrated, contains the previous arc
    python3 <kit>/scripts/onboard.py --project-root . --source-root <kit> --plan --json
    ```
 
-4. Explain the detected state (`fresh`, `partial`, `legacy`, or `current`), the installed and Kit versions, the version relation (`fresh`, `upgrade`, `same`, `downgrade`, `unversioned`, or `invalid`), the files to create/sync/preserve, the selected tier, and any legacy files that remain untouched. For `legacy`, explicitly state that old `ramer`, `fe-engineering`, `multi-agent`, Cursor, and Codex entries are not silently deleted.
+4. Explain the detected state (`fresh`, `partial`, `legacy`, or `current`), the installed and Kit versions, the version relation (`fresh`, `upgrade`, `same`, `downgrade`, `unversioned`, or `invalid`), the files to create/sync/preserve, the selected tier, and any legacy files that remain untouched. For `legacy`, explicitly state that old `ramer`, `fe-engineering`, `multi-agent`, Cursor, and Codex entries are not silently deleted. Before sending this plan, run the response-level requirement reflection. If the requested install scope, project state, facts, or authorization is ambiguous or inconsistent, stop before `--apply`, show the evidence, give the recommended plan, and ask the user to confirm the smallest outstanding decision.
 5. After the user confirms the displayed plan, apply it:
 
    ```bash
