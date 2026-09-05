@@ -16,7 +16,13 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import cmp_to_key
 from pathlib import Path
+
+try:
+    from .versioning import classify_versions, compare_versions, parse_version, read_version
+except ImportError:
+    from versioning import classify_versions, compare_versions, parse_version, read_version
 
 
 ROOT_FILES = {
@@ -48,6 +54,7 @@ JAVA_SCANNER = "templates/fitness/JavaParameterScanner.java.template"
 # Kit-development scripts that must not be installed into target projects:
 # they validate the kit's own checkout and would fail in the installed layout.
 KIT_DEV_ONLY_SCRIPTS = frozenset({"smoke_test_skills.py"})
+RELEASE_MIGRATIONS = "migrations/releases.json"
 
 
 @dataclass(frozen=True)
@@ -159,14 +166,109 @@ def source_actions(source: Path, root: Path, tier: int, status: str) -> list[Act
     return actions
 
 
-def render_plan(root: Path, source: Path, tier: int, status: str, actions: list[Action]) -> dict[str, object]:
+def release_migrations(
+    source: Path,
+    installed_version: str | None,
+    target_version: str | None,
+    version_relation: str,
+) -> list[dict[str, object]]:
+    if version_relation != "upgrade" or not installed_version or not target_version:
+        return []
+    manifest = source / RELEASE_MIGRATIONS
+    if not manifest.is_file() or not target_version:
+        return []
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, dict) or payload.get("schema_version") != 1 or not isinstance(payload.get("releases"), list):
+        return []
+    try:
+        installed = parse_version(installed_version)
+        target = parse_version(target_version)
+    except ValueError:
+        return []
+    selected: list[dict[str, object]] = []
+    for release in payload["releases"]:
+        if not isinstance(release, dict) or not isinstance(release.get("version"), str):
+            continue
+        try:
+            release_version = parse_version(release["version"])
+        except ValueError:
+            continue
+        if compare_versions(installed, release_version) < 0 and compare_versions(release_version, target) <= 0:
+            selected.append(release)
+    selected.sort(
+        key=cmp_to_key(
+            lambda left, right: compare_versions(
+                parse_version(str(left["version"])),
+                parse_version(str(right["version"])),
+            )
+        )
+    )
+    return selected
+
+
+def validate_release_manifest(source: Path) -> list[str]:
+    manifest = source / RELEASE_MIGRATIONS
+    if not manifest.is_file():
+        return [f"missing required source asset: {RELEASE_MIGRATIONS}"]
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return [f"invalid release migration manifest: {RELEASE_MIGRATIONS}"]
+    releases = payload.get("releases") if isinstance(payload, dict) else None
+    if not isinstance(payload, dict) or payload.get("schema_version") != 1 or not isinstance(releases, list):
+        return [f"invalid release migration manifest: {RELEASE_MIGRATIONS}"]
+    errors: list[str] = []
+    seen_versions = []
+    for release in releases:
+        if not isinstance(release, dict) or not isinstance(release.get("version"), str):
+            errors.append(f"invalid release migration entry: {RELEASE_MIGRATIONS}")
+            continue
+        version = release["version"]
+        try:
+            parsed = parse_version(version)
+        except ValueError:
+            errors.append(f"invalid release version: {version}")
+            continue
+        if any(compare_versions(parsed, previous) == 0 for previous in seen_versions):
+            errors.append(f"duplicate release version: {version}")
+            continue
+        seen_versions.append(parsed)
+    return errors
+
+
+def render_plan(
+    root: Path,
+    source: Path,
+    tier: int,
+    status: str,
+    actions: list[Action],
+    installed_version: str | None = None,
+    target_version: str | None = None,
+) -> dict[str, object]:
     legacy_markers = [marker for marker in LEGACY_MARKERS if (root / marker).exists()]
+    installed_version = installed_version if installed_version is not None else read_version(root / "docs/methodology/VERSION")
+    target_version = target_version if target_version is not None else read_version(source / "VERSION")
+    version_relation = classify_versions(installed_version, target_version)
+    if installed_version is None and status != "fresh":
+        version_relation = "unversioned"
     return {
         "schema_version": 1,
         "status": status,
         "project_root": str(root),
         "source_root": str(source),
-        "source_version": (source / "VERSION").read_text(encoding="utf-8").strip() if (source / "VERSION").is_file() else "unknown",
+        "source_version": target_version or "unknown",
+        "installed_version": installed_version or "unknown",
+        "version_relation": version_relation,
+        "version_transition": {
+            "from": installed_version,
+            "to": target_version,
+            "relation": version_relation,
+        },
+        "migration_manifest_errors": validate_release_manifest(source),
+        "release_migrations": release_migrations(source, installed_version, target_version, version_relation),
         "tier": tier,
         "read_only": True,
         "legacy_files_preserved": True,
@@ -208,6 +310,7 @@ def validate_action_sources(source: Path, actions: list[Action]) -> list[str]:
     for relative in sorted(set(required)):
         if not (source / relative).is_file():
             errors.append(f"missing required source asset: {relative}")
+    errors.extend(validate_release_manifest(source))
     for action in actions:
         if action.kind == "sync-tree":
             if not (source / "templates/engineering").is_dir():
@@ -370,8 +473,21 @@ def main() -> int:
         return 2
     status = detect_status(root)
     effective_tier = min(args.tier, 2)
+    installed_version = read_version(root / "docs/methodology/VERSION")
+    target_version = read_version(source / "VERSION")
+    version_relation = classify_versions(installed_version, target_version)
+    if installed_version is None and status != "fresh":
+        version_relation = "unversioned"
     actions = source_actions(source, root, effective_tier, status)
-    plan = render_plan(root, source, effective_tier, status, actions)
+    plan = render_plan(root, source, effective_tier, status, actions, installed_version, target_version)
+
+    if args.apply and version_relation in {"downgrade", "invalid", "unknown-target", "unversioned"}:
+        plan["errors"] = [f"unsupported version transition: {version_relation}"]
+        if args.as_json:
+            print(json.dumps(plan, ensure_ascii=False, indent=2))
+        else:
+            print(f"HARNESS ONBOARDING BLOCKED: unsupported version transition: {version_relation}", file=sys.stderr)
+        return 2
 
     if args.apply:
         source_errors = validate_action_sources(source, actions)

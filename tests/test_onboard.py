@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scripts import onboard
+from scripts.versioning import classify_versions, compare_versions, parse_version
 
 
 PLACEHOLDER_VALUES = {
@@ -50,6 +51,73 @@ def run_onboard(*arguments: str) -> subprocess.CompletedProcess[str]:
 class OnboardTests(unittest.TestCase):
     def setUp(self) -> None:
         self.source = Path(__file__).resolve().parents[1]
+
+    def test_versioning_classifies_ordered_releases(self) -> None:
+        self.assertEqual(classify_versions("0.2.0", "0.3.0"), "upgrade")
+        self.assertEqual(classify_versions("0.3.0", "0.3.0"), "same")
+        self.assertEqual(classify_versions("0.4.0", "0.3.0"), "downgrade")
+        self.assertEqual(classify_versions("not-a-version", "0.3.0"), "invalid")
+        self.assertEqual(classify_versions("", "0.3.0"), "invalid")
+        self.assertEqual(classify_versions(None, "not-a-version"), "invalid")
+        self.assertEqual(classify_versions("1.0.0-01", "1.0.0"), "invalid")
+        self.assertLess(compare_versions(parse_version("1.0.0-rc.1"), parse_version("1.0.0")), 0)
+
+    def test_plan_reports_version_transition_and_release_migration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            version_path = root / "docs/methodology/VERSION"
+            version_path.parent.mkdir(parents=True)
+            version_path.write_text("0.2.0\n", encoding="utf-8")
+            plan = onboard.render_plan(
+                root,
+                self.source,
+                1,
+                "current",
+                [],
+            )
+            self.assertEqual(plan["installed_version"], "0.2.0")
+            self.assertEqual(plan["source_version"], "0.3.0")
+            self.assertEqual(plan["version_relation"], "upgrade")
+            self.assertEqual(plan["version_transition"]["from"], "0.2.0")
+            self.assertEqual(plan["migration_manifest_errors"], [])
+            self.assertTrue(plan["release_migrations"])
+
+    def test_unversioned_legacy_project_is_not_treated_as_fresh(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".claude/skills/ramer").mkdir(parents=True)
+            plan = onboard.render_plan(root, self.source, 1, "legacy", [])
+            self.assertEqual(plan["version_relation"], "unversioned")
+
+    def test_apply_blocks_unversioned_legacy_project_before_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".git").mkdir()
+            (root / ".claude/skills/ramer").mkdir(parents=True)
+            result = run_onboard(
+                "--project-root", str(root), "--source-root", str(self.source),
+                "--tier", "1", "--apply", "--json",
+            )
+            self.assertEqual(result.returncode, 2)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["version_relation"], "unversioned")
+            self.assertFalse((root / "AGENTS.md").exists())
+
+    def test_apply_blocks_downgrade_before_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".git").mkdir()
+            version_path = root / "docs/methodology/VERSION"
+            version_path.parent.mkdir(parents=True)
+            version_path.write_text("0.4.0\n", encoding="utf-8")
+            result = run_onboard(
+                "--project-root", str(root), "--source-root", str(self.source),
+                "--tier", "1", "--apply", "--json",
+            )
+            self.assertEqual(result.returncode, 2)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["version_relation"], "downgrade")
+            self.assertFalse((root / "AGENTS.md").exists())
 
     def test_detects_all_repository_states(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

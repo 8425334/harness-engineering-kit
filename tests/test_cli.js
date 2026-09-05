@@ -66,6 +66,8 @@ test('parses agent and opening controls', () => {
 test('builds an agent-first onboarding prompt', () => {
   const prompt = cliModule.buildAgentPrompt('/tmp/target-project', { sourceRoot: root, tier: '1' });
   assert.match(prompt, /读取项目事实/);
+  assert.match(prompt, /Tier 只表示本次期望的安装范围/);
+  assert.match(prompt, /任何低版本到高版本升级都必须核对并同步所有 Tier 1 核心资源/);
   assert.match(prompt, /--plan --json/);
   assert.match(prompt, /--apply/);
   assert.match(prompt, /等待用户明确确认/);

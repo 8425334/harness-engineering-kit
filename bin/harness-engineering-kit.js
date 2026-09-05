@@ -300,12 +300,12 @@ function buildAgentPrompt(projectRoot, options) {
     ? '用户已通过命令参数预先确认；完成只读检查后直接应用。'
     : '先展示只读计划并等待用户明确确认，确认前不得写入文件。';
   const parts = [
-    '请作为 Harness Engineering Kit 的项目接入 Agent，完成当前项目初始化。',
+    '请作为 Harness Engineering Kit 的项目接入 Agent，完成当前项目初始化或增量升级。',
     `目标项目：${projectRoot}`,
     `Kit 源码：${sourceRoot}`,
     `安装范围：Tier ${tier}（${tier === '1' ? '轻量接入' : '完整接入'}）`,
     approval,
-    '先读取项目事实（包括现有的 AGENTS.md、CLAUDE.md、ai.json、AI.md 和项目配置），识别真实技术栈、命令、目录边界与已有接入状态。',
+    '先读取项目事实（包括现有的 AGENTS.md、CLAUDE.md、ai.json、AI.md 和项目配置），识别真实技术栈、命令、目录边界与已有接入状态；Tier 只表示本次期望的安装范围，不表示 Tier 1 已经安装，任何低版本到高版本升级都必须核对并同步所有 Tier 1 核心资源。',
     `使用 canonical onboarding 脚本生成计划：${pythonCommand()} "${path.join(sourceRoot, 'scripts', 'onboard.py')}" --project-root "${projectRoot}" --source-root "${sourceRoot}" --tier ${tier} --plan --json`,
     '根据项目事实补齐或调整配置占位符；保留已有配置和旧入口，不要盲目覆盖或删除。得到确认后，使用同一脚本执行 --apply，再执行 --check。',
     '最后汇报创建、更新、保留的文件、检查结果和仍需人工决策的事项。',
@@ -359,7 +359,14 @@ function summarizePlan(output) {
   }, {});
   const actions = Object.entries(counts).map(([kind, count]) => `${kind}=${count}`).join(', ');
   console.log(`状态: ${plan.status} | Tier ${plan.tier} | 项目: ${plan.project_root}`);
+  console.log(`版本: ${plan.installed_version} → ${plan.source_version}（${plan.version_relation}）`);
+  if (plan.migration_manifest_errors && plan.migration_manifest_errors.length) {
+    console.log(`迁移清单错误: ${plan.migration_manifest_errors.join('；')}`);
+  }
   console.log(`计划: ${actions || '无动作'}`);
+  if (plan.release_migrations && plan.release_migrations.length) {
+    console.log(`发布迁移: ${plan.release_migrations.length} 项，需按清单人工确认`);
+  }
   if (plan.legacy_markers && plan.legacy_markers.length) {
     console.log(`保留旧入口: ${plan.legacy_markers.join(', ')}`);
   }

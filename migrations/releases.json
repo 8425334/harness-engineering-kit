@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "version_source": "docs/methodology/VERSION",
+    "upgrade": "low-to-high-only",
+    "same_version": "run-drift-check",
+    "downgrade": "blocked"
+  },
+  "releases": [
+    {
+      "version": "0.3.0",
+      "kind": "structural",
+      "summary": "Consolidate legacy workflows into the Engineering Skill and add the control-plane checks.",
+      "manual_review": [
+        "Review preserved legacy ramer, fe-engineering, multi-agent, Cursor, and Codex entries before any separate cleanup."
+      ]
+    }
+  ]
+}

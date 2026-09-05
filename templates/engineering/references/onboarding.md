@@ -12,7 +12,7 @@ Use this playbook when a repository is not integrated, contains the previous arc
    python3 <kit>/scripts/onboard.py --project-root . --source-root <kit> --plan --json
    ```
 
-4. Explain the detected state (`fresh`, `partial`, `legacy`, or `current`), the files to create/sync/preserve, the selected tier, and any legacy files that remain untouched. For `legacy`, explicitly state that old `ramer`, `fe-engineering`, `multi-agent`, Cursor, and Codex entries are not silently deleted.
+4. Explain the detected state (`fresh`, `partial`, `legacy`, or `current`), the installed and Kit versions, the version relation (`fresh`, `upgrade`, `same`, `downgrade`, `unversioned`, or `invalid`), the files to create/sync/preserve, the selected tier, and any legacy files that remain untouched. For `legacy`, explicitly state that old `ramer`, `fe-engineering`, `multi-agent`, Cursor, and Codex entries are not silently deleted.
 5. After the user confirms the displayed plan, apply it:
 
    ```bash
@@ -38,6 +38,8 @@ Use this playbook when a repository is not integrated, contains the previous arc
 | `current` | Version, policy, and Engineering Skill are present | Sync canonical resources and run drift checks |
 
 Tier 1 installs the core controls together with the production policy scaffold that `agent-policy.yaml` references. Tier 2 additionally installs Fitness gate scripts, Fitness rules, and lesson-memory templates. Choose Tier 2 for a complete integration unless the user explicitly requests a minimal bootstrap.
+
+The selected tier is the target scope of this run, not evidence that Tier 1 is already installed. During any lower-to-higher-version upgrade, compare and synchronize every Tier 1 canonical resource even when the repository already contains some older Tier 1 files. `--tier 1` only keeps the optional Tier 2 assets out of this run; it must not skip Tier 1 updates. See `docs/versioning.md` for the version relation, downgrade policy, and release migration contract.
 
 ## Safety Boundaries
 

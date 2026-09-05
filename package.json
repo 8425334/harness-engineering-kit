@@ -18,6 +18,7 @@
     "i18n/",
     "scripts/**/*.py",
     "scripts/init.sh",
+    "migrations/**/*.json",
     "templates/**/*.md",
     "templates/**/*.yaml",
     "templates/**/*.json",

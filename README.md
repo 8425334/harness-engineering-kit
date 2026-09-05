@@ -75,6 +75,8 @@ A fresh project's placeholders must be filled from real repository facts before 
 
 `hek init` is Agent-driven: it asks for the install scope, selects an installed Agent, opens that Agent's CLI in the resolved project root, and passes the Kit path plus the onboarding contract. The Agent reads project facts, generates the read-only plan, asks for confirmation, fills project-specific values, applies the canonical script, and runs deterministic checks. Tier 1 (lightweight) installs the core control plane, including the production policy scaffold referenced by `agent-policy.yaml`; the default Tier 2 (full) additionally installs Fitness gate scripts, Fitness rules, and lesson memory. Each run writes `docs/methodology/onboarding.json` with the source version, file digests, created/updated/preserved files, and verification result. Use `--direct` only when a headless deterministic install is explicitly wanted; it ignores `--agent` and `HEK_AGENT`.
 
+Version-aware upgrades compare the installed `docs/methodology/VERSION` with the Kit version, synchronize all canonical resources for lower-to-higher upgrades, block downgrades, and report any release-specific migration review. See [Versioning and Upgrades](docs/versioning.md).
+
 The check fails for an oversized or structurally invalid `ai.json`, unindexed or oversized `AI.md`, missing policy, placeholders, broken referenced paths, invalid profiles, missing Skill resources, stale installed Skill content, or unsupported platform adapters. Cursor and the legacy `ramer`, `fe-engineering`, and `multi-agent` entries are intentionally not supported.
 
 Resolve task context with the installed project controls. See the [CLI Onboarding Playbook](templates/engineering/references/onboarding.md) for the execution contract.

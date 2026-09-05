@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.3.0] — 2026-09-05
 
 ### Changed
+- Added version-aware onboarding: lower-to-higher upgrades compare installed and Kit SemVer values, report ordered release migrations, keep same-version drift checks, and block downgrades without hardcoding a version pair.
 - Added the standalone Node.js `hek` CLI alias with interactive AI-agent selection, deterministic PATH detection, safe non-interactive behavior, and optional post-onboarding agent panel launch.
 - Added conversational onboarding: `scripts/onboard.py` classifies fresh, partial, legacy, and current projects, presents a read-only plan, applies only after confirmation, preserves legacy entries, and records `docs/methodology/onboarding.json`. The old `init.sh` is now a compatibility forwarder.
 - Tier 1 now installs the production control scaffold (`docs/methodology/production/README.md`, `policy.yaml`, and the change-record template) so the `agent-policy.yaml` reference resolves at every tier; Fitness gate scripts, Fitness rules, and lesson memory remain Tier 2.
