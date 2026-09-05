@@ -4,7 +4,7 @@
 
 | 能力 | 用途 | 降级 |
 |---|---|---|
-| OpenSpec 工作区 | 保存权威活跃变更与规格 | CLI 不可用时仍保持相同的 `openspec/changes` 产物结构 |
+| OpenSpec 子能力 | 规格写作指引与校验，只能由 Harness 父级通过 `dispatch_openspec.py` 调度 | CLI 不可用时仍保持相同产物；绝不允许 `/opsx:*` 或直接 change 级 OpenSpec 调用拥有创建、状态、审批、实施、Sync 或 Archive |
 | 代码导航/索引 | 查符号、调用方和依赖 | 定向仓库搜索 |
 | 测试/构建/Fitness | 产出验证证据 | 执行策略中项目命令 |
 | 浏览器或 API 工具 | 验证用户可见/集成行为 | 聚焦人工证据 |

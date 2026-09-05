@@ -5,6 +5,15 @@
 schema: spec-driven
 
 context: |
+  This repository is instrumented with Harness Engineering. The change workspace
+  Harness Engineering is the parent lifecycle and OpenSpec is its child
+  specification capability. A change is live only after init_change.py writes a
+  schema_version 3 change.json with the canonical parent-child contract.
+  Change-scoped OpenSpec status/instructions/validation/show operations must be
+  invoked through dispatch_openspec.py. Never use a standalone /opsx:* workflow:
+  Harness alone owns creation, state, approval, implementation, Sync, and
+  Archive. OpenSpec output is guidance, not execution authorization.
+
   Tech stack: {{TECH_STACK}}
   Build: {{BUILD_SYSTEM}}
   Database: {{DATABASE}}
@@ -23,16 +32,24 @@ rules:
     - Capability names use kebab-case
     - Always list affected modules in Impact section with directory paths
     - Check openspec/specs/ for existing capabilities before declaring Modified Capabilities
+    - State that this change must be owned by the Engineering lifecycle (init_change.py writes change.json); never leave an unmanaged OpenSpec change directory
   design:
     - Every decision must specify which module owns the implementation
     - Use numbered decisions (D1, D2...) with choice, reason, and alternatives
     - New types must follow project conventions (specify module and package)
+    - A design becomes executable only after external approval (approve_design.py) binds the contract; drafting is not authorization to apply
   specs:
     - Use SHALL/MUST for normative requirements (never should/may)
     - Every requirement must have at least one Scenario with WHEN/THEN format
     - Scenarios must use exactly 4 hashtags (####)
     - Reference specific module names and package paths in requirements
+    - Specs must satisfy the Engineering SPEC/EXECUTE gates (#### Scenario with WHEN/THEN per requirement), not only OpenSpec validation
   tasks:
     - Group tasks by module dependency order
-    - Every task must be a checkbox: "- [ ] X.Y Task description"
+    - Every task must be a checkbox with a stable id: "- [ ] T<number> Task description"
+    - Create task-plan.json with matching stable task ids, dependencies, explicit non-glob write scopes, contract refs, acceptance, focused verification, parallel eligibility, and coordinator merge order
+    - Independent parallel-eligible tasks MUST have disjoint write scopes; overlapping scopes require a dependency
     - Verification tasks must include fitness gate invocation
+    - task-plan.json is the approval-bound parent DAG; tasks.md is its child progress projection and is not an independent execution authority
+    - After every successful task Harness MUST run record_task_completion.py complete with the task run evidence; that operation, never a manual edit, changes the matching checkbox to "- [x]"
+    - Coordinator integration MUST run the Engineering fitness gate and record execution/review evidence; implementation is authorized only when change.json is APPROVED with approval.json bound

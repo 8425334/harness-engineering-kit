@@ -4,6 +4,23 @@ All notable changes to the AI-Assisted Development Methodology will be documente
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] — 2026-09-06
+
+### Added
+- Added a machine-readable Harness-parent/OpenSpec-child contract to `change.json` schema version 3 and a phase-aware `dispatch_openspec.py` allowlist for JSON authoring/validation operations.
+- Added `record_task_completion.py` and per-task run templates so every verified task completion records evidence and immediately checks its matching OpenSpec `tasks.md` item.
+- Added approval-bound `task-plan.json` DAGs with stable task ids, dependencies, explicit write ownership, contract references, acceptance criteria, focused verification, and deterministic integration order.
+- Added capability-adaptive Apply orchestration: supported Agents may execute safe ready waves concurrently in isolated worktrees or disjoint scopes; every other runtime follows the identical graph sequentially with an explicit fallback reason.
+- Added `check_task_plan.py` to reject cycles, unknown dependencies, unsafe parallel scope overlap, task/checklist drift, unowned files, incomplete task runs, dependency-order violations, false parallel claims, and missing coordinator verification.
+- Added `execution-evidence.json` as the runtime record for worker assignments, isolation, timing, changed files, focused commands, conflicts, integration order, and final verification.
+- Added execution metrics for parallel adoption, sequential fallback reasons, task-run volume, and declared concurrency.
+- Added interruption-safe Apply resume: validated task evidence repairs the OpenSpec checkbox projection and reports the next ready DAG wave without changing the approved plan or lifecycle state.
+
+### Changed
+- `task-plan.json` is the approval-bound parent DAG; `tasks.md` is now the OpenSpec child progress projection. Design requires unchecked matching ids/order, Apply synchronizes checkmarks from successful run evidence, and Review requires exact agreement.
+- Direct change-scoped OpenSpec commands and standalone `/opsx:*` lifecycle ownership are replaced by Harness-controlled parent-child dispatch.
+- Review now requires exact agreement between task-owned/integration files and final changed-file digests.
+
 ## [0.3.0] — 2026-09-05
 
 ### Changed

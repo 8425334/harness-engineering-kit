@@ -12,6 +12,7 @@ from check_agent_policy import validate as validate_agent_policy
 from check_context_docs import validate_project as validate_context_docs
 from check_profile import read_project_profile
 from methodology_common import append_event, utc_now, write_json
+from openspec_common import orchestration_contract
 
 
 CANONICAL_POLICY_LOCATION = ("docs", "methodology", "agent-policy.yaml")
@@ -108,7 +109,7 @@ def main() -> int:
     (change_dir / "evidence").mkdir()
     timestamp = utc_now()
     record = {
-        "schema_version": 2,
+        "schema_version": 3,
         "change_id": args.change_id,
         "title": args.title,
         "profile": profile,
@@ -121,6 +122,7 @@ def main() -> int:
         "project_root": str(project_root),
         "state": "INTAKE",
         "owner": args.owner,
+        "orchestration": orchestration_contract(args.change_id),
         "created_at": timestamp,
         "updated_at": timestamp,
         "events": [],

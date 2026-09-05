@@ -62,6 +62,27 @@ def parse_failure_events(root: Path) -> tuple[list[dict[str, Any]], int]:
     return failures, invalid
 
 
+def parse_execution_records(root: Path) -> tuple[list[dict[str, Any]], int]:
+    records: list[dict[str, Any]] = []
+    invalid = 0
+    for evidence_file in change_files(root, "execution-evidence.json"):
+        try:
+            item = json.loads(evidence_file.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            invalid += 1
+            continue
+        if (
+            isinstance(item, dict)
+            and item.get("strategy") in {"parallel", "sequential"}
+            and isinstance(item.get("task_runs"), list)
+            and isinstance(item.get("capability"), dict)
+        ):
+            records.append(item)
+        else:
+            invalid += 1
+    return records, invalid
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", nargs="?", type=Path, default=Path("openspec/changes"))
@@ -71,7 +92,8 @@ def main() -> int:
         return 2
     events, invalid = parse_events(args.root)
     failures, invalid_failures = parse_failure_events(args.root)
-    invalid += invalid_failures
+    executions, invalid_executions = parse_execution_records(args.root)
+    invalid += invalid_failures + invalid_executions
     event_counts = Counter(str(item.get("event", "unknown")) for item in events)
     start_events = {"skill.triggered", "skill.fallback"}
     mode_counts = Counter(str(item.get("mode", "unknown")) for item in events if item.get("event") in start_events)
@@ -84,6 +106,19 @@ def main() -> int:
         if item.get("event") == "methodology.transition" and item.get("change_id")
     }
     archived = sum(state == "ARCHIVED" for state in final_states.values())
+    strategy_counts = Counter(str(item.get("strategy")) for item in executions)
+    fallback_reasons = Counter(
+        str(item.get("fallback_reason"))
+        for item in executions
+        if item.get("strategy") == "sequential" and item.get("fallback_reason")
+    )
+    total_task_runs = sum(len(item.get("task_runs", [])) for item in executions)
+    declared_concurrency = [
+        item.get("capability", {}).get("max_concurrency")
+        for item in executions
+        if isinstance(item.get("capability", {}).get("max_concurrency"), int)
+        and not isinstance(item.get("capability", {}).get("max_concurrency"), bool)
+    ]
     payload = {
         "changes": len(changes),
         "triggered": len(triggered_changes),
@@ -99,6 +134,13 @@ def main() -> int:
         "failures_by_source": dict(Counter(str(item.get("source")) for item in failures)),
         "lesson_candidates": sum(1 for path in change_files(args.root, "lesson-candidate.json")),
         "lesson_promotions": event_counts["lesson.promoted"],
+        "execution_records": len(executions),
+        "execution_by_strategy": dict(strategy_counts),
+        "parallel_adoption_rate": round(strategy_counts["parallel"] / len(executions), 4) if executions else 0,
+        "sequential_fallback_reasons": dict(fallback_reasons),
+        "task_runs": total_task_runs,
+        "average_task_runs": round(total_task_runs / len(executions), 4) if executions else 0,
+        "max_declared_concurrency": max(declared_concurrency, default=0),
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 2 if invalid else 0

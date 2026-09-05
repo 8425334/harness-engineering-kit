@@ -22,6 +22,8 @@ Explicit task keywords may be added with repeated `--keyword <read_when>` argume
 
 Use the `engineering` Skill for non-trivial requested implementation or refactoring. The Skill orchestrates the lifecycle; it does not define project conventions.
 
+Harness Engineering is the parent of OpenSpec: create changes with `init_change.py`; use `dispatch_openspec.py` for allowlisted change-scoped OpenSpec authoring/validation; and never let direct OpenSpec or `/opsx:*` own state, approval, implementation, Sync, or Archive. Run `python3 docs/methodology/scripts/check_change_workspace.py` (Windows: `py -3`) before Explore; a missing or altered parent-child contract fails every gate. During Apply, every successful task must go through `record_task_completion.py complete`, which records evidence and automatically checks its `tasks.md` item. After interruption, use `record_task_completion.py resume` to reconcile evidence and obtain the next ready task wave.
+
 Project Agents must not edit `docs/fitness/**`. If it is absent, bootstrap it only through the canonical installer; a demonstrable pre-existing Python syntax error may be minimally repaired. Run `python3 docs/methodology/scripts/check_fitness_protection.py` (Windows: `py -3`) before Fitness. Every other Fitness change, regardless of size, requires external human approval bound to the exact change digest. Stop and request approval instead of changing or weakening the gate.
 
 Before closing Explore, run `python3 docs/methodology/scripts/preflight_lessons.py` and review any active project lessons. Record reusable Fitness, test, diff, phase, or production failures with `record_failure.py`; do not activate lesson candidates without external approval.

@@ -4,7 +4,7 @@ The only lifecycle Skill in this kit is `engineering`. Other tools are supportin
 
 | Capability | Purpose | Fallback |
 |---|---|---|
-| OpenSpec workspace | Canonical active change and specification storage | Maintain the same `openspec/changes` artifact layout without the CLI |
+| OpenSpec child | Specification authoring guidance and validation, dispatched only by the Harness parent through `dispatch_openspec.py` | Maintain the same artifacts without the CLI; never let `/opsx:*` or direct change-scoped OpenSpec calls own creation, state, approval, implementation, Sync, or Archive |
 | Code navigation/index | Find symbols, callers, and dependencies | Targeted repository search |
 | Test/build/Fitness runners | Produce verification evidence | Project commands from policy |
 | Browser or API tooling | Verify user-visible/integration behavior | Focused manual evidence |

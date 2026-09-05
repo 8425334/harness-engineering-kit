@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "strategy": "parallel-when-supported",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "{{BOUNDED_TASK_TITLE}}",
+      "kind": "implementation",
+      "depends_on": [],
+      "write_scope": [
+        "{{PROJECT_RELATIVE_FILE_OR_DIRECTORY}}"
+      ],
+      "contract_refs": [
+        "design.md#D1",
+        "specs/{{CAPABILITY}}/spec.md"
+      ],
+      "acceptance": [
+        "{{OBSERVABLE_COMPLETION_CRITERION}}"
+      ],
+      "verification": [
+        "{{EXACT_FOCUSED_VERIFICATION_COMMAND}}"
+      ],
+      "parallelizable": true
+    },
+    {
+      "id": "T2",
+      "title": "{{DEPENDENT_OR_INDEPENDENT_TASK_TITLE}}",
+      "kind": "test",
+      "depends_on": [],
+      "write_scope": [
+        "{{DISJOINT_PROJECT_RELATIVE_TEST_PATH}}"
+      ],
+      "contract_refs": [
+        "design.md#D1",
+        "specs/{{CAPABILITY}}/spec.md"
+      ],
+      "acceptance": [
+        "{{OBSERVABLE_TEST_COMPLETION_CRITERION}}"
+      ],
+      "verification": [
+        "{{EXACT_FOCUSED_TEST_COMMAND}}"
+      ],
+      "parallelizable": true
+    }
+  ],
+  "integration": {
+    "owner": "coordinator",
+    "merge_order": [
+      "T1",
+      "T2"
+    ],
+    "final_verification": [
+      "{{EXACT_PROJECT_OR_PROFILE_GATE_COMMAND}}"
+    ]
+  }
+}

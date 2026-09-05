@@ -420,6 +420,7 @@ def run_check(root: Path, source: Path) -> tuple[int, list[str]]:
         ("check_profile.py", ["check_profile.py", str(root / "docs/methodology/profile.yaml")]),
         ("resolve_context.py", ["resolve_context.py", "--root", str(root), "."]),
         ("check_fitness_protection.py", ["check_fitness_protection.py", "--root", str(root)]),
+        ("check_change_workspace.py", ["check_change_workspace.py", "--root", str(root)]),
         ("verify_skill.py (claude)", ["verify_skill.py", "engineering", "--project-root", str(root), "--platform", "claude", "--source-root", str(source)]),
         ("verify_skill.py (codex)", ["verify_skill.py", "engineering", "--project-root", str(root), "--platform", "codex", "--source-root", str(source)]),
     ]

@@ -29,6 +29,12 @@ Explore → Propose (Spec → Design → Approval) → Apply → Sync → Archiv
 
 The exact artifacts, gates, states, drift transitions, and production extension are defined once in [Canonical Change Lifecycle](core/change-lifecycle.md). Backend RAM and frontend RAD finish during Explore/Propose; Apply consumes the approved contract.
 
+Design also produces an approval-bound `task-plan.json` DAG. During Apply, the coordinator runs dependency-ready tasks concurrently only when the Agent runtime and worktree/disjoint-scope isolation support it; otherwise it executes the same graph sequentially and records why. `execution-evidence.json` proves task ownership, actual concurrency, integration order, and coordinator-level verification. See [Task Graph and Parallel Execution](core/task-orchestration.md).
+
+Harness Engineering is the parent lifecycle and OpenSpec is a child authoring/validation capability. All change-scoped OpenSpec operations cross the allowlisted Harness dispatcher; after every successful DAG task, Harness records its run and automatically checks the matching OpenSpec `tasks.md` item. See [Harness and OpenSpec Parent-Child Orchestration](core/openspec-orchestration.md).
+
+If Apply is interrupted, keep the change in `IMPLEMENTING` and run `record_task_completion.py resume <change-dir> --actor <agent> --json`; it repairs checked-task projection from validated evidence and returns the next ready task wave.
+
 Production delivery extends—not replaces—the Engineering lifecycle. A production-scoped change cannot archive until its linked production record is `CLOSED` with observability, staged rollout, stop conditions, rollback, and audit evidence.
 
 Self-Refine is an optional or Profile-required inner loop for draft and implementation quality: `Generate → Self-Critique → Refine → Re-check`. It produces auditable evidence without replacing approval, deterministic gates, or production controls. See [Self-Refine Feedback Loop](core/self-refine.md).
@@ -81,7 +87,7 @@ A fresh project's placeholders must be filled from real repository facts before 
 
 Version-aware upgrades compare the installed `docs/methodology/VERSION` with the Kit version, synchronize all canonical resources for lower-to-higher upgrades, block downgrades, and report any release-specific migration review. See [Versioning and Upgrades](docs/versioning.md).
 
-The check fails for an oversized or structurally invalid `ai.json`, unindexed or oversized `AI.md`, missing policy, placeholders, broken referenced paths, invalid profiles, missing Skill resources, stale installed Skill content, or unsupported platform adapters. Cursor and the legacy `ramer`, `fe-engineering`, and `multi-agent` entries are intentionally not supported.
+The check fails for an oversized or structurally invalid `ai.json`, unindexed or oversized `AI.md`, missing policy, placeholders, broken referenced paths, invalid task graphs/execution evidence, invalid profiles, missing Skill resources, stale installed Skill content, or unsupported platform adapters. Cursor and the legacy `ramer`, `fe-engineering`, and `multi-agent` entries are intentionally not supported.
 
 Resolve task context with the installed project controls. See the [CLI Onboarding Playbook](templates/engineering/references/onboarding.md) for the execution contract.
 
@@ -100,7 +106,7 @@ python3 docs/methodology/scripts/methodology_state.py \
   openspec/changes/add-capability EXPLORED --actor agent
 ```
 
-Use `check_phase.py` for direct gate inspection, `record_skill_event.py` for explicit fallback/intervention events, and `skill_metrics.py` for structured adoption metrics.
+Use `check_phase.py` for direct gate inspection, `check_task_plan.py` to inspect deterministic task waves and execution evidence, `record_skill_event.py` for explicit fallback/intervention events, and `skill_metrics.py` for structured adoption metrics.
 
 Use `preflight_lessons.py` before Explore closes, `record_failure.py` for Fitness/test/diff/production failures, `create_lesson_candidate.py` to propose reusable prevention, `retrieve_lessons.py` to inspect active lessons, and `approve_lesson.py` to activate an externally approved lesson.
 
@@ -111,6 +117,7 @@ Use `preflight_lessons.py` before Explore closes, `record_failure.py` for Fitnes
 - [SDD Workflow](core/sdd-workflow.md)
 - [Governance](core/methodology-governance.md)
 - [Self-Refine Feedback Loop](core/self-refine.md)
+- [Task Graph and Parallel Execution](core/task-orchestration.md)
 - [Project Lesson Memory](core/lesson-memory.md)
 - [Backend Profile](core/backend-profile.md)
 - [Frontend Profile](core/frontend-profile.md)

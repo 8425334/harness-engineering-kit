@@ -16,8 +16,10 @@ from check_context_docs import validate_context_impact, validate_project as vali
 from check_profile import read_project_profile, self_refine_max_iterations, self_refine_policy, validate as validate_profile
 from check_production_readiness import rollout_cycles, validate as validate_production_record
 from check_root_context import validate as validate_root_context
+from check_task_plan import validate_execution, validate_plan
 from lessons_common import lesson_matches, load_failure_events, load_lessons, validate_lesson
 from methodology_common import contract_files, meaningful, read_json, relative_digests, sha256, spec_files
+from openspec_common import validate_orchestration
 
 
 PHASES = ("EXPLORE", "SPEC", "DESIGN", "EXECUTE", "REVIEW", "SYNC", "ARCHIVE")
@@ -66,8 +68,9 @@ def validate_change_record(record: dict[str, Any], errors: list[str]) -> None:
     for field in required:
         if not meaningful_value(record.get(field)):
             errors.append(f"change.json missing or placeholder: {field}")
-    if record.get("schema_version") != 2:
-        errors.append("change.json schema_version must be 2")
+    if record.get("schema_version") != 3:
+        errors.append("change.json schema_version must be 3")
+    errors.extend(validate_orchestration(record))
     if record.get("skill") != "engineering":
         errors.append("change.json skill must be engineering")
     if record.get("mode") not in {"backend", "frontend", "fullstack"}:
@@ -261,6 +264,7 @@ def validate_review(change_dir: Path, record: dict[str, Any], errors: list[str])
             elif not candidate.is_file() or sha256(candidate) != expected_digest:
                 errors.append(f"review file digest mismatch: {relative}")
     validate_context_updates(change_dir, record, evidence, errors)
+    errors.extend(validate_execution(change_dir, record, evidence))
     require_evidence_after_state(record, evidence, "VERIFYING", "review-evidence.json", errors)
     validate_self_refine(change_dir, record, errors)
 
@@ -486,6 +490,14 @@ def check(change_dir: Path, phase: str) -> list[str]:
     if str(record.get("change_id", "")) != change_dir.name:
         errors.append(f"change.json change_id must match the change directory name: {change_dir.name}")
     validate_change_record(record, errors)
+    project_root = Path(str(record.get("project_root", "")))
+    if project_root.is_dir():
+        try:
+            from check_change_workspace import check_workspace
+        except ImportError:
+            errors.append("workspace guard missing: re-run onboarding --apply to install check_change_workspace.py")
+        else:
+            errors.extend(f"workspace: {error}" for error in check_workspace(project_root))
     validate_context_contract(change_dir, record, errors)
     require_markdown(change_dir, ("context-pack.md", "impact-analysis.md"), errors)
     if phase == "EXPLORE":
@@ -495,6 +507,9 @@ def check(change_dir: Path, phase: str) -> list[str]:
         validate_specs(change_dir, errors)
     if phase in {"DESIGN", "EXECUTE", "REVIEW", "SYNC", "ARCHIVE"}:
         require_markdown(change_dir, ("design.md", "tasks.md"), errors)
+    if phase in {"DESIGN", "EXECUTE"}:
+        _, task_errors = validate_plan(change_dir, status_mode="planning" if phase == "DESIGN" else "runtime")
+        errors.extend(task_errors)
     if phase in {"EXECUTE", "REVIEW", "SYNC", "ARCHIVE"}:
         validate_approval(change_dir, errors)
     if phase in {"REVIEW", "SYNC", "ARCHIVE"}:

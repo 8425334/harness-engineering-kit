@@ -14,6 +14,15 @@
       "manual_review": [
         "Review preserved legacy ramer, fe-engineering, multi-agent, Cursor, and Codex entries before any separate cleanup."
       ]
+    },
+    {
+      "version": "0.4.0",
+      "kind": "contract",
+      "summary": "Add approval-bound task DAGs, capability-adaptive parallel execution, deterministic task progress, and Harness-parent/OpenSpec-child orchestration.",
+      "manual_review": [
+        "Active changes created before 0.4.0 must migrate change.json to schema_version 3 with the canonical orchestration contract and add task-plan.json/execution-evidence.json; if already approved, treat the new parent contract and task graph as contract drift and obtain a new external approval before Apply.",
+        "Existing approvals that digest tasks.md must be recreated because checkbox progress is now a runtime projection while task-plan.json remains the approval-bound authority."
+      ]
     }
   ]
 }

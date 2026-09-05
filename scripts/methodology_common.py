@@ -114,7 +114,7 @@ def contract_files(change_dir: Path) -> list[Path]:
         change_dir / "proposal.md",
         *spec_files(change_dir),
         change_dir / "design.md",
-        change_dir / "tasks.md",
+        change_dir / "task-plan.json",
     ]
 
 

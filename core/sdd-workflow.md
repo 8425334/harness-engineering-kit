@@ -4,9 +4,11 @@ SDD is the contract-producing part of the canonical Engineering lifecycle, not a
 
 `openspec/changes/<change-id>/` is the only active change workspace. OpenSpec proposal/spec/design/tasks and Harness context, state, approval, and evidence artifacts are co-located there.
 
+Workspace ownership is a deterministic parent-child contract, not a convention. `init_change.py` is the only creator of a live change and `methodology_state.py` the only state machine; `check_change_workspace.py` fails every phase gate when a live `openspec/changes/<id>/` lacks the canonical Harness-parent/OpenSpec-child relationship. Change-scoped OpenSpec authoring and validation are dispatched by Harness through `dispatch_openspec.py`; the child never owns creation, approval, implementation, Sync, or Archive. See [Harness and OpenSpec Parent-Child Orchestration](openspec-orchestration.md).
+
 - Explore produces context, impact evidence, and an approval-bound `context-impact.json` decision covering every planned file.
-- Propose produces the business proposal, observable behavior specs, technical design, dependency-ordered tasks, and external approval.
-- Apply implements the approved contract and records structured review evidence.
+- Propose produces the business proposal, observable behavior specs, technical design, dependency-ordered `tasks.md`, an approval-bound `task-plan.json` DAG, and external approval.
+- Apply executes ready DAG tasks concurrently when safely supported (or sequentially with recorded fallback). Each successful task is recorded through `record_task_completion.py`, which immediately synchronizes its `tasks.md` checkbox, before final integration and Review evidence.
 - Sync copies verified behavior into canonical specs/docs and proves equal digests.
 - Archive closes the technical record after any linked production record is closed.
 

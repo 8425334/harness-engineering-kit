@@ -12,6 +12,6 @@
     "proposal.md": "{{SHA256}}",
     "specs/{{CAPABILITY}}/spec.md": "{{SHA256}}",
     "design.md": "{{SHA256}}",
-    "tasks.md": "{{SHA256}}"
+    "task-plan.json": "{{SHA256}}"
   }
 }

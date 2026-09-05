@@ -26,6 +26,7 @@ from methodology_common import sha256, utc_now
 from methodology_state import main as methodology_state_main
 from preflight_lessons import main as preflight_lessons_main
 from record_failure import main as record_failure_main
+from record_task_completion import record_completion
 from retrieve_lessons import retrieve
 from resolve_context import ContextResolutionError, main as resolve_context_main, resolve_context
 from skill_metrics import main as metrics_main
@@ -95,7 +96,7 @@ def prepare_project(project: Path, repository: Path) -> Path:
         "self_refine:\n  policy: required\n  max_iterations: 3\n"
         "exceptions:\n  record_path: docs/methodology/exceptions.yaml\n"
         "  owner_required: true\n  expiry_required: true\nreview:\n"
-        "  rule_owner: smoke\n  methodology_version: 0.3.0\n  next_review: 2027-01-01\n",
+        "  rule_owner: smoke\n  methodology_version: 0.4.0\n  next_review: 2027-01-01\n",
         encoding="utf-8",
     )
     policy = project / "docs/methodology/agent-policy.yaml"
@@ -151,7 +152,22 @@ def write_contract(change_dir: Path, capability: str, mode: str) -> str:
     spec = "# Capability\n### Requirement: Behavior\nThe system MUST respond.\n#### Scenario: accepted\nWHEN input is valid\nTHEN output is returned\n"
     (change_dir / "specs" / capability / "spec.md").write_text(spec, encoding="utf-8")
     (change_dir / "design.md").write_text("# Design\n### D1: Boundary\nUse the approved contract.\n", encoding="utf-8")
-    (change_dir / "tasks.md").write_text("# Tasks\n- [ ] Implement\n- [ ] Verify\n", encoding="utf-8")
+    (change_dir / "tasks.md").write_text("# Tasks\n\n- [ ] T1 Implement and verify the approved change\n", encoding="utf-8")
+    write_json(change_dir / "task-plan.json", {
+        "schema_version": 1,
+        "strategy": "parallel-when-supported",
+        "tasks": [{
+            "id": "T1", "title": "Implement and verify the approved change", "kind": "implementation",
+            "depends_on": [], "write_scope": analyzed_paths,
+            "contract_refs": ["design.md#D1", f"specs/{capability}/spec.md"],
+            "acceptance": [f"The {mode} behavior and required context updates are complete."],
+            "verification": ["python3 -m py_compile changed.py"], "parallelizable": True,
+        }],
+        "integration": {
+            "owner": "coordinator", "merge_order": ["T1"],
+            "final_verification": ["python3 -m py_compile changed.py"],
+        },
+    })
     return spec
 
 
@@ -443,29 +459,12 @@ def exercise_mode(project: Path, profile: Path, mode: str) -> None:
     transition(change_dir, "IMPLEMENTING", expected=2)
     spec_path.write_text(spec, encoding="utf-8")
     transition(change_dir, "IMPLEMENTING")
-    transition(change_dir, "VERIFYING")
 
+    execution_started = utc_now()
     changed_file = project / "src" / f"{mode}.txt"
     changed_file.parent.mkdir(parents=True, exist_ok=True)
     changed_file.write_text(f"implemented {mode}\n", encoding="utf-8")
-    write_json(change_dir / "self-refine-evidence.json", {
-        "schema_version": 1, "status": "passed", "actor": "agent",
-        "at": utc_now(), "policy": "required", "iterations": 2,
-        "artifacts": [{"path": "proposal.md", "findings": "Missing failure behavior was identified.", "resolution": "Added the failure scenario to the contract."}],
-        "uncovered_risks": [],
-        "independent_check": {"status": "not-required", "actor": "N/A", "evidence": "N/A"},
-    })
     review_files = {f"src/{mode}.txt": sha256(changed_file)}
-    review_payload = {
-        "schema_version": 1, "status": "passed", "actor": "reviewer",
-        "at": utc_now(), "change_digest": "a" * 64, "tasks_complete": True,
-        "files": review_files,
-        "commands": [{"command": "python3 -m py_compile changed.py", "exit_code": 0, "evidence": "smoke"}],
-        "uncovered_cases": [], "exceptions": [],
-    }
-    if mode in {"frontend", "fullstack"}:
-        write_json(change_dir / "review-evidence.json", review_payload)
-        transition(change_dir, "VERIFIED", expected=2)
     if mode == "frontend":
         detail = project / "AI.md"
         detail.write_text(detail.read_text(encoding="utf-8") + "\n## Frontend Note\n\n- Frontend boundaries are verified explicitly.\n", encoding="utf-8")
@@ -475,6 +474,51 @@ def exercise_mode(project: Path, profile: Path, mode: str) -> None:
         context_index["summary"] = "Temporary project for Harness lifecycle and fullstack verification."
         write_json(project / "ai.json", context_index)
         review_files["ai.json"] = sha256(project / "ai.json")
+    execution_completed = utc_now()
+    verification_command = "python3 -m py_compile changed.py"
+    task_run = {
+        "task_id": "T1", "actor": "smoke", "status": "completed",
+        "isolation": "single-workspace", "workspace": str(project),
+        "result_ref": "shared-workspace:T1",
+        "started_at": execution_started, "completed_at": execution_completed,
+        "changed_files": sorted(review_files),
+        "commands": [{"command": verification_command, "exit_code": 0, "evidence": "smoke"}],
+    }
+    write_json(change_dir / "execution-evidence.json", {
+        "schema_version": 1, "strategy": "sequential",
+        "fallback_reason": "The smoke runtime uses one coordinator and exposes no concurrent worker API.",
+        "coordinator": "smoke", "capability": {
+            "agent_parallelism": False, "isolation": "single-workspace", "max_concurrency": 1,
+        },
+        "started_at": execution_started, "completed_at": execution_completed,
+        "task_runs": [],
+        "integration": {
+            "actor": "smoke", "status": "passed", "order": ["T1"],
+            "conflicts": [], "changed_files": [],
+            "commands": [{"command": verification_command, "exit_code": 0, "evidence": "smoke"}],
+        },
+    })
+    assert not record_completion(change_dir, "T1", task_run)
+    transition(change_dir, "VERIFYING")
+    write_json(change_dir / "self-refine-evidence.json", {
+        "schema_version": 1, "status": "passed", "actor": "agent",
+        "at": utc_now(), "policy": "required", "iterations": 2,
+        "artifacts": [{"path": "proposal.md", "findings": "Missing failure behavior was identified.", "resolution": "Added the failure scenario to the contract."}],
+        "uncovered_risks": [],
+        "independent_check": {"status": "not-required", "actor": "N/A", "evidence": "N/A"},
+    })
+    review_payload = {
+        "schema_version": 1, "status": "passed", "actor": "reviewer",
+        "at": utc_now(), "change_digest": "a" * 64, "tasks_complete": True,
+        "files": review_files,
+        "commands": [{"command": verification_command, "exit_code": 0, "evidence": "smoke"}],
+        "uncovered_cases": [], "exceptions": [],
+    }
+    if mode in {"frontend", "fullstack"}:
+        incomplete_review = dict(review_payload)
+        incomplete_review["files"] = {f"src/{mode}.txt": review_files[f"src/{mode}.txt"]}
+        write_json(change_dir / "review-evidence.json", incomplete_review)
+        transition(change_dir, "VERIFIED", expected=2)
     review_payload["at"] = utc_now()
     review_payload["files"] = review_files
     write_json(change_dir / "review-evidence.json", review_payload)
@@ -545,6 +589,7 @@ def run() -> None:
         assert metrics["triggered"] == 3 and metrics["archived"] == 3, metrics
         assert metrics["by_mode"] == {"backend": 1, "frontend": 1, "fullstack": 1}, metrics
         assert metrics["failure_events"] >= 3 and metrics["lesson_candidates"] == 3 and metrics["lesson_promotions"] == 1, metrics
+        assert metrics["execution_by_strategy"] == {"sequential": 3} and metrics["task_runs"] == 3, metrics
         invalid_events = project / "openspec/changes/smoke-backend/evidence/events.jsonl"
         with invalid_events.open("a", encoding="utf-8") as stream:
             stream.write("not-json\n")

@@ -4,9 +4,11 @@ SDD 是统一 Engineering 生命周期中负责产出契约的部分，不是第
 
 `openspec/changes/<change-id>/` 是唯一的活跃变更工作区。OpenSpec 的 proposal/spec/design/tasks 与 Harness 的上下文、状态、审批和证据产物共置于此。
 
+工作区归属是确定性的父子契约，不是约定。`init_change.py` 是存活 change 的唯一创建者，`methodology_state.py` 是唯一状态机；当存活的 `openspec/changes/<id>/` 缺少规范的 Harness 父级/OpenSpec 子级关系时，`check_change_workspace.py` 会让所有阶段门禁失败。change 级 OpenSpec 写作与校验由 Harness 通过 `dispatch_openspec.py` 调度；子级永远不拥有创建、审批、实施、Sync 或 Archive。详见 [Harness 与 OpenSpec 父子调度](openspec-orchestration.md)。
+
 - Explore 产出上下文、影响证据，以及覆盖全部计划文件并受审批绑定的 `context-impact.json` 决策。
-- Propose 产出业务提案、可观测行为 Spec、技术 Design、依赖有序 Tasks 和外部审批。
-- Apply 实现已审批契约并记录结构化 Review 证据。
+- Propose 产出业务提案、可观测行为 Spec、技术 Design、依赖有序的 `tasks.md`、受审批绑定的 `task-plan.json` DAG 和外部审批。
+- Apply 在安全且受支持时并发执行就绪 DAG 任务（否则记录降级并顺序执行）。每个成功任务都通过 `record_task_completion.py` 记录并立即同步勾选 `tasks.md`，之后再记录最终集成与 Review 证据。
 - Sync 把已验证行为同步到权威 Spec/文档并证明摘要相同。
 - Archive 在关联生产记录关闭后结束技术记录。
 

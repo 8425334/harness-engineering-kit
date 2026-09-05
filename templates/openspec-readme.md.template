@@ -17,9 +17,12 @@ proposal.md
 specs/<capability>/spec.md
 design.md
 tasks.md
+task-plan.json
+task-run.json (temporary per-task evidence, normally under evidence/task-runs/)
 lesson-candidate.json
 lesson-decision.json
 approval.json
+execution-evidence.json
 review-evidence.json
 self-refine-evidence.json
 sync-evidence.json
@@ -28,6 +31,24 @@ evidence/events.jsonl
 evidence/failure-events.jsonl
 evidence/lesson-preflight.json
 ```
+
+Harness Engineering is the parent lifecycle; OpenSpec is its child
+specification capability. `init_change.py` creates `change.json` with this
+machine-readable relationship. Change-scoped OpenSpec operations run only
+through `dispatch_openspec.py`; direct commands and `/opsx:*` cannot own change
+creation, state, approval, implementation, Sync, or Archive.
+`check_change_workspace.py` fails closed on a missing or altered relationship.
+
+`task-plan.json` is the approval-bound parent DAG and `tasks.md` is its child
+progress projection. After each successful task, run
+`record_task_completion.py complete <change-dir> <task-id> --run <task-run.json>`.
+It records the verified run and automatically changes the matching checkbox to
+`- [x]`; Review rejects missing, premature, or manually drifted checkmarks.
+
+If Apply is interrupted, keep the change in `IMPLEMENTING` and run
+`record_task_completion.py resume <change-dir> --actor <agent> --json`. It
+repairs the projection from validated evidence and reports the next ready DAG
+wave. Existing source changes without a validated task run remain pending.
 
 Use `init_change.py` to create it, `approve_design.py` to bind external approval to every contract artifact, and `methodology_state.py` to advance state. Never edit state directly.
 

@@ -29,6 +29,12 @@ Explore → Propose（Spec → Design → Approval）→ Apply → Sync → Arch
 
 [统一变更生命周期](i18n/zh/core/change-lifecycle.md) 唯一定义产物、门禁、状态、漂移处理和生产扩展。后端 RAM 与前端 RAD 在 Explore/Propose 完成；Apply 只消费已审批契约。
 
+Design 还会生成受审批绑定的 `task-plan.json` DAG。Apply 阶段只有在 Agent 运行时和工作树/不相交范围隔离都支持时，协调者才并发执行依赖已满足的任务；否则按同一任务图顺序执行并记录原因。`execution-evidence.json` 证明任务归属、真实并发、集成顺序和协调者级验证。详见[任务图与并行执行](i18n/zh/core/task-orchestration.md)。
+
+Harness Engineering 是父级生命周期，OpenSpec 是子级写作/校验能力。所有 change 级 OpenSpec 操作都必须经过 Harness 白名单调度器；每个 DAG 任务成功后，Harness 会记录 run 并自动勾选对应的 OpenSpec `tasks.md` 项。详见 [Harness 与 OpenSpec 父子调度](i18n/zh/core/openspec-orchestration.md)。
+
+如果 Apply 中断，保持 change 处于 `IMPLEMENTING`，执行 `record_task_completion.py resume <change-dir> --actor <agent> --json`；该命令从经过校验的证据修复任务投影，并返回下一就绪任务波次。
+
 生产交付是 Engineering 生命周期的扩展。生产范围变更只有在关联生产记录以观测、分阶段灰度、停止条件、回滚与审计证据达到 `CLOSED` 后，才能 Archive。
 
 Self-Refine 是草稿和实现质量的可选或按 Profile 要求启用的内层循环：`生成 → 自我批判 → 优化 → 再检查`。它产生可审计证据，但不替代审批、确定性门禁或生产控制。详见 [Self-Refine 反馈闭环](i18n/zh/core/self-refine.md)。
@@ -81,7 +87,7 @@ npx --yes --package github:8425334/harness-engineering-kit hek handoff --agent t
 
 版本化升级会比较项目已安装版本与 Kit 版本：低版本到高版本同步全部规范资源，同版本仍检查漂移，高版本降级直接阻断，并报告该目标版本声明的特殊迁移事项。详见 [版本化管理](docs/versioning.md)。
 
-`ai.json` 超限或结构非法、`AI.md` 未索引或超限、策略缺失、占位符未填、引用路径断裂、Profile 非法、Skill 资源缺失、安装内容过期或平台适配不支持都会失败。Cursor 以及旧 `ramer`、`fe-engineering`、`multi-agent` 入口不再兼容。
+`ai.json` 超限或结构非法、`AI.md` 未索引或超限、策略缺失、占位符未填、引用路径断裂、任务图/执行证据非法、Profile 非法、Skill 资源缺失、安装内容过期或平台适配不支持都会失败。Cursor 以及旧 `ramer`、`fe-engineering`、`multi-agent` 入口不再兼容。
 
 任务上下文由接入后的项目控制面解析；执行契约见 [CLI 接入指南](templates/engineering/references/onboarding.md)。
 
@@ -100,7 +106,7 @@ python3 docs/methodology/scripts/methodology_state.py \
   openspec/changes/add-capability EXPLORED --actor agent
 ```
 
-直接检查门禁用 `check_phase.py`，显式记录降级/人工介入用 `record_skill_event.py`，统计结构化采用效果用 `skill_metrics.py`。
+直接检查门禁用 `check_phase.py`，检查确定性任务波次和执行证据用 `check_task_plan.py`，显式记录降级/人工介入用 `record_skill_event.py`，统计结构化采用效果用 `skill_metrics.py`。
 
 Explore 结束前运行 `preflight_lessons.py`；用 `record_failure.py` 记录 Fitness/测试/差异/生产失败，用 `create_lesson_candidate.py` 提议可复用预防，用 `retrieve_lessons.py` 检索激活经验，并通过 `approve_lesson.py` 在外部审批后激活。
 
@@ -111,6 +117,7 @@ Explore 结束前运行 `preflight_lessons.py`；用 `record_failure.py` 记录 
 - [SDD 工作流](i18n/zh/core/sdd-workflow.md)
 - [治理基线](i18n/zh/core/methodology-governance.md)
 - [Self-Refine 反馈闭环](i18n/zh/core/self-refine.md)
+- [任务图与并行执行](i18n/zh/core/task-orchestration.md)
 - [项目经验记忆](i18n/zh/core/lesson-memory.md)
 - [后端 Profile](i18n/zh/core/backend-profile.md)
 - [前端 Profile](i18n/zh/core/frontend-profile.md)

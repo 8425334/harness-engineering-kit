@@ -12,9 +12,9 @@ Explore → Propose (Spec → Design → Approval) → Apply → Sync → Archiv
 |---|---|---|---|
 | Explore | `change.json`, `context-pack.md`, `impact-analysis.md`, `context-impact.json`, `evidence/lesson-preflight.json` | `EXPLORE` | `EXPLORED` |
 | Propose / Spec | `proposal.md`, `specs/<capability>/spec.md` | `SPEC` | `CONTRACT_READY` |
-| Propose / Design | `design.md`, `tasks.md` | `DESIGN` | `DESIGN_READY` |
+| Propose / Design | `design.md`, `tasks.md`, `task-plan.json` | `DESIGN` | `DESIGN_READY` |
 | Approval | external identity plus digests of every contract artifact | `EXECUTE` | `APPROVED` |
-| Apply | approved contract, completed tasks, changed-file digests, exact verification commands | `EXECUTE`, then `REVIEW` | `IMPLEMENTING → VERIFYING → VERIFIED` |
+| Apply | approved contract, completed tasks, `execution-evidence.json`, changed-file digests, exact verification commands | `EXECUTE`, then `REVIEW` | `IMPLEMENTING → VERIFYING → VERIFIED` |
 | Sync | verified behavior copied to canonical specs/docs with matching digests | `SYNC` | `SYNCED` |
 | Archive | archive evidence; learning conclusion; production closure when applicable | `ARCHIVE` | `ARCHIVED` |
 
@@ -30,11 +30,13 @@ Its policy is selected by the project Profile. When required, Review must includ
 
 ## Contract Boundary
 
-The approval contract is the exact content of context, impact, context-update decisions, proposal, all behavior specs, design, and tasks. `context-impact.json` lists every planned deliverable and declares whether root `ai.json` or indexed `AI.md` details must change. `approve_design.py` records the external approval source and stable approval ID plus SHA-256 digests. The script proves integrity, not approver authenticity; CI or the approval system must verify identity and authorization.
+The approval contract is the exact content of context, impact, context-update decisions, proposal, all behavior specs, design, and the machine-readable task graph. `tasks.md` is the OpenSpec child projection of that graph: ids/order are checked at Design, while checkbox marks are runtime progress and therefore excluded from approval digests. `context-impact.json` lists every planned deliverable and declares whether root `ai.json` or indexed `AI.md` details must change. `approve_design.py` records the external approval source and stable approval ID plus SHA-256 digests. The script proves integrity, not approver authenticity; CI or the approval system must verify identity and authorization.
 
 Explore also records the active project lessons matched by the task in `evidence/lesson-preflight.json`. Recorded failures must reach a lesson candidate or an explicit non-generalizable decision before Archive; this learning conclusion does not change the approval contract.
 
 Backend RAM (`Read → Analyze → Model`) and frontend RAD (`Read → Analyze → Decompose`) occur inside Explore and Propose. Apply may perform a small drift check, but it must not silently redesign the approved contract.
+
+Apply follows the approved DAG in `task-plan.json`. A single coordinator may dispatch ready tasks concurrently when the Agent platform and isolation support it, or run the identical graph sequentially with a recorded fallback reason. After every successful task, `record_task_completion.py` atomically records its run and synchronizes the corresponding OpenSpec checkbox. The coordinator alone integrates results; Review re-runs full verification and checks task/file/checkbox agreement. See [Task Graph and Parallel Execution](task-orchestration.md).
 
 ## Production Extension
 

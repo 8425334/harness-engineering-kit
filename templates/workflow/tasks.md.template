@@ -1,6 +1,30 @@
 # Tasks
 
-- [ ] Implement the approved contract in dependency order.
-- [ ] Add or update focused tests.
-- [ ] Run required profile and project gates.
-- [ ] Record structured review evidence.
+- [ ] T1 {{BOUNDED_TASK_TITLE}}
+  - Scope: `{{PROJECT_RELATIVE_FILE_OR_DIRECTORY}}`
+  - Contract: `design.md#D1`, `specs/{{CAPABILITY}}/spec.md`
+  - Done when: {{OBSERVABLE_COMPLETION_CRITERION}}
+  - Verify: `{{EXACT_FOCUSED_VERIFICATION_COMMAND}}`
+- [ ] T2 {{INDEPENDENT_OR_DEPENDENT_TASK_TITLE}}
+  - Depends on: {{TASK_IDS_OR_NONE}}
+  - Scope: `{{DISJOINT_PROJECT_RELATIVE_FILE_OR_DIRECTORY}}`
+  - Contract: `design.md#D2`, `specs/{{CAPABILITY}}/spec.md`
+  - Done when: {{OBSERVABLE_COMPLETION_CRITERION}}
+  - Verify: `{{EXACT_FOCUSED_VERIFICATION_COMMAND}}`
+
+## Coordinator Integration
+
+Integrate T1 and T2 in the approved order. Resolve conflicts without contract
+drift, rerun `{{EXACT_PROJECT_OR_PROFILE_GATE_COMMAND}}`, and record the result.
+
+`task-plan.json` is the machine-readable, approval-bound DAG. Keep these
+checkbox ids and their order identical to that file. At Design all boxes must be
+unchecked. After each successful task, Harness must call
+`record_task_completion.py complete`; it records execution evidence and changes
+only that task to `- [x]`. Never edit a checkbox manually.
+
+If Apply is interrupted, keep the change in `IMPLEMENTING` and run
+`record_task_completion.py resume <change-dir> --actor <agent> --json`. It
+repairs this projection from validated execution evidence and reports the next
+ready DAG wave. Existing source changes without a validated task run remain
+pending.

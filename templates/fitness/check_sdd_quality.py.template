@@ -2,7 +2,8 @@
 """SDD quality checks: config populated and change structure validation.
 
 Verifies openspec/config.yaml has populated context + rules blocks, and that
-active openspec changes have the required proposal.md + tasks.md artifacts.
+active openspec changes have the required proposal.md + tasks.md +
+task-plan.json artifacts.
 
 Generic — no project-specific placeholders. Works with any OpenSpec-style layout.
 
@@ -72,7 +73,7 @@ def check_config_populated() -> int:
 
 
 def check_change_structure() -> int:
-    """Verify active openspec changes have proposal.md and tasks.md."""
+    """Verify active openspec changes have proposal.md, tasks.md, and task-plan.json."""
     changes_dir = OPENSPEC_DIR / "changes"
     if not changes_dir.exists():
         print("No openspec/changes/ directory — no active changes to validate")
@@ -87,11 +88,14 @@ def check_change_structure() -> int:
 
         has_proposal = (entry / "proposal.md").exists()
         has_tasks = (entry / "tasks.md").exists()
+        has_task_plan = (entry / "task-plan.json").exists()
 
         if not has_proposal:
             issues.append(f"{entry.name}: missing proposal.md")
         if not has_tasks:
             issues.append(f"{entry.name}: missing tasks.md")
+        if not has_task_plan:
+            issues.append(f"{entry.name}: missing task-plan.json")
 
     if issues:
         print("OpenSpec change structure issues:")

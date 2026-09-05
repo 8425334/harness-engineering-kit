@@ -1,6 +1,6 @@
 {
   "name": "harness-engineering-kit",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Repository-native controls for AI-assisted software changes",
   "license": "MIT",
   "type": "commonjs",

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "change_id": "{{CHANGE_ID}}",
   "title": "{{TITLE}}",
   "profile": "standard",
@@ -12,6 +12,18 @@
   "project_root": "{{ABSOLUTE_PROJECT_ROOT}}",
   "state": "INTAKE",
   "owner": "{{OWNER}}",
+  "orchestration": {
+    "parent": "harness-engineering",
+    "change_id": "{{CHANGE_ID}}",
+    "children": {
+      "openspec": {
+        "role": "specification-authoring-and-validation",
+        "dispatcher": "docs/methodology/scripts/dispatch_openspec.py",
+        "allowed_actions": ["status", "instructions", "validate", "show", "templates"],
+        "denied_ownership": ["change-creation", "lifecycle-state", "approval", "implementation", "sync", "archive"]
+      }
+    }
+  },
   "created_at": "{{YYYY-MM-DDTHH:MM:SSZ}}",
   "updated_at": "{{YYYY-MM-DDTHH:MM:SSZ}}",
   "events": []

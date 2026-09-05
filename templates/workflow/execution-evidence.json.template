@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "strategy": "parallel",
+  "fallback_reason": null,
+  "coordinator": "{{COORDINATOR}}",
+  "capability": {
+    "agent_parallelism": true,
+    "isolation": "worktree",
+    "max_concurrency": 2
+  },
+  "started_at": "{{YYYY-MM-DDTHH:MM:SSZ}}",
+  "completed_at": null,
+  "task_runs": [],
+  "integration": {
+    "actor": null,
+    "status": "pending",
+    "order": [],
+    "conflicts": [],
+    "changed_files": [],
+    "commands": []
+  }
+}

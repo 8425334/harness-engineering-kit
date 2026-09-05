@@ -64,7 +64,7 @@ The project must document what an Agent may read, write, execute, and access in 
 
 ## 6. Complete cross-agent contracts
 
-An API contract is more than fields and enums. For parallel work, include versioning and compatibility, nullability/defaults, validation, pagination/sorting, error schema, authentication/authorization, idempotency, retry/timeouts, timezones/precision, observability fields, and ownership. Generate client types or consumer tests from the contract where possible. Agents must work in isolated branches/worktrees or disjoint file scopes; the coordinator resolves conflicts and reruns the full verification after changes.
+An API contract is more than fields and enums. For parallel work, include versioning and compatibility, nullability/defaults, validation, pagination/sorting, error schema, authentication/authorization, idempotency, retry/timeouts, timezones/precision, observability fields, and ownership. Generate client types or consumer tests from the contract where possible. The approval-bound task DAG must define dependencies, contract references, acceptance, focused verification, and exclusive write scopes. Agents must work in isolated branches/worktrees or disjoint file scopes; the coordinator alone resolves conflicts, records fallback and execution evidence, and reruns the full verification after integration.
 
 ## 7. Measure before claiming improvement
 
@@ -74,6 +74,7 @@ Adopt the methodology with a baseline period and review it after several compara
 - change-failure/rollback rate and time to restore;
 - gate duration, false-positive/false-negative findings, and exception age;
 - Agent acceptance rate, human intervention time, token/tool cost, and cache hit rate;
+- parallel adoption, sequential fallback reasons, task concurrency, integration conflicts, and coordinator rework;
 - documentation freshness and the percentage of changes with complete evidence.
 
 Do not claim speed or cost improvement without a sample size, comparison period, and methodology version. Revisit rules that increase work without improving an outcome.

@@ -1,0 +1,20 @@
+{
+  "task_id": "{{TASK_ID}}",
+  "actor": "{{WORKER_AGENT_ID}}",
+  "status": "completed",
+  "isolation": "{{worktree_OR_disjoint-write-scope_OR_single-workspace}}",
+  "workspace": "{{WORKTREE_OR_SHARED_WORKSPACE_REFERENCE}}",
+  "result_ref": "{{COMMIT_DIFF_OR_SHARED_WORKSPACE_RESULT_REFERENCE}}",
+  "started_at": "{{YYYY-MM-DDTHH:MM:SSZ}}",
+  "completed_at": "{{YYYY-MM-DDTHH:MM:SSZ}}",
+  "changed_files": [
+    "{{PROJECT_RELATIVE_CHANGED_FILE}}"
+  ],
+  "commands": [
+    {
+      "command": "{{EXACT_FOCUSED_VERIFICATION_COMMAND}}",
+      "exit_code": 0,
+      "evidence": "{{LOG_OR_REPORT_PATH}}"
+    }
+  ]
+}

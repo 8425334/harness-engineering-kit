@@ -12,9 +12,9 @@ Explore → Propose（Spec → Design → Approval）→ Apply → Sync → Arch
 |---|---|---|---|
 | Explore | `change.json`、`context-pack.md`、`impact-analysis.md`、`context-impact.json`、`evidence/lesson-preflight.json` | `EXPLORE` | `EXPLORED` |
 | Propose / Spec | `proposal.md`、`specs/<capability>/spec.md` | `SPEC` | `CONTRACT_READY` |
-| Propose / Design | `design.md`、`tasks.md` | `DESIGN` | `DESIGN_READY` |
+| Propose / Design | `design.md`、`tasks.md`、`task-plan.json` | `DESIGN` | `DESIGN_READY` |
 | Approval | 外部身份及全部契约产物摘要 | `EXECUTE` | `APPROVED` |
-| Apply | 已审批契约、完成的 Tasks、改动文件摘要、精确验证命令 | `EXECUTE`，再 `REVIEW` | `IMPLEMENTING → VERIFYING → VERIFIED` |
+| Apply | 已审批契约、完成的 Tasks、`execution-evidence.json`、改动文件摘要、精确验证命令 | `EXECUTE`，再 `REVIEW` | `IMPLEMENTING → VERIFYING → VERIFIED` |
 | Sync | 已验证行为同步到规范/文档且摘要一致 | `SYNC` | `SYNCED` |
 | Archive | 归档证据；学习结论；生产变更还需生产闭环 | `ARCHIVE` | `ARCHIVED` |
 
@@ -30,11 +30,13 @@ Self-Refine 是阶段内部的有界循环，不是新增状态机：
 
 ## 契约边界
 
-审批契约由上下文、影响分析、上下文更新决策、提案、全部行为 Spec、Design 和 Tasks 的精确内容组成。`context-impact.json` 枚举全部计划交付文件，并声明根 `ai.json` 或已索引 `AI.md` 是否必须更新。`approve_design.py` 保存外部审批来源、稳定审批 ID 及 SHA-256 摘要。脚本证明内容完整性，不证明审批人身份真实性；身份与授权必须由 CI 或审批系统验证。
+审批契约由上下文、影响分析、上下文更新决策、提案、全部行为 Spec、Design 和机器可读任务图的精确内容组成。`tasks.md` 是该图的 OpenSpec 子级投影：Design 校验 ID/顺序，复选框是运行态进度，因此不进入审批摘要。`context-impact.json` 枚举全部计划交付文件，并声明根 `ai.json` 或已索引 `AI.md` 是否必须更新。`approve_design.py` 保存外部审批来源、稳定审批 ID 及 SHA-256 摘要。脚本证明内容完整性，不证明审批人身份真实性；身份与授权必须由 CI 或审批系统验证。
 
 Explore 还要在 `evidence/lesson-preflight.json` 记录与任务匹配的项目经验。如果记录过失败，Archive 前必须形成经验候选或明确的不可泛化决策；该学习结论不会改变审批契约。
 
 后端 RAM（Read → Analyze → Model）和前端 RAD（Read → Analyze → Decompose）都发生在 Explore 与 Propose。Apply 只能做局部漂移检查，不能静默重做已审批设计。
+
+Apply 按 `task-plan.json` 的已审批 DAG 执行。Agent 平台和隔离能力允许时，唯一协调者可以并发派发就绪任务；否则按同一任务图顺序执行并记录降级原因。每个成功任务都由 `record_task_completion.py` 记录 run 并同步勾选对应 OpenSpec task。只有协调者负责集成；Review 重新执行完整验证并检查任务、文件和复选框一致性。详见[任务图与并行执行](task-orchestration.md)。
 
 ## 生产扩展
 
