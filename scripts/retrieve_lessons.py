@@ -26,7 +26,7 @@ def main() -> int:
     parser.add_argument("--rule", action="append", default=[])
     parser.add_argument("--path", action="append", default=[])
     parser.add_argument("--scope")
-    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--json", action="store_true", help="deprecated: output is always JSON")
     args = parser.parse_args()
     result = retrieve(args.project_root.resolve(), args.keyword, args.rule, args.path, args.scope)
     print(json.dumps(result, ensure_ascii=False, indent=2))

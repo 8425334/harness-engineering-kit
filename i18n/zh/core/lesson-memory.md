@@ -17,6 +17,8 @@
 | `docs/methodology/lessons/*.json` | 外部审批后激活的项目经验 | 辅助预防指导 |
 | Fitness 或策略规则 | 已证明的重复模式的确定性约束 | 规范控制 |
 
+## 运行契约
+
 用 `record_failure.py` 记录失败，包含规则、分类、消息、路径、签名和证据。Self-Refine 识别出可复用模式后，用 `create_lesson_candidate.py` 形成候选。授权审核人用 `approve_lesson.py` 发布；激活时绑定候选摘要和审批引用。审批脚本不会修改 `docs/fitness/**`。
 
 每个非微小变更都必须在 Explore 结束前运行 `preflight_lessons.py`，记录按任务关键词、规则、路径和范围命中的经验，也要记录明确的无匹配结果。Engineering Skill 应把经验带入 Self-Refine 和阶段计划。

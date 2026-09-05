@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from methodology_common import meaningful, read_json, utc_now, write_json
+from methodology_common import read_json, utc_now, write_json
 
 
 LESSON_ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9-]{1,62}")
@@ -72,7 +72,7 @@ def meaningful_value(value: Any) -> bool:
     return value is not None
 
 
-def validate_lesson(lesson: dict[str, Any], *, active_only: bool = False) -> list[str]:
+def validate_lesson(lesson: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     for field in ("schema_version", "lesson_id", "title", "pattern", "root_cause", "prevention", "verification", "scope", "keywords", "status"):
         if not meaningful_value(lesson.get(field)):
@@ -82,16 +82,22 @@ def validate_lesson(lesson: dict[str, Any], *, active_only: bool = False) -> lis
     errors.extend(validate_slug(lesson.get("lesson_id")))
     if lesson.get("status") not in LESSON_STATUSES:
         errors.append(f"lesson status must be one of {sorted(LESSON_STATUSES)}")
-    if active_only and lesson.get("status") != "active":
-        errors.append("lesson is not active")
-    for field in ("keywords", "source_changes"):
-        if field in lesson and not isinstance(lesson[field], list):
-            errors.append(f"lesson {field} must be an array")
-    if not isinstance(lesson.get("keywords"), list) or not all(meaningful_value(item) for item in lesson.get("keywords", [])):
-        errors.append("lesson keywords must be a non-empty array of values")
+    errors.extend(_require_string_array(lesson, "keywords", non_empty=True))
+    for field in ("source_changes", "source_events", "rules", "paths"):
+        errors.extend(_require_string_array(lesson, field))
     if "approved" in lesson and not isinstance(lesson["approved"], dict):
         errors.append("lesson approved must be an object")
     return errors
+
+
+def _require_string_array(lesson: dict[str, Any], field: str, *, non_empty: bool = False) -> list[str]:
+    """Validate that ``field`` is an array of non-placeholder strings."""
+    value = lesson.get(field, [])
+    if not isinstance(value, list) or (non_empty and not value):
+        return [f"lesson {field} must be a{' non-empty' if non_empty else ''} array"]
+    if not all(isinstance(item, str) and meaningful_value(item) for item in value):
+        return [f"lesson {field} must contain only non-placeholder strings"]
+    return []
 
 
 def lessons_dir(project_root: Path) -> Path:
@@ -110,13 +116,16 @@ def load_lessons(project_root: Path, *, active_only: bool = True) -> tuple[list[
         except (OSError, json.JSONDecodeError, ValueError):
             errors.append(f"lesson is not a valid JSON object: {path.name}")
             continue
-        lesson_errors = validate_lesson(lesson, active_only=active_only)
+        lesson_errors = validate_lesson(lesson)
         if lesson_errors:
             errors.extend(f"{path.name}: {error}" for error in lesson_errors)
             continue
-        if not active_only or lesson.get("status") == "active":
-            lesson["_path"] = str(path)
-            lessons.append(lesson)
+        if active_only and lesson.get("status") != "active":
+            # Retired (or otherwise non-active) lessons stay on disk for audit;
+            # retrieval and preflight simply skip them instead of failing.
+            continue
+        lesson["_path"] = str(path)
+        lessons.append(lesson)
     return lessons, errors
 
 

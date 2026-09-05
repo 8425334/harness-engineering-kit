@@ -119,6 +119,16 @@ def validate_source(skill: str, source_dir: Path, version: str | None) -> tuple[
 def verify(skill: str, project_root: Path, platform: str, source_only: bool = False, source_root: Path | None = None) -> dict[str, object]:
     methodology_root = source_root.resolve() if source_root else Path(__file__).resolve().parent.parent
     source_dir = methodology_root / "templates" / skill
+    if not source_dir.is_dir():
+        # Installed copies live at docs/methodology/scripts/ with no templates/
+        # sibling; they must not emit a wall of misleading "missing file" errors.
+        return {
+            "skill": skill,
+            "platform": platform,
+            "checks": {},
+            "errors": [f"Skill source not found: {source_dir}. Run from a kit checkout or pass --source-root."],
+            "status": "FAIL",
+        }
     version_path = methodology_root / "VERSION"
     version = version_path.read_text(encoding="utf-8").strip() if version_path.is_file() else None
     manifest, errors, expected = validate_source(skill, source_dir, version)

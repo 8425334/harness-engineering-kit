@@ -10,10 +10,25 @@ from pathlib import Path
 from typing import Any
 
 
+def change_files(root: Path, relative: str) -> list[Path]:
+    """Collect evidence files from active and archived change workspaces.
+
+    Archived changes live under ``openspec/changes/archive/<id>/`` per
+    archive-evidence.json.template (a ``<date>-<change-id>`` directory, with or
+    without a separate date level) and must keep counting toward completion
+    metrics.
+    """
+    return sorted({
+        *root.glob(f"*/{relative}"),
+        *root.glob(f"archive/*/{relative}"),
+        *root.glob(f"archive/*/*/{relative}"),
+    })
+
+
 def parse_events(root: Path) -> tuple[list[dict[str, Any]], int]:
     events: list[dict[str, Any]] = []
     invalid = 0
-    for event_file in root.glob("*/evidence/events.jsonl"):
+    for event_file in change_files(root, "evidence/events.jsonl"):
         for line in event_file.read_text(encoding="utf-8").splitlines():
             try:
                 item = json.loads(line)
@@ -33,7 +48,7 @@ def parse_events(root: Path) -> tuple[list[dict[str, Any]], int]:
 def parse_failure_events(root: Path) -> tuple[list[dict[str, Any]], int]:
     failures: list[dict[str, Any]] = []
     invalid = 0
-    for event_file in root.glob("*/evidence/failure-events.jsonl"):
+    for event_file in change_files(root, "evidence/failure-events.jsonl"):
         for line in event_file.read_text(encoding="utf-8").splitlines():
             try:
                 item = json.loads(line)
@@ -51,6 +66,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", nargs="?", type=Path, default=Path("openspec/changes"))
     args = parser.parse_args()
+    if not args.root.is_dir():
+        print(f"CHANGES ROOT MISSING: {args.root}")
+        return 2
     events, invalid = parse_events(args.root)
     failures, invalid_failures = parse_failure_events(args.root)
     invalid += invalid_failures
@@ -79,7 +97,7 @@ def main() -> int:
         "by_mode": dict(mode_counts),
         "failure_events": len(failures),
         "failures_by_source": dict(Counter(str(item.get("source")) for item in failures)),
-        "lesson_candidates": sum(1 for path in args.root.glob("*/lesson-candidate.json") if path.is_file()),
+        "lesson_candidates": sum(1 for path in change_files(args.root, "lesson-candidate.json")),
         "lesson_promotions": event_counts["lesson.promoted"],
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2))

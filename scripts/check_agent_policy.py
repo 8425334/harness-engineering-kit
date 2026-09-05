@@ -32,10 +32,16 @@ def scalar(content: str, key: str) -> str | None:
     return match.group(1).strip().strip("'\"") if match else None
 
 
+CANONICAL_LOCATION = ("docs", "methodology", "agent-policy.yaml")
+
+
 def validate(path: Path) -> list[str]:
     if not path.is_file():
         return [f"missing policy: {path}"]
-    content = path.read_text(encoding="utf-8")
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        return [f"policy is not readable UTF-8: {exc}"]
     errors: list[str] = []
     if "{{" in content or "}}" in content:
         errors.append("contains unfilled placeholders")
@@ -73,22 +79,27 @@ def validate(path: Path) -> list[str]:
             errors.append(f"permissions.{field} must be approval-required")
 
     resolved = path.resolve()
-    project_root = resolved.parents[2] if len(resolved.parents) >= 3 else resolved.parent
-    for field in PATH_FIELDS:
-        value = scalar(content, field)
-        if value:
-            configured = Path(value)
-            if configured.is_absolute():
-                errors.append(f"referenced path must be project-relative: {field}={value}")
-                continue
-            referenced = (project_root / configured).resolve()
-            try:
-                referenced.relative_to(project_root)
-            except ValueError:
-                errors.append(f"referenced path escapes project root: {field}={value}")
-            else:
-                if not referenced.is_file():
-                    errors.append(f"referenced path does not exist: {field}={value}")
+    if resolved.parts[-3:] != CANONICAL_LOCATION:
+        # PATH_FIELDS are resolved against the project root, which is only
+        # derivable from the canonical <root>/docs/methodology location.
+        errors.append("agent policy must be located at <project root>/docs/methodology/agent-policy.yaml")
+    else:
+        project_root = resolved.parents[2]
+        for field in PATH_FIELDS:
+            value = scalar(content, field)
+            if value:
+                configured = Path(value)
+                if configured.is_absolute():
+                    errors.append(f"referenced path must be project-relative: {field}={value}")
+                    continue
+                referenced = (project_root / configured).resolve()
+                try:
+                    referenced.relative_to(project_root)
+                except ValueError:
+                    errors.append(f"referenced path escapes project root: {field}={value}")
+                else:
+                    if not referenced.is_file():
+                        errors.append(f"referenced path does not exist: {field}={value}")
     return errors
 
 

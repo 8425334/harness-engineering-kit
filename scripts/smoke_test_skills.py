@@ -358,7 +358,7 @@ def create_production_record(path: Path, change_id: str) -> None:
         "rollout": {"strategy": "canary", "stages": ["1%", "25%", "100%"], "stop_conditions": ["error-rate > 2%"], "operator": "smoke"},
         "rollback": {"strategy": "feature-flag", "runbook": "runbook", "owner": "smoke", "tested_at": "2026-09-04", "data_plan": "not-applicable", "target_minutes": 15},
         "approvals": {"reviewer": "reviewer", "approved_at": "2026-09-04T00:00:00Z"},
-        "audit_log": str(path.parent.parent / "audit" / f"{change_id}.jsonl"),
+        "audit_log": f"docs/methodology/production/audit/{change_id}.jsonl",
     })
 
 
@@ -525,6 +525,11 @@ def exercise_mode(project: Path, profile: Path, mode: str) -> None:
 
 def run() -> None:
     repository = Path(__file__).resolve().parent.parent
+    if not (repository / "templates").is_dir() or not (repository / "core").is_dir():
+        # Kit-dev-only script: it validates the kit's own templates and core
+        # documents, so it must run from a kit checkout, never an installed copy.
+        print("SKILL SMOKE FAIL: run from a kit checkout (templates/ and core/ not found next to scripts/)")
+        raise SystemExit(2)
     with tempfile.TemporaryDirectory(prefix="methodology-smoke-") as temp:
         project = Path(temp)
         profile = prepare_project(project, repository)

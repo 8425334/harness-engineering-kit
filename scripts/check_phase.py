@@ -13,10 +13,10 @@ from typing import Any
 
 from check_agent_policy import validate as validate_agent_policy
 from check_context_docs import validate_context_impact, validate_project as validate_context_docs
-from check_profile import self_refine_max_iterations, self_refine_policy, validate as validate_profile
-from check_production_readiness import validate as validate_production_record
+from check_profile import read_project_profile, self_refine_max_iterations, self_refine_policy, validate as validate_profile
+from check_production_readiness import rollout_cycles, validate as validate_production_record
 from check_root_context import validate as validate_root_context
-from lessons_common import load_failure_events, load_lessons, validate_lesson
+from lessons_common import lesson_matches, load_failure_events, load_lessons, validate_lesson
 from methodology_common import contract_files, meaningful, read_json, relative_digests, sha256, spec_files
 
 
@@ -31,6 +31,11 @@ def meaningful_value(value: Any) -> bool:
     if isinstance(value, dict):
         return bool(value) and all(meaningful_value(key) and meaningful_value(item) for key, item in value.items())
     return value is not None
+
+
+def is_exit_code(value: Any) -> bool:
+    """A JSON ``false`` is not a zero exit code; require a real integer."""
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def timestamp(value: Any) -> datetime | None:
@@ -76,6 +81,14 @@ def validate_change_record(record: dict[str, Any], errors: list[str]) -> None:
     errors.extend(f"root context: {error}" for error in validate_root_context(project_root))
     errors.extend(f"agent policy: {error}" for error in validate_agent_policy(project_root / "docs/methodology/agent-policy.yaml"))
     errors.extend(f"profile: {error}" for error in validate_profile(project_root / "docs/methodology/profile.yaml"))
+    try:
+        actual_profile, actual_risk = read_project_profile(project_root / "docs/methodology/profile.yaml")
+    except (OSError, ValueError):
+        actual_profile = actual_risk = None  # validate_profile already reported the underlying error
+    if actual_profile and record.get("profile") != actual_profile:
+        errors.append("change.json profile must match the project profile.yaml")
+    if actual_risk and record.get("risk") != actual_risk:
+        errors.append("change.json risk must match the project profile.yaml project_risk")
     context_errors, _ = validate_context_docs(project_root)
     errors.extend(f"context docs: {error}" for error in context_errors)
 
@@ -111,8 +124,9 @@ def validate_context_updates(change_dir: Path, record: dict[str, Any], review: d
     if changed_details and impact.get("ai_md", {}).get("required") is not True:
         errors.append("AI.md changed without an approved context impact decision")
     _, indexed_contexts = validate_context_docs(project_root)
-    planned_details = set(impact.get("ai_md", {}).get("paths", []))
-    if not planned_details.issubset(indexed_contexts):
+    planned_details = {Path(str(path)).as_posix() for path in impact.get("ai_md", {}).get("paths", [])}
+    indexed_details = {Path(str(path)).as_posix() for path in indexed_contexts}
+    if not planned_details.issubset(indexed_details):
         errors.append("every planned AI.md update must be indexed by root ai.json")
 
 
@@ -140,30 +154,18 @@ def validate_lesson_preflight(change_dir: Path, record: dict[str, Any], errors: 
     errors.extend(f"lessons: {error}" for error in lesson_errors)
     if lesson_errors:
         return
-    expected = {
-        str(lesson["lesson_id"])
-        for lesson in lessons
-        if lesson_matches_for_preflight(lesson, evidence)
-    }
-    actual = {str(item) for item in evidence.get("matched_lessons", [])}
-    if actual != expected:
-        errors.append("lesson-preflight.json matched_lessons do not match active lessons")
-
-
-def lesson_matches_for_preflight(lesson: dict[str, Any], evidence: dict[str, Any]) -> bool:
     keywords = [str(item) for item in evidence.get("keywords", [])]
     rules = [str(item) for item in evidence.get("rules", [])]
     paths = [str(item) for item in evidence.get("paths", [])]
     scope = evidence.get("scope") if isinstance(evidence.get("scope"), str) else None
-    haystack = " ".join(str(lesson.get(field, "")) for field in ("lesson_id", "title", "pattern", "root_cause", "prevention", "verification", "scope", "keywords")).lower()
-    if keywords and not all(keyword.lower() in haystack for keyword in keywords):
-        return False
-    if rules and not {str(item) for item in lesson.get("rules", [])}.intersection(rules):
-        return False
-    if scope and scope not in {str(lesson.get("scope")), *[str(item) for item in lesson.get("scopes", [])]}:
-        return False
-    lesson_paths = [str(item) for item in lesson.get("paths", [])]
-    return not paths or not lesson_paths or any(path == pattern or path.startswith(pattern.rstrip("/") + "/") for path in paths for pattern in lesson_paths)
+    expected = {
+        str(lesson["lesson_id"])
+        for lesson in lessons
+        if lesson_matches(lesson, keywords, rules, paths, scope)
+    }
+    actual = {str(item) for item in evidence.get("matched_lessons", [])}
+    if actual != expected:
+        errors.append("lesson-preflight.json matched_lessons do not match active lessons")
 
 
 def require_markdown(change_dir: Path, names: tuple[str, ...], errors: list[str]) -> None:
@@ -178,7 +180,11 @@ def validate_specs(change_dir: Path, errors: list[str]) -> None:
         errors.append("at least one specs/<capability>/spec.md is required")
         return
     for path in specs:
-        content = path.read_text(encoding="utf-8")
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            errors.append(f"{path.relative_to(change_dir)} is not readable UTF-8: {exc}")
+            continue
         scenarios = re.split(r"(?=^#### Scenario:\s*)", content, flags=re.MULTILINE)[1:]
         if not scenarios:
             errors.append(f"{path.relative_to(change_dir)} requires a #### Scenario")
@@ -221,8 +227,14 @@ def validate_review(change_dir: Path, record: dict[str, Any], errors: list[str])
     commands = evidence.get("commands")
     if not isinstance(commands, list) or not commands:
         errors.append("review-evidence.json requires at least one command result")
-    elif any(not isinstance(item, dict) or not meaningful_value(item.get("command")) or item.get("exit_code") != 0 for item in commands):
-        errors.append("every review command requires command and exit_code=0")
+    elif any(
+        not isinstance(item, dict)
+        or not meaningful_value(item.get("command"))
+        or not is_exit_code(item.get("exit_code"))
+        or item["exit_code"] != 0
+        for item in commands
+    ):
+        errors.append("every review command requires command and an integer exit_code=0")
     if not isinstance(evidence.get("uncovered_cases"), list) or not isinstance(evidence.get("exceptions"), list):
         errors.append("uncovered_cases and exceptions must be arrays")
     for field in ("actor", "at", "change_digest"):
@@ -442,18 +454,25 @@ def validate_production_closure(record: dict[str, Any], errors: list[str]) -> No
         return
     try:
         audit_events = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeError, json.JSONDecodeError):
         errors.append(f"production audit log is missing or invalid: {audit_path}")
     else:
         if not audit_events or not isinstance(audit_events[-1], dict) or audit_events[-1].get("to") != "CLOSED":
             errors.append("production audit log does not end with CLOSED")
     stages = production.get("rollout", {}).get("stages", []) if isinstance(production.get("rollout"), dict) else []
-    completed = [item.get("rollout_stage") for item in events if isinstance(item, dict) and item.get("to") == "DEPLOYED"] if isinstance(events, list) else []
-    rolled_back = any(isinstance(item, dict) and item.get("to") == "ROLLED_BACK" and item.get("evidence") for item in events) if isinstance(events, list) else False
-    if rolled_back and completed != stages[:len(completed)]:
-        errors.append("production rollout stages before rollback are out of declared order")
-    elif not rolled_back and completed != stages:
-        errors.append("production rollout stages were not completed in declared order")
+    cycles = rollout_cycles(events)
+    if len(cycles) == 1:
+        if cycles[0] != stages:
+            errors.append("production rollout stages were not completed in declared order")
+    else:
+        for cycle in cycles[:-1]:
+            if stages[:len(cycle)] != cycle:
+                errors.append("production rollout stages before rollback are out of declared order")
+        # After a rollback the change either redeploys every stage in order or
+        # closes while still rolled back (empty final cycle); anything else is
+        # an incomplete or hand-edited rollout.
+        if cycles[-1] not in (stages, []):
+            errors.append("production rollout stages were not completed in declared order after the last rollback")
 
 
 def check(change_dir: Path, phase: str) -> list[str]:
@@ -464,6 +483,8 @@ def check(change_dir: Path, phase: str) -> list[str]:
         record = read_json(change_dir / "change.json")
     except (OSError, json.JSONDecodeError, ValueError):
         return ["change.json must be a valid JSON object"]
+    if str(record.get("change_id", "")) != change_dir.name:
+        errors.append(f"change.json change_id must match the change directory name: {change_dir.name}")
     validate_change_record(record, errors)
     validate_context_contract(change_dir, record, errors)
     require_markdown(change_dir, ("context-pack.md", "impact-analysis.md"), errors)

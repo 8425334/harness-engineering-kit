@@ -52,10 +52,30 @@ def self_refine_max_iterations(path: Path) -> int:
         return 3
 
 
+def read_project_profile(path: Path) -> tuple[str, str]:
+    """Return ``(profile, project_risk)`` from a valid profile.yaml.
+
+    Raises ValueError when the profile is invalid so callers can treat the
+    underlying validation errors as authoritative.
+    """
+    errors = validate(path)
+    if errors:
+        raise ValueError("; ".join(errors))
+    content = path.read_text(encoding="utf-8")
+    profile = value(content, "profile") or ""
+    risk = value(content, "project_risk") or ""
+    if not profile or not risk:
+        raise ValueError("profile.yaml requires profile and project_risk")
+    return profile, risk
+
+
 def validate(path: Path) -> list[str]:
     if not path.is_file():
         return [f"missing profile: {path}"]
-    content = path.read_text(encoding="utf-8")
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        return [f"profile is not readable UTF-8: {exc}"]
     errors: list[str] = []
     if "{{" in content or "}}" in content:
         errors.append("contains unfilled placeholders")

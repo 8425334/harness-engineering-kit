@@ -10,20 +10,23 @@ from pathlib import Path
 
 from check_agent_policy import validate as validate_agent_policy
 from check_context_docs import validate_project as validate_context_docs
-from check_profile import validate as validate_profile
+from check_profile import read_project_profile
 from methodology_common import append_event, utc_now, write_json
 
 
-def read_profile(path: Path) -> tuple[str, str]:
-    errors = validate_profile(path)
-    if errors:
-        raise ValueError("; ".join(errors))
-    content = path.read_text(encoding="utf-8")
-    profile = re.search(r"^profile:\s*([a-z-]+)", content, re.MULTILINE)
-    risk = re.search(r"^project_risk:\s*([a-z-]+)", content, re.MULTILINE)
-    if not profile or not risk:
-        raise ValueError("methodology profile requires profile and project_risk")
-    return profile.group(1), risk.group(1)
+CANONICAL_POLICY_LOCATION = ("docs", "methodology", "agent-policy.yaml")
+
+
+def project_root_from_policy(policy_path: Path) -> Path:
+    """Derive the project root from the canonical policy location.
+
+    The root is only knowable when the policy sits at
+    ``<project root>/docs/methodology/agent-policy.yaml``; anything else is a
+    caller error instead of a guessed (and crash-prone) ``parents[2]``.
+    """
+    if policy_path.parts[-3:] != CANONICAL_POLICY_LOCATION:
+        raise ValueError("agent policy must be located at <project root>/docs/methodology/agent-policy.yaml")
+    return policy_path.parents[2]
 
 
 def main() -> int:
@@ -59,16 +62,26 @@ def main() -> int:
     if profile_path.parent != policy_path.parent:
         print("INVALID: profile and agent policy must share docs/methodology")
         return 2
-    context_errors, _ = validate_context_docs(policy_path.parents[2])
+    try:
+        project_root = project_root_from_policy(policy_path)
+    except ValueError as exc:
+        print(f"INVALID: {exc}")
+        return 2
+    context_errors, _ = validate_context_docs(project_root)
     if context_errors:
         print(f"INVALID CONTEXT DOCS: {'; '.join(context_errors)}")
         return 2
     try:
-        profile, risk = read_profile(profile_path)
+        profile, risk = read_project_profile(profile_path)
     except (OSError, ValueError) as exc:
         print(f"INVALID PROFILE: {exc}")
         return 2
-    project_root = policy_path.parents[2]
+    change_root = args.root.resolve()
+    try:
+        change_root.relative_to(project_root)
+    except ValueError:
+        print(f"INVALID: --root must stay inside the project root: {project_root}")
+        return 2
     (project_root / "docs" / "methodology" / "lessons").mkdir(parents=True, exist_ok=True)
     if args.production_record:
         production_record = (Path.cwd() / args.production_record).resolve()

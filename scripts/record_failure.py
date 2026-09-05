@@ -31,9 +31,10 @@ def main() -> int:
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(f"Cannot read change record: {exc}")
         return 2
+    timestamp = utc_now()
     event = {
         "schema_version": 1,
-        "event_id": f"failure-{utc_now().replace(':', '').replace('+00:00', 'z')}-{args.rule}",
+        "event_id": f"failure-{timestamp.replace('+00:00', 'Z').replace(':', '')}-{args.rule}",
         "change_id": record.get("change_id"),
         "source": args.source,
         "category": args.category,
@@ -44,7 +45,7 @@ def main() -> int:
         "signature": args.signature or args.rule,
         "severity": args.severity,
         "actor": args.actor,
-        "at": utc_now(),
+        "at": timestamp,
     }
     errors = validate_failure_event(event)
     if errors:

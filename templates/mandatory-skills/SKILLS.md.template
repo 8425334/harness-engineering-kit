@@ -1,7 +1,0 @@
-# Supporting Capabilities — {{PROJECT_NAME}}
-
-The project has one lifecycle Skill: `engineering`.
-
-OpenSpec/spec storage, code navigation, test/build/Fitness runners, browser/API tools, and multi-agent execution are supporting capabilities. Select them by task and `agent-policy.yaml`; do not give them independent lifecycle authority.
-
-If a selected capability is unavailable, record `skill.fallback`, use the documented manual equivalent, and preserve identical artifact, approval, verification, sync, and archive gates.

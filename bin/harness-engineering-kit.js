@@ -18,7 +18,12 @@ const AGENTS = [
 
 const DEFAULT_AGENT_PROMPT = '请在当前项目完成 Harness Engineering Kit 初始化：先读取项目中的 AGENTS.md 或 CLAUDE.md 与 docs/methodology/agent-policy.yaml，再根据需要继续工作。';
 
-const SKIP_ANSWERS = new Set(['0', 'n', 'no', 'skip', 'none']);
+const TIER_CHOICES = [
+  { value: '2', label: '完整接入（Tier 2，默认）', hint: '核心控制面 + Fitness 门禁 + 经验记忆' },
+  { value: '1', label: '轻量接入（Tier 1）', hint: '仅核心控制面' },
+];
+
+const KEY_HINT = '（↑/↓ 移动，Enter 确认，Ctrl+C 取消）';
 const VALUE_OPTIONS = new Set(['--agent', '--prompt', '--project-root', '--source-root', '--tier']);
 
 function usage() {
@@ -33,7 +38,7 @@ Usage:
 Options:
   --project-root <path>  Target project (default: current Git root/current directory)
   --source-root <path>   Kit source (default: installed package)
-  --tier <1|2>           Installation scope (default: 2)
+  --tier <1|2>           Install scope: 1 = lightweight, 2 = full (default: 2)
   --yes                  Apply init without an interactive confirmation
   --apply                Apply init without an interactive confirmation
   --plan                 Make init read-only
@@ -44,15 +49,17 @@ Options:
   --direct               Run the deterministic installer; --agent and HEK_AGENT are ignored
   --prompt <text>        Initial prompt sent to a terminal agent
   --list-agents          List supported agents and installation status
-  --json                 Machine-readable output: without --yes init prints the plan and
-                         exits 2; with --yes it applies, checks, and prints one JSON receipt
+  --json                 Machine-readable output: never opens an agent and never prompts;
+                         without --yes init prints the plan and exits 2; with --yes it
+                         applies, checks, and prints one JSON receipt
   -h, --help             Show this help
   -v, --version          Show the version
 
 The init command never deletes legacy files or overwrites existing project facts.
-Interactive init opens the selected Agent first (enter 0 or skip for the deterministic
-flow; it falls back automatically when no agent is installed). Set HARNESS_PYTHON to
-select a Python executable explicitly.
+Interactive init asks for the install scope first (full or lightweight, chosen with
+the arrow keys when --tier is not given), then opens the selected Agent; pick the
+skip entry for the deterministic flow, and it falls back automatically when no agent
+is installed. Set HARNESS_PYTHON to select a Python executable explicitly.
 `;
 }
 
@@ -133,6 +140,76 @@ function agentWillOpen(options) {
   return Boolean(options.open) || (process.stdin.isTTY && process.stdout.isTTY);
 }
 
+function selectWithArrows(title, items, defaultIndex = 0, io = {}) {
+  const input = io.input || process.stdin;
+  const output = io.output || process.stdout;
+  if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== 'function') {
+    return Promise.resolve(items[defaultIndex]);
+  }
+  const colored = !process.env.NO_COLOR;
+  const accent = (text) => (colored ? `\x1b[36m${text}\x1b[0m` : text);
+  const dim = (text) => (colored ? `\x1b[2m${text}\x1b[0m` : text);
+  const wasRaw = Boolean(input.isRaw);
+  return new Promise((resolve) => {
+    let index = Math.min(Math.max(defaultIndex, 0), items.length - 1);
+    const paint = () => {
+      items.forEach((item, i) => {
+        const selected = i === index;
+        const pointer = selected ? `${accent('❯')} ` : '  ';
+        const label = selected ? accent(item.label) : item.label;
+        const hint = item.hint ? `  ${dim(item.hint)}` : '';
+        output.write(`${pointer}${label}${hint}\n`);
+      });
+    };
+    const repaint = () => {
+      output.write(`\x1b[${items.length}A\x1b[J`);
+      paint();
+    };
+    const release = () => {
+      input.setRawMode(wasRaw);
+      input.removeListener('keypress', onKeypress);
+      output.write(`\x1b[${items.length}A\x1b[J\x1b[?25h`);
+    };
+    const onKeypress = (_, key) => {
+      if (!key) return;
+      if (key.ctrl && key.name === 'c') {
+        release();
+        output.write('\n');
+        process.exit(130);
+      }
+      if (key.name === 'up' && index > 0) index -= 1;
+      else if (key.name === 'down' && index < items.length - 1) index += 1;
+      else if (key.name === 'enter' || key.name === 'return') {
+        release();
+        return resolve(items[index]);
+      } else return;
+      repaint();
+    };
+    readline.emitKeypressEvents(input);
+    input.setRawMode(true);
+    input.on('keypress', onKeypress);
+    output.write(`\x1b[?25l${title}${dim(KEY_HINT)}\n`);
+    paint();
+  });
+}
+
+function agentMenuItems(agents) {
+  return [
+    ...agents.filter((agent) => agent.installed).map((agent) => ({
+      value: agent,
+      label: agent.label,
+      hint: agent.kind === 'desktop' ? '桌面端' : 'CLI',
+    })),
+    { value: null, label: '跳过 Agent，使用确定性安装', hint: '直接由 hek 执行计划与检查' },
+  ];
+}
+
+async function selectTier() {
+  const choice = await selectWithArrows('选择安装范围', TIER_CHOICES);
+  console.log(`✓ 安装范围: ${choice.label}`);
+  return choice.value;
+}
+
 async function selectAgent(options) {
   const requested = options.agent || process.env.HEK_AGENT;
   if (requested) {
@@ -145,44 +222,17 @@ async function selectAgent(options) {
   }
   if (!process.stdin.isTTY || !process.stdout.isTTY) return null;
   const agents = availableAgents();
-  printAgents(false);
-  const installed = agents.find((agent) => agent.installed);
-  if (!installed) {
+  if (!agents.some((agent) => agent.installed)) {
     console.log('未检测到已安装的 AI Agent，进入确定性安装流程（安装后可重新运行 hek init）。');
     return null;
   }
-  const interfaceHandle = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const question = `选择 Agent（默认 ${installed.label}，输入 0 或 skip 跳过）: `;
-  const ask = (resolve, reject, attempts) => {
-    interfaceHandle.question(question, (answer) => {
-      const value = answer.trim().toLowerCase();
-      if (!value) {
-        interfaceHandle.close();
-        return resolve(installed);
-      }
-      if (SKIP_ANSWERS.has(value)) {
-        interfaceHandle.close();
-        return resolve(null);
-      }
-      const index = Number.parseInt(value, 10);
-      const selected = Number.isInteger(index) && index >= 1 ? agents[index - 1] : findAgent(value);
-      if (!selected) {
-        console.error('无效的 Agent 选择。');
-        if (attempts > 1) return ask(resolve, reject, attempts - 1);
-        interfaceHandle.close();
-        return reject(new Error('无效的 Agent 选择。'));
-      }
-      if (!selected.installed) {
-        console.error(`${selected.label} 命令未找到，请重新选择或输入 0 跳过。`);
-        if (attempts > 1) return ask(resolve, reject, attempts - 1);
-        interfaceHandle.close();
-        return reject(new Error(`${selected.label} 命令未找到，请先安装或输入 0 跳过。`));
-      }
-      interfaceHandle.close();
-      return resolve(selected);
-    });
-  };
-  return new Promise((resolve, reject) => ask(resolve, reject, 3));
+  const choice = await selectWithArrows('选择要打开的 AI Agent', agentMenuItems(agents));
+  if (!choice.value) {
+    console.log('✓ 已跳过 Agent，使用确定性安装。');
+    return null;
+  }
+  console.log(`✓ 已选择 Agent: ${choice.value.label}`);
+  return choice.value;
 }
 
 function windowsArgument(value) {
@@ -197,7 +247,12 @@ function windowsArgument(value) {
 
 function openAgent(agent, projectRoot, prompt) {
   if (!agent) return 0;
-  const args = agent.kind === 'desktop' ? [projectRoot] : [prompt || DEFAULT_AGENT_PROMPT];
+  let text = prompt || DEFAULT_AGENT_PROMPT;
+  if (process.platform === 'win32') {
+    // cmd.exe treats newlines as command separators; keep the argument single-line.
+    text = String(text).replace(/\r?\n/g, ' ');
+  }
+  const args = agent.kind === 'desktop' ? [projectRoot] : [text];
   console.log(`正在打开 ${agent.label}…`);
   let child;
   if (process.platform === 'win32') {
@@ -244,17 +299,20 @@ function buildAgentPrompt(projectRoot, options) {
   const approval = options.yes || options.apply
     ? '用户已通过命令参数预先确认；完成只读检查后直接应用。'
     : '先展示只读计划并等待用户明确确认，确认前不得写入文件。';
-  return options.prompt || [
+  const parts = [
     '请作为 Harness Engineering Kit 的项目接入 Agent，完成当前项目初始化。',
     `目标项目：${projectRoot}`,
     `Kit 源码：${sourceRoot}`,
-    `安装范围：Tier ${tier}`,
+    `安装范围：Tier ${tier}（${tier === '1' ? '轻量接入' : '完整接入'}）`,
     approval,
     '先读取项目事实（包括现有的 AGENTS.md、CLAUDE.md、ai.json、AI.md 和项目配置），识别真实技术栈、命令、目录边界与已有接入状态。',
     `使用 canonical onboarding 脚本生成计划：${pythonCommand()} "${path.join(sourceRoot, 'scripts', 'onboard.py')}" --project-root "${projectRoot}" --source-root "${sourceRoot}" --tier ${tier} --plan --json`,
     '根据项目事实补齐或调整配置占位符；保留已有配置和旧入口，不要盲目覆盖或删除。得到确认后，使用同一脚本执行 --apply，再执行 --check。',
     '最后汇报创建、更新、保留的文件、检查结果和仍需人工决策的事项。',
-  ].join('\n');
+  ];
+  // Keep the prompt single-line: Windows passes it through cmd.exe, where a
+  // newline would split the command and truncate the onboarding contract.
+  return options.prompt || parts.map((part) => part.replace(/[。]$/, '')).join('；') + '。';
 }
 
 function baseArgs(options) {
@@ -330,9 +388,19 @@ async function runInit(options) {
   if (options.direct && (options.agent || process.env.HEK_AGENT)) {
     console.error('已指定 --direct：忽略 --agent/HEK_AGENT，执行确定性安装。');
   }
-  if (options.open && !options.direct && !options.noOpen && !options.agent && !process.env.HEK_AGENT && !interactive) {
+  if (options.direct && options.open && !options.noOpen) {
+    console.error('已指定 --direct：忽略 --open。');
+  }
+  if (options.json && !options.direct && (options.agent || process.env.HEK_AGENT || options.open)) {
+    console.error('--json 机器模式不启动 Agent：已忽略 --agent/--open/HEK_AGENT。');
+  }
+  if (options.open && !options.direct && !options.noOpen && !options.agent && !process.env.HEK_AGENT && !interactive && !options.json) {
     console.error('错误: 非交互环境使用 --open 时必须通过 --agent 或 HEK_AGENT 指定要打开的 Agent。');
     return 2;
+  }
+
+  if (interactive && !options.json && !options.tier) {
+    options.tier = await selectTier();
   }
 
   const planned = invoke('plan', { ...options, json: true }, true);
@@ -376,10 +444,14 @@ async function runInit(options) {
     if (!options.open) deferredAgent = null;
   }
 
-  const confirmed = options.yes || options.apply || await askForConfirmation();
+  const confirmed = options.yes || options.apply || (!options.json && await askForConfirmation());
   if (!confirmed) {
+    if (options.json) {
+      process.stdout.write(planned.stdout);
+      console.error('未执行写入：--json 模式需要 --yes 才会应用（harness-engineering-kit init --yes）。');
+      return 2;
+    }
     if (!interactive) {
-      if (options.json) process.stdout.write(planned.stdout);
       console.error('未执行写入：非交互环境请使用 harness-engineering-kit init --yes。');
       return 2;
     }
@@ -407,7 +479,16 @@ async function runInit(options) {
     if (checkStatus !== 0) printPlaceholderHint(checked.stdout);
   }
   if (deferredAgent && !options.noOpen) {
-    return openAgent(deferredAgent, projectRoot, buildAgentPrompt(projectRoot, options));
+    const agentStatus = openAgent(deferredAgent, projectRoot, buildAgentPrompt(projectRoot, options));
+    if (options.noCheck) return agentStatus;
+    // Re-check after the agent closes so the exit code reflects the post-fill
+    // state instead of the pre-agent placeholder failure.
+    const rechecked = invoke('check', { ...options, json: true }, true);
+    process.stdout.write(rechecked.stdout || '');
+    process.stderr.write(rechecked.stderr || '');
+    const finalStatus = typeof rechecked.status === 'number' ? rechecked.status : 2;
+    if (finalStatus !== 0) printPlaceholderHint(rechecked.stdout);
+    return finalStatus !== 0 ? finalStatus : agentStatus;
   }
   return checkStatus;
 }
@@ -455,6 +536,8 @@ if (require.main === module) {
 module.exports = {
   AGENTS,
   DEFAULT_AGENT_PROMPT,
+  TIER_CHOICES,
+  agentMenuItems,
   availableAgents,
   buildAgentPrompt,
   commandAvailable,
@@ -463,5 +546,7 @@ module.exports = {
   main,
   parseArgs,
   selectAgent,
+  selectTier,
+  selectWithArrows,
   usage,
 };

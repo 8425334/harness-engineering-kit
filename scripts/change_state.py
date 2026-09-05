@@ -9,7 +9,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from check_production_readiness import validate
+from check_production_readiness import rollout_cycles, validate
+from methodology_common import file_lock, write_json
 
 
 TRANSITIONS = {
@@ -27,6 +28,17 @@ TRANSITIONS = {
     "OBSERVING": {"CLOSED", "ROLLED_BACK"},
     "ROLLED_BACK": {"REMEDIATING", "CLOSED"},
 }
+CANONICAL_SUFFIX = ("docs", "methodology", "production", "changes")
+
+
+def resolve_record_location(record_path: Path) -> Path | None:
+    """Return the project root when the record sits at the canonical location."""
+    parts = record_path.parts
+    depth = len(CANONICAL_SUFFIX)
+    for index in range(1, len(parts) - depth + 1):
+        if parts[index:index + depth] == CANONICAL_SUFFIX and index + depth < len(parts):
+            return Path(*parts[:index])
+    return None
 
 
 def main() -> int:
@@ -38,10 +50,18 @@ def main() -> int:
     parser.add_argument("--rollout-stage")
     args = parser.parse_args()
 
+    record_path = args.record.resolve()
+    project_root = resolve_record_location(record_path)
+    if project_root is None:
+        print("BLOCKED: production record must be under docs/methodology/production/changes")
+        return 2
     try:
-        record = json.loads(args.record.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         print(f"Cannot read record: {exc}")
+        return 2
+    if not isinstance(record, dict):
+        print("Cannot read record: expected a JSON object")
         return 2
     current = record.get("state")
     record_errors = validate(record)
@@ -53,7 +73,7 @@ def main() -> int:
     if args.next_state not in TRANSITIONS.get(current, set()):
         print(f"INVALID TRANSITION: {current} -> {args.next_state}")
         return 2
-    if args.next_state in {"RELEASE_READY", "DEPLOYED"} and not (record.get("technical_done") and record.get("operational_done")):
+    if args.next_state in {"RELEASE_READY", "DEPLOYED"} and not (record.get("technical_done") is True and record.get("operational_done") is True):
         print("BLOCKED: technical_done and operational_done must both be true")
         return 2
     if args.next_state in {"RELEASE_READY", "DEPLOYED"}:
@@ -69,31 +89,23 @@ def main() -> int:
         print("BLOCKED: release, rollout, observation, rollback, and closure transitions require --evidence")
         return 2
 
-    rollout_stage = None
+    stages = record.get("rollout", {}).get("stages", []) if isinstance(record.get("rollout"), dict) else []
+    # Only the deployment cycle after the most recent rollback counts: a rolled
+    # back change must redeploy from the first stage, not skip the failed one.
+    current_cycle = rollout_cycles(record.get("events"))[-1]
     if args.next_state == "DEPLOYED":
-        stages = record.get("rollout", {}).get("stages", []) if isinstance(record.get("rollout"), dict) else []
-        completed = [item.get("rollout_stage") for item in record.get("events", []) if isinstance(item, dict) and item.get("to") == "DEPLOYED"]
-        if not args.rollout_stage or args.rollout_stage not in stages:
+        if not isinstance(stages, list) or not args.rollout_stage or args.rollout_stage not in stages:
             print("BLOCKED: DEPLOYED requires --rollout-stage from rollout.stages")
             return 2
-        expected = stages[len(completed)] if len(completed) < len(stages) else None
+        expected = stages[len(current_cycle)] if len(current_cycle) < len(stages) else None
         if args.rollout_stage != expected:
             print(f"BLOCKED: next rollout stage must be {expected}")
             return 2
-        rollout_stage = args.rollout_stage
-    if args.next_state == "OBSERVING":
-        stages = record.get("rollout", {}).get("stages", []) if isinstance(record.get("rollout"), dict) else []
-        completed = [item.get("rollout_stage") for item in record.get("events", []) if isinstance(item, dict) and item.get("to") == "DEPLOYED"]
-        if completed != stages:
-            print("BLOCKED: all rollout stages must complete in order before OBSERVING")
-            return 2
-
-    record_path = args.record.resolve()
-    if record_path.parent.name != "changes" or record_path.parent.parent.name != "production":
-        print("BLOCKED: production record must be under docs/methodology/production/changes")
+    if args.next_state == "OBSERVING" and current_cycle != stages:
+        print("BLOCKED: all rollout stages must complete in order before OBSERVING")
         return 2
-    project_root = record_path.parent.parent.parents[2]
-    allowed_audit = (record_path.parent.parent / "audit").resolve()
+
+    allowed_audit = (record_path.parents[1] / "audit").resolve()
     audit = Path(str(record.get("audit_log", "")))
     if not audit.is_absolute():
         audit = project_root / audit
@@ -108,14 +120,15 @@ def main() -> int:
     record["state"] = args.next_state
     record.setdefault("events", []).append({
         "from": current, "to": args.next_state, "actor": args.actor,
-        "at": timestamp, "evidence": args.evidence, "rollout_stage": rollout_stage,
+        "at": timestamp, "evidence": args.evidence,
+        "rollout_stage": args.rollout_stage if args.next_state == "DEPLOYED" else None,
     })
-    args.record.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-    if record.get("audit_log"):
-        audit.parent.mkdir(parents=True, exist_ok=True)
-        with audit.open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps(record["events"][-1], ensure_ascii=False) + "\n")
+    with file_lock(record_path):
+        write_json(record_path, record)
+        if record.get("audit_log"):
+            audit.parent.mkdir(parents=True, exist_ok=True)
+            with audit.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(record["events"][-1], ensure_ascii=False) + "\n")
     print(f"STATE UPDATED: {current} -> {args.next_state}")
     return 0
 

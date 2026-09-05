@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from lessons_common import load_failure_events, validate_lesson, validate_slug, write_json_file
-from methodology_common import append_event, read_json, sha256, utc_now
+from methodology_common import append_event, file_lock, read_json, sha256, utc_now
 
 
 def main() -> int:
@@ -39,6 +39,10 @@ def main() -> int:
     if missing_events:
         errors.append(f"lesson candidate references missing failure events: {missing_events}")
     project_root = Path(str(record.get("project_root", ""))).resolve()
+    try:
+        change_dir.relative_to(project_root)
+    except ValueError:
+        errors.append("change record project_root does not contain the change workspace")
     lessons_dir = project_root / "docs" / "methodology" / "lessons"
     destination = lessons_dir / f"{candidate.get('lesson_id')}.json"
     if destination.exists():
@@ -61,8 +65,12 @@ def main() -> int:
         },
         "activated_at": approved_at,
     })
-    write_json_file(destination, lesson)
-    write_json_file(change_dir / "lesson-approval.json", {
+    with file_lock(destination):
+        if destination.exists():  # re-check under the lock against concurrent approvals
+            print(f"LESSON APPROVAL BLOCKED: lesson already exists: {destination}")
+            return 2
+        write_json_file(destination, lesson)
+        write_json_file(change_dir / "lesson-approval.json", {
         "schema_version": 1,
         "status": "approved",
         "actor": args.actor,

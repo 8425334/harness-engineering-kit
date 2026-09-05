@@ -6,7 +6,7 @@ Use this playbook when a repository is not integrated, contains the previous arc
 
 1. Confirm the target repository and whether the user wants a fresh install, an upgrade, or both. Do not infer permission to overwrite project configuration.
 2. Locate the kit checkout. Prefer the path containing this Skill; otherwise ask for the absolute kit path. Do not download or execute an untrusted remote installer.
-3. Inspect only the repository root and known markers. Run the read-only plan:
+3. Inspect only the repository root and known markers. Run the read-only plan (`py -3` instead of `python3` on Windows):
 
    ```bash
    python3 <kit>/scripts/onboard.py --project-root . --source-root <kit> --plan --json

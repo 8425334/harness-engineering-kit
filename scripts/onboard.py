@@ -45,6 +45,10 @@ LEGACY_MARKERS = (
 
 JAVA_SCANNER = "templates/fitness/JavaParameterScanner.java.template"
 
+# Kit-development scripts that must not be installed into target projects:
+# they validate the kit's own checkout and would fail in the installed layout.
+KIT_DEV_ONLY_SCRIPTS = frozenset({"smoke_test_skills.py"})
+
 
 @dataclass(frozen=True)
 class Action:
@@ -101,6 +105,8 @@ def source_actions(source: Path, root: Path, tier: int, status: str) -> list[Act
     for relative in sorted((source / "core").glob("*.md")):
         actions.append(Action("sync", str(relative.relative_to(source)), f"docs/methodology/core/{relative.name}", "canonical methodology"))
     for relative in sorted((source / "scripts").glob("*.py")):
+        if relative.name in KIT_DEV_ONLY_SCRIPTS:
+            continue
         actions.append(Action("sync", str(relative.relative_to(source)), f"docs/methodology/scripts/{relative.name}", "canonical control script"))
     for relative in sorted((source / "templates/workflow").glob("*.template")):
         actions.append(Action("sync", str(relative.relative_to(source)), f"docs/methodology/change-templates/{relative.name}", "change evidence template"))
@@ -112,8 +118,6 @@ def source_actions(source: Path, root: Path, tier: int, status: str) -> list[Act
             "docs/methodology/lessons",
             "openspec/changes",
             "openspec/specs",
-            "docs/superpowers/plans",
-            "docs/superpowers/specs",
         )
     )
     version_file = source / "VERSION"
@@ -189,7 +193,11 @@ def validate_action_sources(source: Path, actions: list[Action]) -> list[str]:
     required = list(ROOT_FILES)
     required.append("VERSION")
     required.extend(path.relative_to(source).as_posix() for path in (source / "core").glob("*.md"))
-    required.extend(path.relative_to(source).as_posix() for path in (source / "scripts").glob("*.py"))
+    required.extend(
+        path.relative_to(source).as_posix()
+        for path in (source / "scripts").glob("*.py")
+        if path.name not in KIT_DEV_ONLY_SCRIPTS
+    )
     required.extend(path.relative_to(source).as_posix() for path in (source / "templates/workflow").glob("*.template"))
     required.extend(path.relative_to(source).as_posix() for path in (source / "templates/production").glob("*.template"))
     if any(action.target == "docs/fitness/README.md" for action in actions):
@@ -257,14 +265,21 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
             if action.kind == "sync-tree":
                 source_dir = source / "templates/engineering"
                 target_dir = root / action.target
+                existed = target_dir.is_dir()
                 ensure_dir(target_dir)
+                copied = 0
+                changed = 0
                 for item in source_dir.rglob("*"):
                     if item.is_file():
                         destination = target_dir / item.relative_to(source_dir)
                         ensure_dir(destination.parent)
                         snapshot(destination)
+                        copied += 1
+                        if not destination.exists() or sha256(item) != sha256(destination):
+                            changed += 1
                         shutil.copy2(item, destination)
-                results.append({"target": action.target, "result": "updated"})
+                result = "created" if not existed else ("unchanged" if changed == 0 else "updated")
+                results.append({"target": action.target, "result": result, "files": copied})
                 continue
             if not action.source:
                 continue
@@ -317,6 +332,20 @@ def run_check(root: Path, source: Path) -> tuple[int, list[str]]:
     return (2 if failures else 0), failures
 
 
+CHECK_SUMMARY = "Deterministic checks passed: root context, context docs, agent policy, profile, context resolution, fitness protection, engineering Skill (claude, codex)."
+
+
+def print_apply_summary(plan: dict[str, object]) -> None:
+    counts: dict[str, int] = {}
+    for entry in plan.get("results") or []:  # type: ignore[union-attr]
+        if isinstance(entry, dict):
+            key = str(entry.get("result", "unknown"))
+            counts[key] = counts.get(key, 0) + 1
+    summary = ", ".join(f"{kind}={count}" for kind, count in sorted(counts.items())) or "no actions"
+    print(f"HARNESS ONBOARDING APPLIED: {summary}")
+    print("Receipt: docs/methodology/onboarding.json")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path)
@@ -360,7 +389,11 @@ def main() -> int:
         try:
             plan["results"] = apply_actions(root, source, actions)
         except (OSError, shutil.Error) as exc:
-            print(f"HARNESS ONBOARDING FAILED AND ROLLED BACK: {exc}", file=sys.stderr)
+            plan["errors"] = [f"apply failed and rolled back: {exc}"]
+            if args.as_json:
+                print(json.dumps(plan, ensure_ascii=False, indent=2))
+            else:
+                print(f"HARNESS ONBOARDING FAILED AND ROLLED BACK: {exc}", file=sys.stderr)
             return 2
         (root / "docs/methodology").mkdir(parents=True, exist_ok=True)
         (root / "docs/methodology/onboarding.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -379,20 +412,27 @@ def main() -> int:
             if args.as_json:
                 print(json.dumps(plan, ensure_ascii=False, indent=2))
             else:
+                if args.apply:
+                    print_apply_summary(plan)
                 print("ONBOARDING CHECK FAILED")
                 for failure in failures:
                     print(f"- {failure}")
             return code
     if args.as_json:
         print(json.dumps(plan, ensure_ascii=False, indent=2))
+    elif args.apply:
+        print_apply_summary(plan)
+        if args.check:
+            print("ONBOARDING CHECK PASSED")
+            print(CHECK_SUMMARY)
+    elif args.check:
+        print(f"ONBOARDING CHECK PASSED: {root}")
+        print(CHECK_SUMMARY)
     else:
         print(f"HARNESS ONBOARDING PLAN: {status} project at {root}")
         for action in actions:
             print(f"- {action.kind:9} {action.target} ({action.reason})")
-        if args.apply:
-            print("HARNESS ONBOARDING APPLIED")
-        else:
-            print("Read-only plan. Ask the user for confirmation, then rerun with --apply.")
+        print("Read-only plan. Ask the user for confirmation, then rerun with --apply.")
     return 0
 
 

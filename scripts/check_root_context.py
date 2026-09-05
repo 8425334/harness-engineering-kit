@@ -18,7 +18,11 @@ def validate(root: Path) -> list[str]:
         if not path.is_file():
             errors.append(f"missing native root adapter: {name}")
             continue
-        content = path.read_text(encoding="utf-8")
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            errors.append(f"{name} is not readable UTF-8: {exc}")
+            continue
         if len(content.splitlines()) > MAX_LINES:
             errors.append(f"{name} exceeds {MAX_LINES} lines; move project facts to agent-policy.yaml")
         if "{{" in content or "}}" in content:

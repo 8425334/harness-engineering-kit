@@ -1,11 +1,50 @@
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from scripts import onboard
+
+
+PLACEHOLDER_VALUES = {
+    "{{PROJECT_NAME}}": "test-project", "{{TEAM_OR_OWNER}}": "team",
+    "{{LANGUAGE_OR_FRAMEWORK}}": "python", "{{FAST_TEST_COMMAND}}": "pytest -x",
+    "{{TEST_COMMAND}}": "pytest", "{{BUILD_COMMAND}}": "make build",
+    "{{FITNESS_COMMAND}}": "pytest fitness", "{{READABLE_PATHS}}": ".",
+    "{{WRITABLE_PATHS}}": "src", "{{DENIED_PATHS_OR_SECRETS}}": ".env",
+    "{{ONE_SENTENCE_PROJECT_SUMMARY}}": "A test project.", "{{ROOT_MODULE_SUMMARY}}": "root",
+    "{{ROUTING_KEYWORD}}": "root", "{{DIRECTORY_NAME}}": "Root", "{{SCOPE_DESCRIPTION}}": "repo",
+    "{{RESPONSIBILITY_1}}": "demo", "{{RESPONSIBILITY_2}}": "demo",
+    "{{ALLOWED_MODIFICATIONS}}": "src", "{{FORBIDDEN_MODIFICATIONS}}": ".env",
+    "{{DEPENDENCY_RULE}}": "src", "{{LOCAL_TEST_COMMAND_OR_POLICY_REFERENCE}}": "pytest",
+    "{{ENTRY_POINTS}}": "src", "{{RELATED_CONTRACTS}}": "none", "{{RULE_OWNER}}": "team",
+    "{{METHODOLOGY_OWNER}}": "team", "{{PROJECT_SPECIFIC_DEFINITION_OR_DEFAULT}}": ">2 files",
+    "{{FAST_NORMAL_OR_DEEP}}": "normal", "{{EXCEPTION_RECORD_PATH}}": "docs/methodology/exceptions.md",
+    "{{METHODOLOGY_VERSION}}": "0.3.0", "{{YYYY-MM-DD}}": "2027-01-01",
+}
+
+
+def fill_placeholders(root: Path) -> None:
+    for relative in ("AGENTS.md", "CLAUDE.md", "ai.json", "AI.md",
+                     "docs/methodology/agent-policy.yaml", "docs/methodology/profile.yaml"):
+        target = root / relative
+        text = target.read_text(encoding="utf-8")
+        for placeholder, value in PLACEHOLDER_VALUES.items():
+            text = text.replace(placeholder, value)
+        target.write_text(text, encoding="utf-8")
+
+
+def run_onboard(*arguments: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(Path(__file__).resolve().parents[1] / "scripts" / "onboard.py"), *arguments],
+        capture_output=True,
+        text=True,
+    )
 
 
 class OnboardTests(unittest.TestCase):
@@ -136,6 +175,66 @@ class OnboardTests(unittest.TestCase):
         action = onboard.Action("create", "missing.txt", "missing.txt", "test")
         errors = onboard.validate_action_sources(self.source, [action])
         self.assertTrue(any("missing.txt" in error for error in errors))
+
+    def test_kit_dev_scripts_are_not_installed(self) -> None:
+        """M6: smoke_test_skills.py only works inside a kit checkout."""
+        actions = onboard.source_actions(self.source, self.source / "tests", 2, "fresh")
+        targets = {action.target for action in actions}
+        self.assertNotIn("docs/methodology/scripts/smoke_test_skills.py", targets)
+        errors = onboard.validate_action_sources(self.source, actions)
+        self.assertEqual(errors, [])
+
+    def test_no_superpowers_directories_are_created(self) -> None:
+        """L1: the installer must not inject unrelated workspace directories."""
+        actions = onboard.source_actions(self.source, self.source / "tests", 2, "fresh")
+        targets = {action.target for action in actions}
+        self.assertNotIn("docs/superpowers/plans", targets)
+        self.assertNotIn("docs/superpowers/specs", targets)
+
+    def test_sync_tree_reports_created_then_unchanged(self) -> None:
+        """L3: Skill sync receipts use the same verbs as file copies."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            actions = onboard.source_actions(self.source, root, 1, "fresh")
+            first = onboard.apply_actions(root, self.source, actions)
+            verbs = {entry["target"]: entry["result"] for entry in first if entry["target"].endswith("skills/engineering")}
+            self.assertEqual(sorted(verbs.values()), ["created", "created"])
+            second = onboard.apply_actions(root, self.source, actions)
+            verbs = {entry["target"]: entry["result"] for entry in second if entry["target"].endswith("skills/engineering")}
+            self.assertEqual(sorted(verbs.values()), ["unchanged", "unchanged"])
+
+    def test_json_apply_failure_still_prints_a_receipt(self) -> None:
+        """M2: machine mode emits one JSON receipt even when apply rolls back."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".git").mkdir()
+            # docs/methodology/core as a regular file makes every core sync fail.
+            (root / "docs/methodology").mkdir(parents=True)
+            (root / "docs/methodology/core").write_text("blocked\n", encoding="utf-8")
+            completed = run_onboard(
+                "--project-root", str(root), "--source-root", str(self.source),
+                "--tier", "1", "--apply", "--json",
+            )
+            self.assertEqual(completed.returncode, 2)
+            receipt = json.loads(completed.stdout)
+            self.assertTrue(receipt["errors"])
+            self.assertTrue(any("rolled back" in error for error in receipt["errors"]))
+
+    def test_check_output_reports_the_outcome_not_a_plan(self) -> None:
+        """M1: `check` prints its result instead of a misleading read-only plan."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            onboard.apply_actions(root, self.source, onboard.source_actions(self.source, root, 1, "fresh"))
+            blocked = run_onboard("--project-root", str(root), "--source-root", str(self.source), "--check")
+            self.assertEqual(blocked.returncode, 2)
+            self.assertIn("ONBOARDING CHECK FAILED", blocked.stdout)
+            self.assertNotIn("Read-only plan", blocked.stdout)
+            fill_placeholders(root)
+            passed = run_onboard("--project-root", str(root), "--source-root", str(self.source), "--check")
+            self.assertEqual(passed.returncode, 0, passed.stdout)
+            self.assertIn("ONBOARDING CHECK PASSED", passed.stdout)
+            self.assertNotIn("Read-only plan", passed.stdout)
 
 
 if __name__ == "__main__":

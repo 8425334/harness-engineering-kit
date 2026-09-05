@@ -29,7 +29,11 @@ def main() -> int:
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(f"LESSON PREFLIGHT BLOCKED: {exc}")
         return 2
-    project_root = Path(str(record.get("project_root", ""))).resolve()
+    project_root_value = record.get("project_root")
+    if not isinstance(project_root_value, str) or not project_root_value.strip():
+        print("LESSON PREFLIGHT BLOCKED: change record is missing project_root")
+        return 2
+    project_root = Path(project_root_value).resolve()
     result = retrieve(project_root, args.keyword, args.rule, args.path, args.scope)
     if result["errors"]:
         print("LESSON PREFLIGHT BLOCKED")
