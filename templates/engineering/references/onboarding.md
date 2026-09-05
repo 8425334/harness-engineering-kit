@@ -28,6 +28,8 @@ Use this playbook when a repository is not integrated, contains the previous arc
 
 8. Report the onboarding state, changed files, preserved legacy files, check output, unresolved placeholders or manual decisions, and the next valid action. Save the machine-readable receipt at `docs/methodology/onboarding.json`.
 
+For desktop Agents without a stable CLI (for example WorkBuddy or Trae Work), use `hek handoff --agent <id>` after the deterministic install. Open the project in the Agent and copy the generated prompt. Do not invent a launch command, private URI scheme, or provider-specific plugin configuration.
+
 ## State Rules
 
 | State | Meaning | Agent action |

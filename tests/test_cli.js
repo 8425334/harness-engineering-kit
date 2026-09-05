@@ -22,6 +22,7 @@ test('prints help and version', () => {
   const help = run(['--help']);
   assert.equal(help.status, 0);
   assert.match(help.stdout, /harness-engineering-kit init/);
+  assert.match(help.stdout, /harness-engineering-kit handoff/);
 
   const version = run(['--version']);
   assert.equal(version.status, 0);
@@ -35,7 +36,7 @@ test('exposes the hek npm alias and agent listing', () => {
   const listed = run(['agents', '--json']);
   assert.equal(listed.status, 0);
   const agents = JSON.parse(listed.stdout);
-  assert.deepEqual(agents.map((agent) => agent.id), ['claude', 'codex', 'cursor', 'gemini']);
+  assert.deepEqual(agents.map((agent) => agent.id), ['claude', 'codex', 'cursor', 'gemini', 'workbuddy', 'trae-work']);
   assert.ok(agents.every((agent) => typeof agent.installed === 'boolean'));
 });
 
@@ -61,6 +62,58 @@ test('parses agent and opening controls', () => {
   assert.equal(parsed.options.agent, 'codex');
   assert.equal(parsed.options.noOpen, true);
   assert.equal(parsed.options.prompt, 'hello');
+});
+
+test('resolves manual desktop agent aliases without a CLI', () => {
+  assert.equal(cliModule.findAgent('workbuddy').kind, 'manual');
+  assert.equal(cliModule.findAgent('trae work').id, 'trae-work');
+  assert.equal(cliModule.findAgent('trae_work').id, 'trae-work');
+  assert.equal(cliModule.findAgent('work-buddy').id, 'workbuddy');
+  assert.equal(cliModule.commandAvailable(null), false);
+});
+
+test('builds a manual handoff payload without launching an agent', () => {
+  const payload = cliModule.handoffPayload('/tmp/target-project', { sourceRoot: root, agent: 'trae-work', tier: '1' }, {
+    status: 'fresh',
+    installed_version: 'unknown',
+    source_version: '0.3.0',
+    version_relation: 'fresh',
+  });
+  assert.equal(payload.agent.id, 'trae-work');
+  assert.equal(payload.agent.transport, 'manual-copy');
+  assert.match(payload.prompt, /读取项目事实/);
+  assert.ok(payload.instructions.some((instruction) => instruction.includes('复制 prompt')));
+});
+
+test('handoff command prints a copyable manual prompt', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-handoff-'));
+  const result = run(['handoff', '--project-root', directory, '--source-root', root, '--agent', 'workbuddy'], { cwd: directory });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Agent handoff: WorkBuddy \(manual-copy\)/);
+  assert.match(result.stdout, /可复制提示词/);
+  assert.match(result.stdout, /读取项目事实/);
+});
+
+test('handoff JSON is machine-readable and does not write files', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-handoff-'));
+  const result = run(['handoff', '--project-root', directory, '--source-root', root, '--agent', 'trae-work', '--json'], { cwd: directory });
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.agent.id, 'trae-work');
+  assert.equal(payload.agent.transport, 'manual-copy');
+  assert.equal(fs.existsSync(path.join(directory, 'docs')), false);
+});
+
+test('init can apply then hand off to a no-CLI Agent', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-init-handoff-'));
+  spawnSync('git', ['init', '-q'], { cwd: directory });
+  const result = run([
+    'init', '--project-root', directory, '--source-root', root,
+    '--agent', 'workbuddy', '--open', '--yes', '--no-check', '--tier', '1',
+  ], { cwd: directory });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /WorkBuddy 不提供可调用 CLI/);
+  assert.ok(fs.existsSync(path.join(directory, 'AGENTS.md')));
 });
 
 test('builds an agent-first onboarding prompt', () => {
@@ -145,6 +198,14 @@ test('builds the agent menu from installed agents plus a skip entry', () => {
   assert.equal(items[0].hint, 'CLI');
   assert.equal(items[1].hint, '桌面端');
   assert.equal(items[2].value, null);
+});
+
+test('includes manual agents in the interactive menu without claiming a CLI install', () => {
+  const items = cliModule.agentMenuItems([
+    { id: 'workbuddy', label: 'WorkBuddy', kind: 'manual', installed: false },
+  ]);
+  assert.equal(items[0].value.id, 'workbuddy');
+  assert.equal(items[0].hint, '手动交接');
 });
 
 test('arrow-key selector moves with the down key and confirms with Enter', async () => {

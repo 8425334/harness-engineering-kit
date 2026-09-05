@@ -14,6 +14,8 @@ const AGENTS = [
   { id: 'codex', label: 'Codex', command: 'codex', kind: 'terminal' },
   { id: 'cursor', label: 'Cursor', command: 'cursor', kind: 'desktop' },
   { id: 'gemini', label: 'Gemini CLI', command: 'gemini', kind: 'terminal' },
+  { id: 'workbuddy', label: 'WorkBuddy', aliases: ['work-buddy'], command: null, kind: 'manual' },
+  { id: 'trae-work', label: 'Trae Work', aliases: ['trae', 'trae work'], command: null, kind: 'manual' },
 ];
 
 const DEFAULT_AGENT_PROMPT = '请在当前项目完成 Harness Engineering Kit 初始化：先读取项目中的 AGENTS.md 或 CLAUDE.md 与 docs/methodology/agent-policy.yaml，再根据需要继续工作。';
@@ -33,6 +35,7 @@ Usage:
   harness-engineering-kit init [options]    Plan, confirm, install, and check
   harness-engineering-kit plan [options]    Print a read-only JSON plan
   harness-engineering-kit check [options]   Run deterministic checks
+  harness-engineering-kit handoff [options] Generate a prompt for a desktop Agent without CLI
   harness-engineering-kit agents [options]  List supported AI agents
 
 Options:
@@ -43,7 +46,7 @@ Options:
   --apply                Apply init without an interactive confirmation
   --plan                 Make init read-only
   --no-check             Skip the post-init check
-  --agent <name>         AI agent to open after init (claude, codex, cursor, gemini)
+  --agent <name>         Agent to open or hand off (claude, codex, cursor, gemini, workbuddy, trae-work)
   --open                 Open the selected agent in non-interactive mode
   --no-open              Do not open an agent after init
   --direct               Run the deterministic installer; --agent and HEK_AGENT are ignored
@@ -107,6 +110,7 @@ function parseArgs(argv) {
 }
 
 function commandAvailable(command) {
+  if (!command) return false;
   const probe = process.platform === 'win32'
     ? spawnSync('where', [command], { stdio: 'ignore', shell: true })
     : spawnSync('/bin/sh', ['-c', 'command -v "$1" >/dev/null 2>&1', 'hek', command], { stdio: 'ignore' });
@@ -114,7 +118,11 @@ function commandAvailable(command) {
 }
 
 function availableAgents() {
-  return AGENTS.map((agent) => ({ ...agent, installed: commandAvailable(agent.command) }));
+  return AGENTS.map((agent) => ({
+    ...agent,
+    installed: agent.kind === 'manual' ? false : commandAvailable(agent.command),
+    available: agent.kind === 'manual' || commandAvailable(agent.command),
+  }));
 }
 
 function printAgents(asJson = false) {
@@ -125,14 +133,23 @@ function printAgents(asJson = false) {
   }
   console.log('可用的 AI Agent：');
   agents.forEach((agent, index) => {
-    console.log(`  ${index + 1}. ${agent.label} (${agent.id}) ${agent.installed ? '✓ 已安装' : '— 未找到命令'}`);
+    const status = agent.kind === 'manual'
+      ? '✓ 手动交接'
+      : (agent.installed ? '✓ 已安装' : '— 未找到命令');
+    console.log(`  ${index + 1}. ${agent.label} (${agent.id}) ${status}`);
   });
   return agents;
 }
 
 function findAgent(value) {
   if (!value) return null;
-  return AGENTS.find((agent) => agent.id === value.toLowerCase() || agent.command === value.toLowerCase()) || null;
+  const normalized = String(value).toLowerCase().trim().replace(/[\s_]+/g, '-');
+  return AGENTS.find((agent) => {
+    const names = [agent.id, agent.command, ...(agent.aliases || [])]
+      .filter(Boolean)
+      .map((name) => String(name).toLowerCase().trim().replace(/[\s_]+/g, '-'));
+    return names.includes(normalized);
+  }) || null;
 }
 
 function agentWillOpen(options) {
@@ -195,10 +212,10 @@ function selectWithArrows(title, items, defaultIndex = 0, io = {}) {
 
 function agentMenuItems(agents) {
   return [
-    ...agents.filter((agent) => agent.installed).map((agent) => ({
+    ...agents.filter((agent) => agent.installed || agent.kind === 'manual').map((agent) => ({
       value: agent,
       label: agent.label,
-      hint: agent.kind === 'desktop' ? '桌面端' : 'CLI',
+      hint: agent.kind === 'manual' ? '手动交接' : (agent.kind === 'desktop' ? '桌面端' : 'CLI'),
     })),
     { value: null, label: '跳过 Agent，使用确定性安装', hint: '直接由 hek 执行计划与检查' },
   ];
@@ -215,14 +232,14 @@ async function selectAgent(options) {
   if (requested) {
     const agent = findAgent(requested);
     if (!agent) throw new Error(`不支持的 AI Agent: ${requested}。使用 --list-agents 查看选项。`);
-    if (agentWillOpen(options) && !commandAvailable(agent.command)) {
+    if (agent.kind !== 'manual' && agentWillOpen(options) && !commandAvailable(agent.command)) {
       throw new Error(`${agent.label} 命令未找到。请先安装它，或使用 --no-open 完成初始化。`);
     }
     return agent;
   }
   if (!process.stdin.isTTY || !process.stdout.isTTY) return null;
   const agents = availableAgents();
-  if (!agents.some((agent) => agent.installed)) {
+  if (!agents.some((agent) => agent.installed || agent.kind === 'manual')) {
     console.log('未检测到已安装的 AI Agent，进入确定性安装流程（安装后可重新运行 hek init）。');
     return null;
   }
@@ -248,6 +265,14 @@ function windowsArgument(value) {
 function openAgent(agent, projectRoot, prompt) {
   if (!agent) return 0;
   let text = prompt || DEFAULT_AGENT_PROMPT;
+  if (agent.kind === 'manual') {
+    console.log(`\n${agent.label} 不提供可调用 CLI，已生成手动交接内容。`);
+    console.log(`请在 ${agent.label} 中打开项目：${projectRoot}`);
+    console.log('复制下面的提示词发送给 Agent：');
+    console.log(text);
+    console.log('Agent 必须先执行只读 plan，得到确认后再 apply 和 check。\n');
+    return 0;
+  }
   if (process.platform === 'win32') {
     // cmd.exe treats newlines as command separators; keep the argument single-line.
     text = String(text).replace(/\r?\n/g, ' ');
@@ -313,6 +338,52 @@ function buildAgentPrompt(projectRoot, options) {
   // Keep the prompt single-line: Windows passes it through cmd.exe, where a
   // newline would split the command and truncate the onboarding contract.
   return options.prompt || parts.map((part) => part.replace(/[。]$/, '')).join('；') + '。';
+}
+
+function handoffPayload(projectRoot, options, plan) {
+  const agent = findAgent(options.agent || 'workbuddy');
+  if (!agent) throw new Error(`不支持的 AI Agent: ${options.agent}`);
+  return {
+    schema_version: 1,
+    agent: { id: agent.id, label: agent.label, kind: agent.kind, transport: agent.kind === 'manual' ? 'manual-copy' : agent.kind },
+    project_root: projectRoot,
+    source_root: path.resolve(options.sourceRoot || packageRoot),
+    prompt: buildAgentPrompt(projectRoot, options),
+    plan,
+    instructions: agent.kind === 'manual'
+      ? ['在桌面 Agent 中打开 project_root', '复制 prompt 发送给 Agent', '确认只读 plan 后才允许 apply']
+      : ['使用 init --agent <id> --open 交给 CLI Agent 执行'],
+  };
+}
+
+function runHandoff(options) {
+  const planned = invoke('plan', { ...options, json: true }, true);
+  if (planned.status !== 0) {
+    process.stdout.write(planned.stdout || '');
+    process.stderr.write(planned.stderr || '');
+    return planned.status || 2;
+  }
+  const plan = parsePlan(planned.stdout);
+  if (!plan) {
+    console.error('无法解析 onboarding plan，无法生成 Agent handoff。');
+    return 2;
+  }
+  const projectRoot = plan && plan.project_root
+    ? plan.project_root
+    : (options.projectRoot ? path.resolve(options.projectRoot) : process.cwd());
+  const payload = handoffPayload(projectRoot, options, plan);
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  } else {
+    console.log(`Agent handoff: ${payload.agent.label} (${payload.agent.transport})`);
+    console.log(`项目: ${payload.project_root}`);
+    console.log(`计划状态: ${payload.plan.status} | 版本: ${payload.plan.installed_version} → ${payload.plan.source_version}（${payload.plan.version_relation}）`);
+    console.log('\n--- 可复制提示词 ---\n');
+    console.log(payload.prompt);
+    console.log('\n--- 操作 ---');
+    payload.instructions.forEach((instruction, index) => console.log(`${index + 1}. ${instruction}`));
+  }
+  return 0;
 }
 
 function baseArgs(options) {
@@ -392,6 +463,7 @@ function printPlaceholderHint(output) {
 
 async function runInit(options) {
   const interactive = process.stdin.isTTY && process.stdout.isTTY;
+  let deferredAgent = null;
   if (options.direct && (options.agent || process.env.HEK_AGENT)) {
     console.error('已指定 --direct：忽略 --agent/HEK_AGENT，执行确定性安装。');
   }
@@ -436,12 +508,12 @@ async function runInit(options) {
       return 2;
     }
     if (agent && !options.noOpen) {
-      return openAgent(agent, projectRoot, buildAgentPrompt(projectRoot, options));
+      if (agent.kind === 'manual') deferredAgent = agent;
+      else return openAgent(agent, projectRoot, buildAgentPrompt(projectRoot, options));
     }
   }
 
-  let deferredAgent = null;
-  if (!options.direct && !options.json && !interactive && (options.agent || process.env.HEK_AGENT)) {
+  if (!deferredAgent && !options.direct && !options.json && !interactive && (options.agent || process.env.HEK_AGENT)) {
     try {
       deferredAgent = await selectAgent(options);
     } catch (error) {
@@ -527,6 +599,7 @@ async function main(argv = process.argv.slice(2)) {
       return 0;
     }
     if (parsed.command === 'init') return await runInit(parsed.options);
+    if (parsed.command === 'handoff') return runHandoff(parsed.options);
     if (parsed.command === 'plan') return invoke('plan', { ...parsed.options, json: true }).status || 0;
     if (parsed.command === 'check') return invoke('check', parsed.options).status || 0;
     throw new Error(`unknown command: ${parsed.command}`);
@@ -550,6 +623,7 @@ module.exports = {
   commandAvailable,
   findAgent,
   findPython,
+  handoffPayload,
   main,
   parseArgs,
   selectAgent,

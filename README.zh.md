@@ -60,14 +60,18 @@ hek init
 
 `npx` 方式不会持久安装命令；若不想全局安装，每次使用完整的 `npx --package ... hek init` 命令即可。
 
-支持 `Claude Code`、`Codex`、`Cursor` 和 `Gemini CLI`。也可以显式指定 Agent 或用于 CI：
+支持 `Claude Code`、`Codex`、`Cursor` 和 `Gemini CLI`；`WorkBuddy`、`Trae Work` 通过手动 handoff 接入，因为它们没有稳定的公开 CLI 契约。也可以显式指定 Agent 或用于 CI：
 
 ```bash
 npx --yes --package github:8425334/harness-engineering-kit hek init --agent codex --open --yes
 npx --yes --package github:8425334/harness-engineering-kit hek init --direct --yes
 npx --yes --package github:8425334/harness-engineering-kit hek agents                 # 查看支持的 Agent 和安装状态
 npx --yes --package github:8425334/harness-engineering-kit hek init --plan --json     # 只读输出机器可读计划
+npx --yes --package github:8425334/harness-engineering-kit hek handoff --agent workbuddy
+npx --yes --package github:8425334/harness-engineering-kit hek handoff --agent trae-work --json
 ```
+
+无 CLI 的桌面 Agent 先执行 `hek init --direct --yes` 导入项目控制面，再执行 `hek handoff --agent workbuddy` 或 `hek handoff --agent trae-work`。然后在对应 Agent 中打开项目，复制命令生成的提示词，让 Agent 读取项目内的 `AGENTS.md`/`CLAUDE.md` 和 `docs/methodology/agent-policy.yaml`。`handoff` 不会猜测或启动未知桌面应用，也不会写入项目文件。
 
 交互式 `init` 会先询问安装范围（未指定 `--tier` 时用方向键选择完整/轻量接入），再启动所选 Agent，由 Agent 完成接入；在 Agent 菜单中选择跳过项即可走确定性流程，未检测到已安装 Agent 时自动回退。非交互环境不会意外拉起外部程序，使用 `--open` 可显式开启（需配合 `--agent`/`HEK_AGENT`）。`--json` 切换为机器可读输出：从不启动 Agent、也从不出交互确认——不带 `--yes` 时打印只读计划并以退出码 2 结束；带 `--yes` 时执行安装、检查并输出单一 JSON 回执（apply 失败回滚时也输出含 `errors` 的回执）。`HEK_AGENT` 可作为 `--agent` 的环境变量替代，`--prompt` 可覆盖传给终端 Agent 的首条提示词（提示词以单行传递，避免 Windows `cmd.exe` 截断）。
 

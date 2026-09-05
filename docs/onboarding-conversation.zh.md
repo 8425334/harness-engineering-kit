@@ -135,6 +135,10 @@ python3 <kit>/scripts/onboard.py \
 
 ## 五、常见追问
 
+**问：WorkBuddy、Trae Work 这类没有 CLI 的 Agent 怎么接入？**
+
+先用 `hek init --direct --yes` 写入项目控制面，再运行 `hek handoff --agent workbuddy` 或 `hek handoff --agent trae-work`。在对应桌面 Agent 中打开项目，复制 handoff 输出的提示词即可。框架依赖项目内的 `AGENTS.md`、`CLAUDE.md`、`agent-policy.yaml`、`ai.json` 和 `AI.md`，不依赖厂商私有插件或猜测性的启动命令。
+
 **问：能不能一句话直接接入？**
 
 可以，但仍必须让 Agent 先给只读计划。例如：“请接入当前项目，先识别状态并给出计划，确认后执行。”

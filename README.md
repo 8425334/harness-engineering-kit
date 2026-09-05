@@ -60,14 +60,18 @@ hek init
 
 The `npx` form is intentionally ephemeral; without a global install, use the full `npx --package ... hek init` command each time.
 
-Claude Code, Codex, Cursor, and Gemini CLI are supported. For scripts or explicit selection:
+Claude Code, Codex, Cursor, and Gemini CLI are supported. WorkBuddy and Trae Work are supported through a manual handoff because they do not expose a stable CLI contract. For scripts or explicit selection:
 
 ```bash
 npx --yes --package github:8425334/harness-engineering-kit hek init --agent codex --open --yes
 npx --yes --package github:8425334/harness-engineering-kit hek init --direct --yes
 npx --yes --package github:8425334/harness-engineering-kit hek agents
 npx --yes --package github:8425334/harness-engineering-kit hek init --plan --json
+npx --yes --package github:8425334/harness-engineering-kit hek handoff --agent workbuddy
+npx --yes --package github:8425334/harness-engineering-kit hek handoff --agent trae-work --json
 ```
+
+For a desktop Agent without a CLI, first install the project controls with `hek init --direct --yes`, then run `hek handoff --agent workbuddy` or `hek handoff --agent trae-work`. Open the project in that Agent, copy the generated prompt, and let it read the repository's `AGENTS.md`/`CLAUDE.md` and `docs/methodology/agent-policy.yaml`. `handoff` never launches an unknown desktop application and never writes project files.
 
 Interactive `init` asks for the install scope first (full or lightweight, chosen with the arrow keys when `--tier` is not given), then opens the selected Agent and lets that Agent perform onboarding; pick the skip entry in the agent menu for the deterministic flow, and it falls back automatically when no agent is installed. Non-interactive runs never launch an external process unless `--open` is supplied, and `--open` there requires `--agent`/`HEK_AGENT`. `--json` switches to machine-readable output: it never opens an agent and never prompts — without `--yes` init prints the read-only plan and exits 2; with `--yes` it applies, checks, and prints one JSON receipt (including an `errors` receipt when apply fails and rolls back). Use `HEK_AGENT` instead of `--agent`, or `--prompt` to customize the first prompt sent to terminal agents (prompts are delivered as a single line so Windows `cmd.exe` cannot truncate them).
 
