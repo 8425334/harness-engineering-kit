@@ -68,7 +68,7 @@ Agent 在收到确认后应：
 1. 用 `--apply` 执行已确认计划。
 2. 读取仓库事实，填写根 `ai.json`、`AI.md`、`docs/methodology/agent-policy.yaml`、`docs/methodology/profile.yaml` 和 `openspec/config.yaml` 中的占位符。
 3. 对每条命令实际运行一次轻量验证；命令不确定时先停下来询问用户。
-4. 用 `--check --json` 执行根上下文、策略、Profile、Fitness 和双平台 Skill 校验。
+4. 用 `--check --json` 执行根上下文、策略、Profile、稳定上下文缓存参考基准、Fitness 和所选 Agent Skill 校验。
 5. 将结果写入 `docs/methodology/onboarding.json`，并报告未解决占位符、失败检查和后续动作。
 
 ## 三、增量更新/老版本升级
@@ -118,7 +118,7 @@ python3 <kit>/scripts/onboard.py \
 
 ```bash
 python3 <kit>/scripts/onboard.py \
-  --project-root . --source-root <kit> --check --json
+  --project-root . --source-root <kit> --agent <selected-agent> --check --json
 ```
 
 如果旧入口导致校验失败，Agent 不应为了“变绿”直接删除文件；应报告具体冲突，并等待用户发起“清理旧入口”的独立变更。
@@ -127,11 +127,12 @@ python3 <kit>/scripts/onboard.py \
 
 只有同时满足以下条件，Agent 才能说“接入完成”：
 
-- `AGENTS.md`/`CLAUDE.md` 保持原生指令权威，且能路由到 Engineering Skill。
+- 所选 Agent 的原生入口（Claude Code 为 `CLAUDE.md`，Codex/OpenCode 及兼容 Agent 为 `AGENTS.md`）保持原生指令权威，且能路由到 Engineering Skill。
 - `ai.json`、`AI.md`、策略、Profile 和 OpenSpec 配置没有未填写占位符。
-- `docs/methodology/VERSION`、方法论脚本、workflow 模板和 `.claude/.agents` 下的 Engineering Skill 已同步。
+- `docs/methodology/VERSION`、方法论脚本、workflow 模板和所选 Agent 对应目录下的 Engineering Skill 已同步。
 - `ai.json`/`AI.md` 引用路径存在，`resolve_context.py` 能解析根路径。
-- Fitness 保护、策略、Profile 和两个平台 Skill 校验通过；失败项有明确记录。
+- `context_cache.py benchmark` 的 1,000 次稳定前缀参考基准达到至少 99.5%；供应商命中率另须用 `context_cache.py report` 基于真实遥测确认。
+- Fitness 保护、策略、Profile 和所选平台 Skill 校验通过；失败项有明确记录。
 - `docs/methodology/onboarding.json` 记录状态、版本、动作、摘要、保留的旧文件和校验结果。
 - 未经用户单独确认，没有删除旧文件、覆盖项目配置、安装依赖、执行生产写入或修改 `docs/fitness/**`。
 

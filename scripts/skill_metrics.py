@@ -9,6 +9,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from context_cache import read_events
+
 
 def change_files(root: Path, relative: str) -> list[Path]:
     """Collect evidence files from active and archived change workspaces.
@@ -93,7 +95,8 @@ def main() -> int:
     events, invalid = parse_events(args.root)
     failures, invalid_failures = parse_failure_events(args.root)
     executions, invalid_executions = parse_execution_records(args.root)
-    invalid += invalid_failures + invalid_executions
+    cache_events, invalid_cache = read_events(args.root)
+    invalid += invalid_failures + invalid_executions + invalid_cache
     event_counts = Counter(str(item.get("event", "unknown")) for item in events)
     start_events = {"skill.triggered", "skill.fallback"}
     mode_counts = Counter(str(item.get("mode", "unknown")) for item in events if item.get("event") in start_events)
@@ -119,6 +122,9 @@ def main() -> int:
         if isinstance(item.get("capability", {}).get("max_concurrency"), int)
         and not isinstance(item.get("capability", {}).get("max_concurrency"), bool)
     ]
+    cache_hits = sum(item.get("outcome") == "hit" for item in cache_events)
+    cache_misses = sum(item.get("outcome") == "miss" for item in cache_events)
+    cache_measured = cache_hits + cache_misses
     payload = {
         "changes": len(changes),
         "triggered": len(triggered_changes),
@@ -141,6 +147,12 @@ def main() -> int:
         "task_runs": total_task_runs,
         "average_task_runs": round(total_task_runs / len(executions), 4) if executions else 0,
         "max_declared_concurrency": max(declared_concurrency, default=0),
+        "cache_hits": cache_hits,
+        "cache_misses": cache_misses,
+        "cache_bypasses": sum(item.get("outcome") == "bypass" for item in cache_events),
+        "cache_measured_requests": cache_measured,
+        "cache_hit_rate": round(cache_hits / cache_measured, 6) if cache_measured else 0,
+        "cache_provider_verified": any(item.get("cache_layer") == "provider" for item in cache_events),
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 2 if invalid else 0

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import sys
+import argparse
 from pathlib import Path
 
 
@@ -11,9 +11,9 @@ REQUIRED_TERMS = ("agent-policy.yaml", "profile.yaml", "ai.json", "AI.md", "reso
 MAX_LINES = 40
 
 
-def validate(root: Path) -> list[str]:
+def validate(root: Path, context_files: tuple[str, ...] = ("AGENTS.md", "CLAUDE.md")) -> list[str]:
     errors: list[str] = []
-    for name in ("AGENTS.md", "CLAUDE.md"):
+    for name in context_files:
         path = root / name
         if not path.is_file():
             errors.append(f"missing native root adapter: {name}")
@@ -36,14 +36,24 @@ def validate(root: Path) -> list[str]:
 
 
 def main() -> int:
-    root = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd()
-    errors = validate(root)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("root", nargs="?", type=Path, default=Path.cwd())
+    parser.add_argument(
+        "--context-file",
+        dest="context_files",
+        nargs="+",
+        default=("AGENTS.md", "CLAUDE.md"),
+        help="native root adapter(s) to validate",
+    )
+    args = parser.parse_args()
+    root = args.root.resolve()
+    errors = validate(root, tuple(args.context_files))
     if errors:
         print("ROOT CONTEXT INVALID")
         for error in errors:
             print(f"- {error}")
         return 2
-    print(f"ROOT CONTEXT OK: {root}")
+    print(f"ROOT CONTEXT OK: {args.root.resolve()}")
     return 0
 
 

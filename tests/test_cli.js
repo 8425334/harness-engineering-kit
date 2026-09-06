@@ -36,7 +36,7 @@ test('exposes the hek npm alias and agent listing', () => {
   const listed = run(['agents', '--json']);
   assert.equal(listed.status, 0);
   const agents = JSON.parse(listed.stdout);
-  assert.deepEqual(agents.map((agent) => agent.id), ['claude', 'codex', 'cursor', 'gemini', 'workbuddy', 'trae-work']);
+  assert.deepEqual(agents.map((agent) => agent.id), ['claude', 'codex', 'opencode', 'cursor', 'gemini', 'workbuddy', 'trae-work']);
   assert.ok(agents.every((agent) => typeof agent.installed === 'boolean'));
 });
 
@@ -70,6 +70,26 @@ test('resolves manual desktop agent aliases without a CLI', () => {
   assert.equal(cliModule.findAgent('trae_work').id, 'trae-work');
   assert.equal(cliModule.findAgent('work-buddy').id, 'workbuddy');
   assert.equal(cliModule.commandAvailable(null), false);
+});
+
+test('uses the OpenCode run subcommand for agent prompts', () => {
+  const agent = cliModule.findAgent('opencode');
+  assert.equal(agent.kind, 'terminal');
+  assert.deepEqual(cliModule.agentArguments(agent, '/tmp/project', 'onboard'), ['run', 'onboard']);
+  assert.deepEqual(cliModule.agentArguments(cliModule.findAgent('claude'), '/tmp/project', 'onboard'), ['onboard']);
+});
+
+test('passes the selected Agent to the onboarding planner', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-plan-agent-'));
+  const result = run(['plan', '--project-root', directory, '--source-root', root, '--agent', 'opencode'], { cwd: directory });
+  assert.equal(result.status, 0, result.stderr);
+  const plan = JSON.parse(result.stdout);
+  assert.equal(plan.agent, 'opencode');
+  assert.deepEqual(
+    plan.actions.filter((action) => action.kind === 'sync-tree').map((action) => action.target),
+    ['.opencode/skills/engineering'],
+  );
+  assert.ok(!plan.actions.some((action) => action.target === 'CLAUDE.md'));
 });
 
 test('builds a manual handoff payload without launching an agent', () => {
@@ -138,15 +158,32 @@ test('json mode warns instead of failing when --agent/--open is supplied', () =>
   spawnSync('git', ['init', '-q'], { cwd: directory });
   const result = run(['init', '--project-root', directory, '--source-root', root, '--json', '--yes', '--no-check', '--agent', 'gemini', '--open'], { cwd: directory });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stderr, /--json 机器模式/);
-  // The deterministic installer itself creates .claude/skills; an agent-driven
-  // run would add nothing here, and launching gemini (not installed) would exit 2.
-  const claudeEntries = fs.existsSync(path.join(directory, '.claude'))
-    ? fs.readdirSync(path.join(directory, '.claude'))
-    : [];
-  assert.deepEqual(claudeEntries, ['skills'], 'json mode must not open agents');
+  assert.match(result.stderr, /仅忽略 --open/);
+  assert.equal(fs.existsSync(path.join(directory, 'AGENTS.md')), true);
+  assert.equal(fs.existsSync(path.join(directory, 'CLAUDE.md')), false);
+  assert.equal(fs.existsSync(path.join(directory, '.claude')), false);
   const receipt = JSON.parse(result.stdout);
   assert.equal(receipt.read_only, false);
+  assert.equal(receipt.agent, 'gemini');
+});
+
+test('init only installs the selected native context and skill', () => {
+  for (const [agent, nativeFile, absentFile, skillPath] of [
+    ['claude', 'CLAUDE.md', 'AGENTS.md', '.claude/skills/engineering'],
+    ['codex', 'AGENTS.md', 'CLAUDE.md', '.agents/skills/engineering'],
+    ['opencode', 'AGENTS.md', 'CLAUDE.md', '.opencode/skills/engineering'],
+  ]) {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-agent-target-'));
+    spawnSync('git', ['init', '-q'], { cwd: directory });
+    const result = run([
+      'init', '--project-root', directory, '--source-root', root,
+      '--agent', agent, '--tier', '1', '--json', '--yes', '--no-check',
+    ], { cwd: directory });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fs.existsSync(path.join(directory, nativeFile)), true);
+    assert.equal(fs.existsSync(path.join(directory, absentFile)), false);
+    assert.equal(fs.existsSync(path.join(directory, skillPath)), true);
+  }
 });
 
 test('check prints the gate outcome instead of a read-only plan', () => {

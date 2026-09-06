@@ -12,3 +12,9 @@ Every non-trivial change must complete `context-impact.json` before approval:
 - List every planned deliverable file in `analyzed_paths`. Review file digests must match that set exactly.
 
 Run `check_context_docs.py` after context changes. Adding an `AI.md` without indexing it, duplicating detailed rules into `ai.json`, exceeding size limits, or omitting a required context file from Review blocks the lifecycle.
+
+For each context request, run `context_cache.py fingerprint` and pass its
+`prefix_digest` to the host adapter. Record provider `hit`, `miss`, or `bypass`
+outcomes with `context_cache.py record`; use `context_cache.py benchmark` for
+the long-task 99.5% stable-prefix check. This protocol is host-neutral and
+does not require unsupported Agent hooks.

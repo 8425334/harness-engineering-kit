@@ -49,12 +49,10 @@ def file_lock(path: Path, timeout: float = 30.0, stale_after: float = 60.0) -> I
     """Best-effort exclusive lock guarding a read-modify-write of ``path``.
 
     Concurrent scripts (gate failures, state transitions, lesson approvals) mutate
-    the same JSON records; the lock serializes those sequences.  A lock older than
-    ``stale_after`` seconds belonged to a crashed holder and is broken, and a lock
-    that still cannot be acquired within ``timeout`` is force-broken so that
-    availability wins over perfect exclusion.  Corruption is already impossible
-    because :func:`write_json` replaces atomically; the lock only prevents lost
-    updates.
+    the same JSON records; the lock serializes those sequences.  If a lock cannot
+    be acquired within ``timeout``, the operation fails closed.  The lock is never
+    force-broken because a live holder may be performing a long operation, and
+    atomic replacement alone cannot prevent lost updates.
     """
     lock_path = path.with_name(path.name + ".lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -67,14 +65,11 @@ def file_lock(path: Path, timeout: float = 30.0, stale_after: float = 60.0) -> I
         except FileExistsError:
             if time.monotonic() >= deadline:
                 try:
-                    lock_path.unlink()
+                    age = max(0.0, time.time() - lock_path.stat().st_mtime)
                 except OSError:
-                    pass
-                try:  # one final attempt after breaking the stuck lock
-                    descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                except OSError:
-                    descriptor = None  # proceed unlocked rather than failing the caller
-                break
+                    age = 0.0
+                state = "possibly stale" if age >= stale_after else "active"
+                raise TimeoutError(f"could not acquire lock {lock_path} ({state}, age={age:.1f}s)")
             time.sleep(0.05)
     try:
         if descriptor is not None:
@@ -108,6 +103,7 @@ def spec_files(change_dir: Path) -> list[Path]:
 
 def contract_files(change_dir: Path) -> list[Path]:
     return [
+        change_dir / "requirement-reflection.json",
         change_dir / "context-pack.md",
         change_dir / "impact-analysis.md",
         change_dir / "context-impact.json",

@@ -23,6 +23,7 @@ from approve_lesson import main as approve_lesson_main
 from create_lesson_candidate import main as create_lesson_main
 from init_change import main as init_change_main
 from methodology_common import sha256, utc_now
+from requirement_reflection import digest_for
 from methodology_state import main as methodology_state_main
 from preflight_lessons import main as preflight_lessons_main
 from record_failure import main as record_failure_main
@@ -437,6 +438,19 @@ def exercise_mode(project: Path, profile: Path, mode: str) -> None:
     code, output = invoke(init_change_main, arguments)
     assert code == 0, output
     change_dir = project / "openspec/changes" / change_id
+
+    reflection = {
+        "requirement_id": change_id,
+        "source": "smoke test request",
+        "summary": f"Complete the {mode} smoke lifecycle.",
+        "scope": [f"src/{mode}.txt"],
+        "acceptance": [f"The {mode} lifecycle reaches ARCHIVED with evidence."],
+        "constraints": ["Use the canonical Engineering lifecycle."],
+        "authority": "smoke test",
+    }
+    reflection.update({"schema_version": 1, "status": "passed", "outcome": "ready", "actor": "smoke", "at": utc_now()})
+    reflection["requirement_digest"] = digest_for(reflection)
+    write_json(change_dir / "requirement-reflection.json", reflection)
 
     transition(change_dir, "EXPLORED", expected=2)
     spec = write_contract(change_dir, change_id, mode)

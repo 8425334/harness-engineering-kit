@@ -19,6 +19,8 @@ English documentation: [README.md](README.md)
 
 修改代码前，`resolve_context.py` 会把目标路径和显式 `read_when` 关键词解析为唯一、fail-closed 的加载顺序。根上下文强制存在，已登记的祖先 `AI.md` 先于子级详情加载。
 
+`context_cache.py` 会对该精确加载顺序生成稳定指纹，并记录供应商 `hit`、`miss` 或 `bypass`。长程任务参考基准要求实测命中率至少 99.5%；它不会修改宿主 Agent 设置，也不会在没有供应商遥测时冒充命中。
+
 `docs/fitness/**` 是受保护控制面。项目 Agent 只能读取和执行，不能修改；除首次安装和可证明的既有语法修复外，其他变更不论大小，都必须取得与完整变更摘要绑定的外部人工确认。
 
 ## 生命周期
@@ -68,10 +70,11 @@ hek init
 
 `npx` 方式不会持久安装命令；若不想全局安装，每次使用完整的 `npx --package ... hek init` 命令即可。
 
-支持 `Claude Code`、`Codex`、`Cursor` 和 `Gemini CLI`；`WorkBuddy`、`Trae Work` 通过手动 handoff 接入，因为它们没有稳定的公开 CLI 契约。也可以显式指定 Agent 或用于 CI：
+支持 `Claude Code`、`Codex`、`OpenCode`、`Cursor` 和 `Gemini CLI`；`WorkBuddy`、`Trae Work` 通过手动 handoff 接入，因为它们没有稳定的公开 CLI 契约。也可以显式指定 Agent 或用于 CI：
 
 ```bash
 npx --yes --package github:8425334/harness-engineering-kit hek init --agent codex --open --yes
+npx --yes --package github:8425334/harness-engineering-kit hek init --agent opencode --open --yes
 npx --yes --package github:8425334/harness-engineering-kit hek init --direct --yes
 npx --yes --package github:8425334/harness-engineering-kit hek agents                 # 查看支持的 Agent 和安装状态
 npx --yes --package github:8425334/harness-engineering-kit hek init --plan --json     # 只读输出机器可读计划
@@ -81,15 +84,15 @@ npx --yes --package github:8425334/harness-engineering-kit hek handoff --agent t
 
 无 CLI 的桌面 Agent 先执行 `hek init --direct --yes` 导入项目控制面，再执行 `hek handoff --agent workbuddy` 或 `hek handoff --agent trae-work`。然后在对应 Agent 中打开项目，复制命令生成的提示词，让 Agent 读取项目内的 `AGENTS.md`/`CLAUDE.md` 和 `docs/methodology/agent-policy.yaml`。`handoff` 不会猜测或启动未知桌面应用，也不会写入项目文件。
 
-交互式 `init` 会先询问安装范围（未指定 `--tier` 时用方向键选择完整/轻量接入），再启动所选 Agent，由 Agent 完成接入；在 Agent 菜单中选择跳过项即可走确定性流程，未检测到已安装 Agent 时自动回退。非交互环境不会意外拉起外部程序，使用 `--open` 可显式开启（需配合 `--agent`/`HEK_AGENT`）。`--json` 切换为机器可读输出：从不启动 Agent、也从不出交互确认——不带 `--yes` 时打印只读计划并以退出码 2 结束；带 `--yes` 时执行安装、检查并输出单一 JSON 回执（apply 失败回滚时也输出含 `errors` 的回执）。`HEK_AGENT` 可作为 `--agent` 的环境变量替代，`--prompt` 可覆盖传给终端 Agent 的首条提示词（提示词以单行传递，避免 Windows `cmd.exe` 截断）。
+交互式 `init` 会先询问安装范围（未指定 `--tier` 时用方向键选择完整/轻量接入），再启动所选 Agent，由 Agent 完成接入；所选 Agent 只会得到自己的原生根入口（Claude Code 为 `CLAUDE.md`，Codex/OpenCode 及兼容 Agent 为 `AGENTS.md`）和对应的项目 Skill，不会同时初始化另一套入口。在 Agent 菜单中选择跳过项即可走兼容性确定性流程，未检测到已安装 Agent 时自动回退。非交互环境不会意外拉起外部程序，使用 `--open` 可显式开启（需配合 `--agent`/`HEK_AGENT`）。`--json` 切换为机器可读输出：从不启动 Agent、也从不交互确认——不带 `--yes` 时打印只读计划并以退出码 2 结束；带 `--yes` 时执行安装、检查并输出单一 JSON 回执（apply 失败回滚时也输出含 `errors` 的回执）。`HEK_AGENT` 可作为 `--agent` 的环境变量替代，`--prompt` 可覆盖传给终端 Agent 的首条提示词（提示词以单行传递，避免 Windows `cmd.exe` 截断）。
 
 全新项目的占位符必须依据真实仓库事实填写后才能通过接入检查，因此无人值守的 `init --direct --yes` 在全新项目上会先安装脚手架再以退出码 2 结束（fail-closed）；已配置项目的升级则会直接通过。仅需安装脚手架的自动化场景使用 `--no-check`，或在确定性安装后打开 Agent（`--agent <id> --open --yes`）完成"填写-检查"闭环。
 
-`hek init` 采用 Agent 驱动：先选择安装范围与已安装的 Agent，在解析出的项目根目录打开该 Agent 的 CLI，并传入 Kit 路径和接入契约。由 Agent 读取项目事实、生成只读计划、请求确认、填写项目专属配置、执行 canonical 脚本并运行确定性检查。Tier 1（轻量接入）安装核心控制面（含 `agent-policy.yaml` 引用的生产策略脚手架）；默认 Tier 2（完整接入）额外安装 Fitness 门禁脚本、Fitness 规则和经验记忆。每次接入都会写入 `docs/methodology/onboarding.json`，记录版本、文件摘要、创建/更新/保留的文件和校验结果。只有明确需要无 Agent 的确定性安装时才使用 `--direct`；它会忽略 `--agent` 和 `HEK_AGENT`。
+`hek init` 采用 Agent 驱动：先选择安装范围与已安装的 Agent，在解析出的项目根目录打开该 Agent 的 CLI，并传入 Kit 路径、接入契约和所选 Agent 目标。由 Agent 读取项目事实、生成只读计划、请求确认、填写项目专属配置、执行 canonical 脚本并运行确定性检查；所选 Agent 只初始化对应的原生上下文入口与项目 Skill。Tier 1（轻量接入）安装核心控制面（含 `agent-policy.yaml` 引用的生产策略脚手架）；默认 Tier 2（完整接入）额外安装 Fitness 门禁脚本、Fitness 规则和经验记忆。每次接入都会写入 `docs/methodology/onboarding.json`，记录版本、文件摘要、创建/更新/保留的文件和校验结果。只有明确需要无 Agent 的兼容性确定性安装时才使用 `--direct`；它会忽略 `--agent` 和 `HEK_AGENT` 并安装全部兼容入口。
 
 版本化升级会比较项目已安装版本与 Kit 版本：低版本到高版本同步全部规范资源，同版本仍检查漂移，高版本降级直接阻断，并报告该目标版本声明的特殊迁移事项。详见 [版本化管理](docs/versioning.md)。
 
-`ai.json` 超限或结构非法、`AI.md` 未索引或超限、策略缺失、占位符未填、引用路径断裂、任务图/执行证据非法、Profile 非法、Skill 资源缺失、安装内容过期或平台适配不支持都会失败。Cursor 以及旧 `ramer`、`fe-engineering`、`multi-agent` 入口不再兼容。
+`ai.json` 超限或结构非法、`AI.md` 未索引或超限、策略缺失、占位符未填、引用路径断裂、任务图/执行证据非法、Profile 非法、Skill 资源缺失、安装内容过期或平台适配不支持都会失败。Engineering Skill 会针对 Claude Code、Codex 和 OpenCode 安装并校验。Cursor 以及旧 `ramer`、`fe-engineering`、`multi-agent` 入口不再兼容。
 
 任务上下文由接入后的项目控制面解析；执行契约见 [CLI 接入指南](templates/engineering/references/onboarding.md)。
 

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "outcome": "ready",
+  "actor": "{{ACTOR}}",
+  "at": "{{YYYY-MM-DDTHH:MM:SSZ}}",
+  "requirement_id": "{{REQUIREMENT_ID}}",
+  "source": "{{USER_REQUEST_OR_TICKET}}",
+  "summary": "{{ONE_SENTENCE_REQUIREMENT}}",
+  "scope": ["{{PROJECT_RELATIVE_SCOPE}}"],
+  "acceptance": ["{{OBSERVABLE_ACCEPTANCE_CRITERION}}"],
+  "constraints": ["{{MATERIAL_CONSTRAINT}}"],
+  "authority": "{{AUTHORIZATION_SOURCE}}",
+  "requirement_digest": "{{SHA256_OF_REQUIREMENT_FIELDS}}"
+}

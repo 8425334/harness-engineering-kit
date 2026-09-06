@@ -27,3 +27,15 @@ Every non-trivial change includes approval-bound `context-impact.json`:
 Signal selection is a semantic design decision bound into approval; deterministic gates verify its mapping and evidence but cannot infer business responsibility from arbitrary code. The approver must reject an unjustified `none` decision.
 
 Preserve decisions and evidence in the change workspace across compaction or handoff. Measure wrong-assumption rate, loading time, repeated reads, intervention rate, and cost/latency; provider caching is an optimization, not a correctness guarantee.
+
+The repository-side cache contract is defined in
+[Context Cache Protocol](context-cache-protocol.md). It stabilizes the ordered
+context prefix and records provider-reported `hit`, `miss`, or `bypass`
+outcomes. It does not change host Agent configuration or claim provider cache
+behavior without telemetry.
+
+The repository-side cache contract is defined in
+[Context Cache Protocol](context-cache-protocol.md). It stabilizes the ordered
+context prefix and records provider-reported `hit`, `miss`, or `bypass`
+outcomes. It does not change host Agent configuration or claim provider cache
+behavior without telemetry.

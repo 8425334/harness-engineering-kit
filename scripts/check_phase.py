@@ -19,6 +19,7 @@ from check_root_context import validate as validate_root_context
 from check_task_plan import validate_execution, validate_plan
 from lessons_common import lesson_matches, load_failure_events, load_lessons, validate_lesson
 from methodology_common import contract_files, meaningful, read_json, relative_digests, sha256, spec_files
+from requirement_reflection import validate as validate_requirement_reflection
 from openspec_common import validate_orchestration
 
 
@@ -94,6 +95,15 @@ def validate_change_record(record: dict[str, Any], errors: list[str]) -> None:
         errors.append("change.json risk must match the project profile.yaml project_risk")
     context_errors, _ = validate_context_docs(project_root)
     errors.extend(f"context docs: {error}" for error in context_errors)
+
+
+def validate_requirement(change_dir: Path, errors: list[str]) -> None:
+    try:
+        reflection = read_json(change_dir / "requirement-reflection.json")
+    except (OSError, json.JSONDecodeError, ValueError):
+        errors.append("requirement-reflection.json must be a valid JSON object")
+        return
+    errors.extend(validate_requirement_reflection(reflection))
 
 
 def validate_context_contract(change_dir: Path, record: dict[str, Any], errors: list[str]) -> dict[str, Any] | None:
@@ -490,6 +500,7 @@ def check(change_dir: Path, phase: str) -> list[str]:
     if str(record.get("change_id", "")) != change_dir.name:
         errors.append(f"change.json change_id must match the change directory name: {change_dir.name}")
     validate_change_record(record, errors)
+    validate_requirement(change_dir, errors)
     project_root = Path(str(record.get("project_root", "")))
     if project_root.is_dir():
         try:

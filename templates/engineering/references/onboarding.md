@@ -9,22 +9,30 @@ Use this playbook when a repository is not integrated, contains the previous arc
 3. Inspect only the repository root and known markers. Run the read-only plan (`py -3` instead of `python3` on Windows):
 
    ```bash
-   python3 <kit>/scripts/onboard.py --project-root . --source-root <kit> --plan --json
+   python3 <kit>/scripts/onboard.py --project-root . --source-root <kit> --agent <selected-agent> --plan --json
    ```
 
 4. Explain the detected state (`fresh`, `partial`, `legacy`, or `current`), the installed and Kit versions, the version relation (`fresh`, `upgrade`, `same`, `downgrade`, `unversioned`, or `invalid`), the files to create/sync/preserve, the selected tier, and any legacy files that remain untouched. For `legacy`, explicitly state that old `ramer`, `fe-engineering`, `multi-agent`, Cursor, and Codex entries are not silently deleted. Before sending this plan, run the response-level requirement reflection. If the requested install scope, project state, facts, or authorization is ambiguous or inconsistent, stop before `--apply`, show the evidence, give the recommended plan, and ask the user to confirm the smallest outstanding decision.
 5. After the user confirms the displayed plan, apply it:
 
    ```bash
-   python3 <kit>/scripts/onboard.py --project-root . --source-root <kit> --tier <1|2> --apply --json
+   python3 <kit>/scripts/onboard.py --project-root . --source-root <kit> --tier <1|2> --agent <selected-agent> --apply --json
    ```
 
-6. Replace placeholders in the preserved project configuration using facts discovered from the repository. Never invent commands, owners, paths, or security settings. Keep native `AGENTS.md`/`CLAUDE.md` instructions authoritative.
+6. Replace placeholders in the preserved project configuration using facts discovered from the repository. Never invent commands, owners, paths, or security settings. Keep the selected native root adapter authoritative and do not create the other adapter as a side effect.
 7. Run the post-apply check and stop on failure:
 
    ```bash
-   python3 <kit>/scripts/onboard.py --project-root . --source-root <kit> --check --json
+   python3 <kit>/scripts/onboard.py --project-root . --source-root <kit> --agent <selected-agent> --check --json
    ```
+
+   The check includes a 1,000-iteration stable-prefix reference benchmark and
+   requires at least 99.5% local reference reuse. This proves that the Harness
+   context load order and digest are stable; it does not prove provider cache
+   performance. Record provider `hit`/`miss` outcomes during long tasks and run
+   `python3 docs/methodology/scripts/context_cache.py report --root . --json`
+   to verify the measured provider rate. `bypass` is reported separately and
+   is not included in the hit-rate denominator.
 
 8. Report the onboarding state, changed files, preserved legacy files, check output, unresolved placeholders or manual decisions, and the next valid action. Save the machine-readable receipt at `docs/methodology/onboarding.json`.
 9. Install the parent-child guard hook (Claude Code) so direct change-scoped OpenSpec calls cannot bypass Harness dispatch:

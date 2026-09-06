@@ -5,5 +5,5 @@ platforms: [claude, codex, opencode]
 routes: [backend, frontend, fullstack, api, database, ui, cross-module]
 modes: [backend, frontend, fullstack]
 required_sections: [Requirement Reflection, Route, Lifecycle, Apply Orchestration, Evidence]
-capabilities: [onboarding, context-index, context-impact, requirement-reflection, openspec-child-dispatch, behavior-spec, technical-design, task-dag, task-progress-sync, parallel-execution, sequential-fallback, integration-evidence, cross-stack-execution, review-evidence, self-refine-evidence]
+capabilities: [onboarding, context-index, context-impact, context-cache-protocol, requirement-reflection, openspec-child-dispatch, behavior-spec, technical-design, task-dag, task-progress-sync, parallel-execution, sequential-fallback, integration-evidence, cross-stack-execution, review-evidence, self-refine-evidence]
 fallback: manual-engineering-with-identical-gates

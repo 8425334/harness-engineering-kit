@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -34,6 +35,27 @@ ROOT_FILES = {
     "templates/path-document.md.template": "AI.md",
     "templates/openspec-config.yaml.template": "openspec/config.yaml",
     "templates/openspec-readme.md.template": "openspec/README.md",
+}
+
+NATIVE_ROOT_FILES = {
+    "templates/AGENTS.md.template": "AGENTS.md",
+    "templates/CLAUDE.md.template": "CLAUDE.md",
+}
+
+AGENT_TARGETS = {
+    "claude": {"root_file": "CLAUDE.md", "skill_platform": "claude"},
+    "codex": {"root_file": "AGENTS.md", "skill_platform": "codex"},
+    "opencode": {"root_file": "AGENTS.md", "skill_platform": "opencode"},
+    "cursor": {"root_file": "AGENTS.md", "skill_platform": None},
+    "gemini": {"root_file": "AGENTS.md", "skill_platform": None},
+    "workbuddy": {"root_file": "AGENTS.md", "skill_platform": None},
+    "trae-work": {"root_file": "AGENTS.md", "skill_platform": None},
+}
+
+SKILL_ROOTS = {
+    "claude": ".claude/skills",
+    "codex": ".agents/skills",
+    "opencode": ".opencode/skills",
 }
 
 LEGACY_MARKERS = (
@@ -84,25 +106,67 @@ def project_root(value: Path | None) -> Path:
         return Path.cwd().resolve()
 
 
-def detect_status(root: Path) -> str:
+def agent_target(agent: str | None) -> dict[str, str | None] | None:
+    if agent is None:
+        return None
+    try:
+        return AGENT_TARGETS[agent]
+    except KeyError as exc:
+        raise ValueError(f"unsupported agent: {agent}") from exc
+
+
+def root_files_for(agent: str | None) -> dict[str, str]:
+    if agent is None:
+        return ROOT_FILES
+    target = agent_target(agent)
+    return {
+        relative: destination
+        for relative, destination in ROOT_FILES.items()
+        if destination not in NATIVE_ROOT_FILES.values() or destination == target["root_file"]
+    }
+
+
+def skill_platforms_for(agent: str | None) -> tuple[str, ...]:
+    if agent is None:
+        return ("claude", "codex", "opencode")
+    platform = agent_target(agent)["skill_platform"]
+    return (platform,) if platform else ()
+
+
+def detect_status(root: Path, agent: str | None = None) -> str:
     legacy = any((root / marker).exists() for marker in LEGACY_MARKERS)
     if legacy:
         return "legacy"
-    canonical = (
-        (root / "docs/methodology/VERSION").is_file()
-        and (root / "docs/methodology/agent-policy.yaml").is_file()
-        and (root / ".agents/skills/engineering/SKILL.md").is_file()
-    )
-    if canonical:
-        return "current"
+    if agent is not None:
+        target = agent_target(agent)
+        root_ready = (root / str(target["root_file"])).is_file()
+        skill_ready = not target["skill_platform"] or (
+            root / SKILL_ROOTS[str(target["skill_platform"])] / "engineering/SKILL.md"
+        ).is_file()
+        canonical = (
+            (root / "docs/methodology/VERSION").is_file()
+            and (root / "docs/methodology/agent-policy.yaml").is_file()
+            and root_ready
+            and skill_ready
+        )
+        if canonical:
+            return "current"
+    if agent is None:
+        canonical = (
+            (root / "docs/methodology/VERSION").is_file()
+            and (root / "docs/methodology/agent-policy.yaml").is_file()
+            and (root / ".agents/skills/engineering/SKILL.md").is_file()
+        )
+        if canonical:
+            return "current"
     if any((root / target).exists() for target in ROOT_FILES.values()):
         return "partial"
     return "fresh"
 
 
-def source_actions(source: Path, root: Path, tier: int, status: str) -> list[Action]:
+def source_actions(source: Path, root: Path, tier: int, status: str, agent: str | None = None) -> list[Action]:
     actions: list[Action] = []
-    for relative, target in ROOT_FILES.items():
+    for relative, target in root_files_for(agent).items():
         destination = root / target
         if destination.is_file():
             actions.append(Action("preserve", relative, target, "existing project configuration"))
@@ -117,6 +181,10 @@ def source_actions(source: Path, root: Path, tier: int, status: str) -> list[Act
         actions.append(Action("sync", str(relative.relative_to(source)), f"docs/methodology/scripts/{relative.name}", "canonical control script"))
     for relative in sorted((source / "templates/workflow").glob("*.template")):
         actions.append(Action("sync", str(relative.relative_to(source)), f"docs/methodology/change-templates/{relative.name}", "change evidence template"))
+    for relative in sorted((source / "templates/compaction").glob("*")):
+        if relative.is_file():
+            target_name = relative.name.replace(".template", "")
+            actions.append(Action("sync", str(relative.relative_to(source)), f"docs/methodology/compaction/{target_name}", "portable compaction recovery resource"))
     actions.extend(
         Action("mkdir", None, target, "Harness workspace directory")
         for target in (
@@ -156,8 +224,8 @@ def source_actions(source: Path, root: Path, tier: int, status: str) -> list[Act
         if lessons_readme.is_file():
             actions.append(Action("create", str(lessons_readme.relative_to(source)), "docs/methodology/lessons/README.md", "lesson memory"))
 
-    for platform in (".claude/skills", ".agents/skills", ".opencode/skills"):
-        actions.append(Action("sync-tree", "templates/engineering", f"{platform}/engineering", "project-local Skill discovery"))
+    for platform in skill_platforms_for(agent):
+        actions.append(Action("sync-tree", "templates/engineering", f"{SKILL_ROOTS[platform]}/engineering", "selected Agent Skill discovery"))
 
     if status == "legacy":
         actions.append(Action("report", None, "legacy architecture", "preserve legacy files; route future work to engineering Skill"))
@@ -245,6 +313,7 @@ def render_plan(
     tier: int,
     status: str,
     actions: list[Action],
+    agent: str | None = None,
     installed_version: str | None = None,
     target_version: str | None = None,
 ) -> dict[str, object]:
@@ -270,6 +339,8 @@ def render_plan(
         "migration_manifest_errors": validate_release_manifest(source),
         "release_migrations": release_migrations(source, installed_version, target_version, version_relation),
         "tier": tier,
+        "agent": agent or "all",
+        "native_root_file": agent_target(agent)["root_file"] if agent else "AGENTS.md + CLAUDE.md",
         "read_only": True,
         "legacy_files_preserved": True,
         "legacy_markers": legacy_markers,
@@ -287,12 +358,27 @@ def copy_file(source: Path, target: Path, overwrite: bool) -> str:
     return "updated" if existed else "created"
 
 
-def validate_action_sources(source: Path, actions: list[Action]) -> list[str]:
+def ensure_safe_target(root: Path, target: Path) -> None:
+    """Reject existing symlinks anywhere in a lexical installer target path."""
+    root = Path(os.path.abspath(os.fspath(root)))
+    target = Path(os.path.abspath(os.fspath(target)))
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise OSError(f"target escapes project root: {target}") from exc
+    current = root
+    for part in target.relative_to(root).parts:
+        current /= part
+        if current.is_symlink():
+            raise OSError(f"refusing to follow symlinked target path: {current}")
+
+
+def validate_action_sources(source: Path, actions: list[Action], agent: str | None = None) -> list[str]:
     errors: list[str] = []
     for directory in ("core", "scripts", "templates/engineering", "templates/workflow"):
         if not (source / directory).is_dir():
             errors.append(f"missing required source directory: {directory}")
-    required = list(ROOT_FILES)
+    required = list(root_files_for(agent))
     required.append("VERSION")
     required.extend(path.relative_to(source).as_posix() for path in (source / "core").glob("*.md"))
     required.extend(
@@ -301,6 +387,7 @@ def validate_action_sources(source: Path, actions: list[Action]) -> list[str]:
         if path.name not in KIT_DEV_ONLY_SCRIPTS
     )
     required.extend(path.relative_to(source).as_posix() for path in (source / "templates/workflow").glob("*.template"))
+    required.extend(path.relative_to(source).as_posix() for path in (source / "templates/compaction").glob("*"))
     required.extend(path.relative_to(source).as_posix() for path in (source / "templates/production").glob("*.template"))
     if any(action.target == "docs/fitness/README.md" for action in actions):
         required.extend(path.relative_to(source).as_posix() for path in (source / "templates/fitness").glob("*.py.template"))
@@ -352,11 +439,14 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
                 results.append({"target": action.target, "result": action.kind})
                 continue
             if action.kind == "mkdir":
-                ensure_dir(root / action.target)
+                target = root / action.target
+                ensure_safe_target(root, target)
+                ensure_dir(target)
                 results.append({"target": action.target, "result": "ready"})
                 continue
             if action.kind == "create-empty":
                 target = root / action.target
+                ensure_safe_target(root, target)
                 if target.exists():
                     results.append({"target": action.target, "result": "preserved"})
                 else:
@@ -368,6 +458,7 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
             if action.kind == "sync-tree":
                 source_dir = source / "templates/engineering"
                 target_dir = root / action.target
+                ensure_safe_target(root, target_dir)
                 existed = target_dir.is_dir()
                 ensure_dir(target_dir)
                 copied = 0
@@ -375,6 +466,7 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
                 for item in source_dir.rglob("*"):
                     if item.is_file():
                         destination = target_dir / item.relative_to(source_dir)
+                        ensure_safe_target(root, destination)
                         ensure_dir(destination.parent)
                         snapshot(destination)
                         copied += 1
@@ -388,6 +480,7 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
                 continue
             source_file = source / action.source
             target = root / action.target
+            ensure_safe_target(root, target)
             overwrite = action.kind == "sync"
             snapshot(target)
             ensure_dir(target.parent)
@@ -412,19 +505,25 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
     return results
 
 
-def run_check(root: Path, source: Path) -> tuple[int, list[str]]:
+def run_check(root: Path, source: Path, agent: str | None = None) -> tuple[int, list[str]]:
+    context_files = ("AGENTS.md", "CLAUDE.md") if agent is None else (str(agent_target(agent)["root_file"]),)
     checks = [
-        ("check_root_context.py", ["check_root_context.py", str(root)]),
+        ("check_root_context.py", ["check_root_context.py", str(root), "--context-file", *context_files]),
         ("check_context_docs.py", ["check_context_docs.py", str(root)]),
         ("check_agent_policy.py", ["check_agent_policy.py", str(root / "docs/methodology/agent-policy.yaml")]),
         ("check_profile.py", ["check_profile.py", str(root / "docs/methodology/profile.yaml")]),
         ("resolve_context.py", ["resolve_context.py", "--root", str(root), "."]),
+        ("context_cache.py benchmark", ["context_cache.py", "benchmark", "--root", str(root), "--target", ".", "--iterations", "1000", "--json"]),
         ("check_fitness_protection.py", ["check_fitness_protection.py", "--root", str(root)]),
         ("check_change_workspace.py", ["check_change_workspace.py", "--root", str(root)]),
-        ("verify_skill.py (claude)", ["verify_skill.py", "engineering", "--project-root", str(root), "--platform", "claude", "--source-root", str(source)]),
-        ("verify_skill.py (codex)", ["verify_skill.py", "engineering", "--project-root", str(root), "--platform", "codex", "--source-root", str(source)]),
-        ("verify_skill.py (opencode)", ["verify_skill.py", "engineering", "--project-root", str(root), "--platform", "opencode", "--source-root", str(source)]),
     ]
+    checks.extend(
+        (
+            f"verify_skill.py ({platform})",
+            ["verify_skill.py", "engineering", "--project-root", str(root), "--platform", platform, "--source-root", str(source)],
+        )
+        for platform in skill_platforms_for(agent)
+    )
     failures: list[str] = []
     for name, command in checks:
         script = source / "scripts" / command[0]
@@ -437,7 +536,9 @@ def run_check(root: Path, source: Path) -> tuple[int, list[str]]:
     return (2 if failures else 0), failures
 
 
-CHECK_SUMMARY = "Deterministic checks passed: root context, context docs, agent policy, profile, context resolution, fitness protection, engineering Skill (claude, codex, opencode)."
+def check_summary(agent: str | None = None) -> str:
+    platforms = ", ".join(skill_platforms_for(agent)) or "no native Skill platform"
+    return f"Deterministic checks passed: root context, context docs, agent policy, profile, context resolution, stable context cache benchmark, fitness protection, engineering Skill ({platforms})."
 
 
 def print_apply_summary(plan: dict[str, object]) -> None:
@@ -455,6 +556,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path)
     parser.add_argument("--source-root", "--source", dest="source_root", type=Path, help="Harness kit checkout; defaults to this script's repository")
+    parser.add_argument("--agent", choices=tuple(AGENT_TARGETS))
     parser.add_argument("--tier", type=int, choices=(1, 2, 3), default=2)
     parser.add_argument("--name", help=argparse.SUPPRESS)
     parser.add_argument("--stack", help=argparse.SUPPRESS)
@@ -473,15 +575,16 @@ def main() -> int:
     if args.apply and not (root / ".git").exists():
         print(f"HARNESS ONBOARDING ERROR: target is not a Git repository: {root}", file=sys.stderr)
         return 2
-    status = detect_status(root)
+    agent = args.agent
+    status = detect_status(root, agent)
     effective_tier = min(args.tier, 2)
     installed_version = read_version(root / "docs/methodology/VERSION")
     target_version = read_version(source / "VERSION")
     version_relation = classify_versions(installed_version, target_version)
     if installed_version is None and status != "fresh":
         version_relation = "unversioned"
-    actions = source_actions(source, root, effective_tier, status)
-    plan = render_plan(root, source, effective_tier, status, actions, installed_version, target_version)
+    actions = source_actions(source, root, effective_tier, status, agent)
+    plan = render_plan(root, source, effective_tier, status, actions, agent, installed_version, target_version)
 
     if args.apply and version_relation in {"downgrade", "invalid", "unknown-target", "unversioned"}:
         plan["errors"] = [f"unsupported version transition: {version_relation}"]
@@ -492,7 +595,7 @@ def main() -> int:
         return 2
 
     if args.apply:
-        source_errors = validate_action_sources(source, actions)
+        source_errors = validate_action_sources(source, actions, agent)
         if source_errors:
             if args.as_json:
                 plan["errors"] = source_errors
@@ -516,7 +619,7 @@ def main() -> int:
         (root / "docs/methodology").mkdir(parents=True, exist_ok=True)
         (root / "docs/methodology/onboarding.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if args.check:
-        code, failures = run_check(root, source)
+        code, failures = run_check(root, source, agent)
         plan["check"] = {"status": "passed" if not failures else "failed", "failures": failures}
         receipt = root / "docs/methodology/onboarding.json"
         if receipt.is_file():
@@ -542,10 +645,10 @@ def main() -> int:
         print_apply_summary(plan)
         if args.check:
             print("ONBOARDING CHECK PASSED")
-            print(CHECK_SUMMARY)
+            print(check_summary(agent))
     elif args.check:
         print(f"ONBOARDING CHECK PASSED: {root}")
-        print(CHECK_SUMMARY)
+        print(check_summary(agent))
     else:
         print(f"HARNESS ONBOARDING PLAN: {status} project at {root}")
         for action in actions:

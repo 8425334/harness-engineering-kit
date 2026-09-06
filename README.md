@@ -19,6 +19,8 @@ Authority is fixed: system/developer/user → native instruction hierarchy → `
 
 Before code changes, `resolve_context.py` turns target paths and explicit `read_when` keywords into one fail-closed load order. Root context is mandatory; indexed ancestor `AI.md` files load before child details.
 
+`context_cache.py` derives a stable digest for that exact load order and records provider `hit`, `miss`, or `bypass` outcomes. The long-task reference benchmark enforces a measured target of at least 99.5%; it does not modify host Agent settings or claim provider behavior without telemetry.
+
 `docs/fitness/**` is a protected control plane. Project Agents may read and execute it but may not modify it; every non-bootstrap, non-syntax-repair change requires external human approval bound to the complete change digest, with no size exemption.
 
 ## Lifecycle
@@ -68,10 +70,11 @@ hek init
 
 The `npx` form is intentionally ephemeral; without a global install, use the full `npx --package ... hek init` command each time.
 
-Claude Code, Codex, Cursor, and Gemini CLI are supported. WorkBuddy and Trae Work are supported through a manual handoff because they do not expose a stable CLI contract. For scripts or explicit selection:
+Claude Code, Codex, OpenCode, Cursor, and Gemini CLI are supported. WorkBuddy and Trae Work are supported through a manual handoff because they do not expose a stable CLI contract. For scripts or explicit selection:
 
 ```bash
 npx --yes --package github:8425334/harness-engineering-kit hek init --agent codex --open --yes
+npx --yes --package github:8425334/harness-engineering-kit hek init --agent opencode --open --yes
 npx --yes --package github:8425334/harness-engineering-kit hek init --direct --yes
 npx --yes --package github:8425334/harness-engineering-kit hek agents
 npx --yes --package github:8425334/harness-engineering-kit hek init --plan --json
@@ -81,15 +84,15 @@ npx --yes --package github:8425334/harness-engineering-kit hek handoff --agent t
 
 For a desktop Agent without a CLI, first install the project controls with `hek init --direct --yes`, then run `hek handoff --agent workbuddy` or `hek handoff --agent trae-work`. Open the project in that Agent, copy the generated prompt, and let it read the repository's `AGENTS.md`/`CLAUDE.md` and `docs/methodology/agent-policy.yaml`. `handoff` never launches an unknown desktop application and never writes project files.
 
-Interactive `init` asks for the install scope first (full or lightweight, chosen with the arrow keys when `--tier` is not given), then opens the selected Agent and lets that Agent perform onboarding; pick the skip entry in the agent menu for the deterministic flow, and it falls back automatically when no agent is installed. Non-interactive runs never launch an external process unless `--open` is supplied, and `--open` there requires `--agent`/`HEK_AGENT`. `--json` switches to machine-readable output: it never opens an agent and never prompts — without `--yes` init prints the read-only plan and exits 2; with `--yes` it applies, checks, and prints one JSON receipt (including an `errors` receipt when apply fails and rolls back). Use `HEK_AGENT` instead of `--agent`, or `--prompt` to customize the first prompt sent to terminal agents (prompts are delivered as a single line so Windows `cmd.exe` cannot truncate them).
+Interactive `init` asks for the install scope first (full or lightweight, chosen with the arrow keys when `--tier` is not given), then opens the selected Agent and lets that Agent perform onboarding; the selected Agent receives only its native root adapter (`CLAUDE.md` for Claude Code, `AGENTS.md` for Codex/OpenCode and compatible Agents) and its matching project Skill. Pick the skip entry in the agent menu for the compatibility deterministic flow, which installs all supported adapters, and it falls back automatically when no agent is installed. Non-interactive runs never launch an external process unless `--open` is supplied, and `--open` there requires `--agent`/`HEK_AGENT`. `--json` switches to machine-readable output: it never opens an agent and never prompts — without `--yes` init prints the read-only plan and exits 2; with `--yes` it applies, checks, and prints one JSON receipt (including an `errors` receipt when apply fails and rolls back). Use `HEK_AGENT` instead of `--agent`, or `--prompt` to customize the first prompt sent to terminal agents (prompts are delivered as a single line so Windows `cmd.exe` cannot truncate them).
 
 A fresh project's placeholders must be filled from real repository facts before the post-init check passes, so an unattended `init --direct --yes` on a fresh project installs the scaffolding and then intentionally exits 2; upgrade runs on an already-configured project pass directly. Use `--no-check` for scaffold-only automation, or open an Agent (`--agent <id> --open --yes`) to complete the fill-and-check loop after the deterministic install.
 
-`hek init` is Agent-driven: it asks for the install scope, selects an installed Agent, opens that Agent's CLI in the resolved project root, and passes the Kit path plus the onboarding contract. The Agent reads project facts, generates the read-only plan, asks for confirmation, fills project-specific values, applies the canonical script, and runs deterministic checks. Tier 1 (lightweight) installs the core control plane, including the production policy scaffold referenced by `agent-policy.yaml`; the default Tier 2 (full) additionally installs Fitness gate scripts, Fitness rules, and lesson memory. Each run writes `docs/methodology/onboarding.json` with the source version, file digests, created/updated/preserved files, and verification result. Use `--direct` only when a headless deterministic install is explicitly wanted; it ignores `--agent` and `HEK_AGENT`.
+`hek init` is Agent-driven: it asks for the install scope, selects an installed Agent, opens that Agent's CLI in the resolved project root, and passes the Kit path plus the onboarding contract and selected Agent target. The Agent reads project facts, generates the read-only plan, asks for confirmation, fills project-specific values, applies the canonical script, and runs deterministic checks. Tier 1 (lightweight) installs the core control plane, including the production policy scaffold referenced by `agent-policy.yaml`; the default Tier 2 (full) additionally installs Fitness gate scripts, Fitness rules, and lesson memory. Each run writes `docs/methodology/onboarding.json` with the source version, file digests, created/updated/preserved files, and verification result. Use `--direct` only when a headless compatibility install is explicitly wanted; it ignores `--agent` and `HEK_AGENT` and installs all supported adapters.
 
 Version-aware upgrades compare the installed `docs/methodology/VERSION` with the Kit version, synchronize all canonical resources for lower-to-higher upgrades, block downgrades, and report any release-specific migration review. See [Versioning and Upgrades](docs/versioning.md).
 
-The check fails for an oversized or structurally invalid `ai.json`, unindexed or oversized `AI.md`, missing policy, placeholders, broken referenced paths, invalid task graphs/execution evidence, invalid profiles, missing Skill resources, stale installed Skill content, or unsupported platform adapters. Cursor and the legacy `ramer`, `fe-engineering`, and `multi-agent` entries are intentionally not supported.
+The check fails for an oversized or structurally invalid `ai.json`, unindexed or oversized `AI.md`, missing policy, placeholders, broken referenced paths, invalid task graphs/execution evidence, invalid profiles, missing Skill resources, stale installed Skill content, or unsupported platform adapters. The Engineering Skill is installed and checked for Claude Code, Codex, and OpenCode. Cursor and the legacy `ramer`, `fe-engineering`, and `multi-agent` entries are intentionally not supported.
 
 Resolve task context with the installed project controls. See the [CLI Onboarding Playbook](templates/engineering/references/onboarding.md) for the execution contract.
 

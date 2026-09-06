@@ -20,8 +20,8 @@ compaction/
 
 ```bash
 mkdir -p .claude/hooks .claude/compaction-state
-cp docs/methodology/templates/compaction/round-contract.md.template .claude/round-contract.md
-cp docs/methodology/templates/compaction/save-state.sh.template .claude/hooks/save-state.sh
+cp docs/methodology/compaction/round-contract.md .claude/round-contract.md
+cp docs/methodology/compaction/save-state.sh .claude/hooks/save-state.sh
 chmod +x .claude/hooks/save-state.sh
 ```
 
@@ -49,8 +49,8 @@ Codex 当前没有项目级 `PreCompact` / `SessionStart` hook，采用显式生
 
 ```bash
 mkdir -p .codex/hooks .codex-state
-cp docs/methodology/templates/compaction/codex-round-contract.md.template .codex/round-contract.md
-cp docs/methodology/templates/compaction/codex-save-state.sh.template .codex/hooks/save-state.sh
+cp docs/methodology/compaction/codex-round-contract.md .codex/round-contract.md
+cp docs/methodology/compaction/codex-save-state.sh .codex/hooks/save-state.sh
 chmod +x .codex/hooks/save-state.sh
 
 # 长轮次或预计压缩前

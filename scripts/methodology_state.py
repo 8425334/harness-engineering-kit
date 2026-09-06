@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from check_phase import check
-from methodology_common import append_event, append_event_line, append_failure_event, file_lock, read_json, utc_now, write_json
+from methodology_common import append_event_line, append_failure_event, file_lock, read_json, utc_now, write_json
 
 
 TRANSITIONS = {
@@ -67,53 +67,50 @@ def main() -> int:
     change_dir = args.change_dir.resolve()
     record_path = change_dir / "change.json"
     try:
-        record = read_json(record_path)
-    except (OSError, json.JSONDecodeError, ValueError) as exc:
-        print(f"Cannot read change record: {exc}")
-        return 2
-    if args.next_state not in TRANSITIONS.get(str(record.get("state")), set()):
-        print(f"INVALID TRANSITION: {record.get('state')} -> {args.next_state}")
-        return 2
-    if args.next_state in {"DRIFT_DETECTED", "CONTRACT_CHANGED", "REMEDIATING"} and not args.reason:
-        print("BLOCKED: exceptional transitions require --reason")
-        return 2
-    gate = GATE_FOR_STATE.get(args.next_state)
-    completed: dict[str, object] | None = None
-    if gate:
-        try:
-            errors = check(change_dir, gate)
-        except Exception as exc:  # a crashed gate must still record phase.blocked
-            errors = [f"gate check crashed: {exc!r}"]
-        if errors:
-            blocked_at = utc_now()
-            append_failure_event(change_dir, {
-                "schema_version": 1,
-                "event_id": failure_event_id(blocked_at, gate),
-                "change_id": record.get("change_id"),
-                "source": "phase",
-                "category": "fitness" if gate in {"EXECUTE", "REVIEW"} else "other",
-                "rule": f"phase-{gate.lower()}",
-                "message": "; ".join(errors),
-                "paths": [],
-                "evidence": [],
-                "signature": f"phase-{gate.lower()}",
-                "severity": "medium",
-                "actor": args.actor,
-                "at": blocked_at,
-            })
-            append_event(change_dir, event(record, "phase.blocked", args.actor, phase=gate, target_state=args.next_state, errors=errors))
-            print(f"BLOCKED: {args.next_state} requires {gate} evidence")
-            for error in errors:
-                print(f"- {error}")
-            return 2
-        completed = event(record, "phase.completed", args.actor, phase=gate, target_state=args.next_state)
-    try:
         with file_lock(record_path):
-            record = read_json(record_path)  # re-read under the lock for a consistent update
+            record = read_json(record_path)
             current = record.get("state")
             if args.next_state not in TRANSITIONS.get(str(current), set()):
                 print(f"INVALID TRANSITION: {current} -> {args.next_state}")
                 return 2
+            if args.next_state in {"DRIFT_DETECTED", "CONTRACT_CHANGED", "REMEDIATING"} and not args.reason:
+                print("BLOCKED: exceptional transitions require --reason")
+                return 2
+            gate = GATE_FOR_STATE.get(args.next_state)
+            completed: dict[str, object] | None = None
+            if gate:
+                try:
+                    errors = check(change_dir, gate)
+                except Exception as exc:  # a crashed gate must still record phase.blocked
+                    errors = [f"gate check crashed: {exc!r}"]
+                if errors:
+                    blocked_at = utc_now()
+                    failure = {
+                        "schema_version": 1,
+                        "event_id": failure_event_id(blocked_at, gate),
+                        "change_id": record.get("change_id"),
+                        "source": "phase",
+                        "category": "fitness" if gate in {"EXECUTE", "REVIEW"} else "other",
+                        "rule": f"phase-{gate.lower()}",
+                        "message": "; ".join(errors),
+                        "paths": [],
+                        "evidence": [],
+                        "signature": f"phase-{gate.lower()}",
+                        "severity": "medium",
+                        "actor": args.actor,
+                        "at": blocked_at,
+                    }
+                    append_failure_event(change_dir, failure)
+                    blocked_event = event(record, "phase.blocked", args.actor, phase=gate, target_state=args.next_state, errors=errors)
+                    append_event_line(change_dir, blocked_event)
+                    record.setdefault("events", []).append(blocked_event)
+                    record["updated_at"] = blocked_event["at"]
+                    write_json(record_path, record)
+                    print(f"BLOCKED: {args.next_state} requires {gate} evidence")
+                    for error in errors:
+                        print(f"- {error}")
+                    return 2
+                completed = event(record, "phase.completed", args.actor, phase=gate, target_state=args.next_state)
             transition = event(
                 record,
                 "methodology.transition",

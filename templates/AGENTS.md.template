@@ -18,6 +18,10 @@ Before changing code, read:
 
 Explicit task keywords may be added with repeated `--keyword <read_when>` arguments. Resolution failure blocks code changes.
 
+Use `context_cache.py fingerprint` for the stable context prefix and record
+provider results with `context_cache.py record`. This is repository telemetry;
+do not add unsupported host hooks or configuration keys.
+
 ## Requirement Reflection
 
 After drafting every task response, run the response-level requirement reflection in `docs/methodology/core/requirement-reflection.md` before sending it or taking a side effect. Classify the result as `ready`, `clarify`, `correct`, or `blocked`. For `clarify`, `correct`, or `blocked`, stop consequential work, explain the precise finding and evidence, give the best recommended option and short plan, and ask the user for confirmation. Never silently choose between materially different interpretations or expose private chain-of-thought. After confirmation changes the requirement, update the plan and repeat the reflection.

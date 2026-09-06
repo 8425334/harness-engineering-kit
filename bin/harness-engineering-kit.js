@@ -47,7 +47,7 @@ Options:
   --apply                Apply init without an interactive confirmation
   --plan                 Make init read-only
   --no-check             Skip the post-init check
-  --agent <name>         Agent to open or hand off (claude, codex, opencode, cursor, gemini, workbuddy, trae-work)
+  --agent <name>         Agent to open, hand off, and target for initialization (claude, codex, opencode, cursor, gemini, workbuddy, trae-work)
   --open                 Open the selected agent in non-interactive mode
   --no-open              Do not open an agent after init
   --direct               Run the deterministic installer; --agent and HEK_AGENT are ignored
@@ -62,8 +62,9 @@ Options:
 The init command never deletes legacy files or overwrites existing project facts.
 Interactive init asks for the install scope first (full or lightweight, chosen with
 the arrow keys when --tier is not given), then opens the selected Agent; pick the
-skip entry for the deterministic flow, and it falls back automatically when no agent
-is installed. Set HARNESS_PYTHON to select a Python executable explicitly.
+skip entry for the compatibility deterministic flow, and it falls back automatically
+when no agent is installed. A selected Agent receives only its native context entry
+and matching Skill. Set HARNESS_PYTHON to select a Python executable explicitly.
 `;
 }
 
@@ -263,6 +264,12 @@ function windowsArgument(value) {
   return `"${escaped}"`;
 }
 
+function agentArguments(agent, projectRoot, prompt) {
+  if (agent.kind === 'desktop') return [projectRoot];
+  if (agent.id === 'opencode') return ['run', prompt];
+  return [prompt];
+}
+
 function openAgent(agent, projectRoot, prompt) {
   if (!agent) return 0;
   let text = prompt || DEFAULT_AGENT_PROMPT;
@@ -278,9 +285,7 @@ function openAgent(agent, projectRoot, prompt) {
     // cmd.exe treats newlines as command separators; keep the argument single-line.
     text = String(text).replace(/\r?\n/g, ' ');
   }
-  const args = agent.kind === 'desktop'
-    ? [projectRoot]
-    : (agent.id === 'opencode' ? ['run', text] : [text]);
+  const args = agentArguments(agent, projectRoot, text);
   console.log(`正在打开 ${agent.label}…`);
   let child;
   if (process.platform === 'win32') {
@@ -324,6 +329,8 @@ function pythonCommand() {
 function buildAgentPrompt(projectRoot, options) {
   const sourceRoot = path.resolve(options.sourceRoot || packageRoot);
   const tier = options.tier || '2';
+  const agent = options.agent ? findAgent(options.agent) : null;
+  const agentOption = agent ? ` --agent ${agent.id}` : '';
   const approval = options.yes || options.apply
     ? '用户已通过命令参数预先确认；完成只读检查后直接应用。'
     : '先展示只读计划并等待用户明确确认，确认前不得写入文件。';
@@ -332,11 +339,12 @@ function buildAgentPrompt(projectRoot, options) {
     `目标项目：${projectRoot}`,
     `Kit 源码：${sourceRoot}`,
     `安装范围：Tier ${tier}（${tier === '1' ? '轻量接入' : '完整接入'}）`,
+    agent ? `初始化目标：${agent.label}，只生成该 Agent 的原生上下文入口和 Skill` : '未指定 Agent 时生成全部兼容的原生上下文入口和 Skill',
     approval,
     '先读取项目事实（包括现有的 AGENTS.md、CLAUDE.md、ai.json、AI.md 和项目配置），识别真实技术栈、命令、目录边界与已有接入状态；Tier 只表示本次期望的安装范围，不表示 Tier 1 已经安装，任何低版本到高版本升级都必须核对并同步所有 Tier 1 核心资源。',
     '每次回答或执行前都进行需求反思：将结果判定为 ready、clarify、correct 或 blocked；如果需求有会影响结果的歧义、与仓库事实冲突、缺少授权或证据，先停止有后果的操作，说明依据，给出最佳方案并向用户确认，不要暴露私有思维链。',
-    `使用 canonical onboarding 脚本生成计划：${pythonCommand()} "${path.join(sourceRoot, 'scripts', 'onboard.py')}" --project-root "${projectRoot}" --source-root "${sourceRoot}" --tier ${tier} --plan --json`,
-    '根据项目事实补齐或调整配置占位符；保留已有配置和旧入口，不要盲目覆盖或删除。得到确认后，使用同一脚本执行 --apply，再执行 --check。',
+    `使用 canonical onboarding 脚本生成计划：${pythonCommand()} "${path.join(sourceRoot, 'scripts', 'onboard.py')}" --project-root "${projectRoot}" --source-root "${sourceRoot}" --tier ${tier}${agentOption} --plan --json`,
+    `根据项目事实补齐或调整配置占位符；保留已有配置和旧入口，不要盲目覆盖或删除。得到确认后，使用同一脚本${agent ? `并始终带上${agentOption}` : '并保持未指定 Agent'}执行 --apply，再执行 --check。`,
     '最后汇报创建、更新、保留的文件、检查结果和仍需人工决策的事项。',
   ];
   // Keep the prompt single-line: Windows passes it through cmd.exe, where a
@@ -361,7 +369,7 @@ function handoffPayload(projectRoot, options, plan) {
 }
 
 function runHandoff(options) {
-  const planned = invoke('plan', { ...options, json: true }, true);
+  const planned = invoke('plan', { ...options, json: true, forwardAgent: true }, true);
   if (planned.status !== 0) {
     process.stdout.write(planned.stdout || '');
     process.stderr.write(planned.stderr || '');
@@ -394,6 +402,11 @@ function baseArgs(options) {
   const args = [];
   if (options.projectRoot) args.push('--project-root', path.resolve(options.projectRoot));
   args.push('--source-root', path.resolve(options.sourceRoot || packageRoot));
+  const selectedAgent = options.agent || process.env.HEK_AGENT;
+  if (!options.direct && selectedAgent && (options.forwardAgent || !options.json)) {
+    const agent = findAgent(selectedAgent);
+    if (agent) args.push('--agent', agent.id);
+  }
   if (options.tier) args.push('--tier', options.tier);
   if (options.json) args.push('--json');
   return args;
@@ -468,14 +481,20 @@ function printPlaceholderHint(output) {
 async function runInit(options) {
   const interactive = process.stdin.isTTY && process.stdout.isTTY;
   let deferredAgent = null;
+  let selectedAgent = null;
   if (options.direct && (options.agent || process.env.HEK_AGENT)) {
     console.error('已指定 --direct：忽略 --agent/HEK_AGENT，执行确定性安装。');
   }
   if (options.direct && options.open && !options.noOpen) {
     console.error('已指定 --direct：忽略 --open。');
   }
+  const requestedAgent = options.agent || process.env.HEK_AGENT;
+  if (!options.direct && requestedAgent && !findAgent(requestedAgent)) {
+    console.error(`不支持的 AI Agent: ${requestedAgent}。使用 --list-agents 查看选项。`);
+    return 2;
+  }
   if (options.json && !options.direct && (options.agent || process.env.HEK_AGENT || options.open)) {
-    console.error('--json 机器模式不启动 Agent：已忽略 --agent/--open/HEK_AGENT。');
+    console.error('--json 机器模式不启动 Agent：仅忽略 --open，保留 --agent/HEK_AGENT 作为初始化目标。');
   }
   if (options.open && !options.direct && !options.noOpen && !options.agent && !process.env.HEK_AGENT && !interactive && !options.json) {
     console.error('错误: 非交互环境使用 --open 时必须通过 --agent 或 HEK_AGENT 指定要打开的 Agent。');
@@ -486,7 +505,17 @@ async function runInit(options) {
     options.tier = await selectTier();
   }
 
-  const planned = invoke('plan', { ...options, json: true }, true);
+  if (interactive && !options.json && !options.direct && !requestedAgent) {
+    try {
+      selectedAgent = await selectAgent(options);
+      if (selectedAgent) options.agent = selectedAgent.id;
+    } catch (error) {
+      console.error(`Agent 选择失败: ${error.message}`);
+      return 2;
+    }
+  }
+
+  const planned = invoke('plan', { ...options, json: true, forwardAgent: true }, true);
   if (planned.status !== 0) {
     process.stdout.write(planned.stdout || '');
     process.stderr.write(planned.stderr || '');
@@ -504,13 +533,7 @@ async function runInit(options) {
   }
 
   if (!options.direct && !options.json && interactive) {
-    let agent;
-    try {
-      agent = await selectAgent(options);
-    } catch (error) {
-      console.error(`Agent 选择失败: ${error.message}`);
-      return 2;
-    }
+    const agent = selectedAgent || (requestedAgent ? findAgent(requestedAgent) : null);
     if (agent && !options.noOpen) {
       if (agent.kind === 'manual') deferredAgent = agent;
       else return openAgent(agent, projectRoot, buildAgentPrompt(projectRoot, options));
@@ -544,7 +567,7 @@ async function runInit(options) {
 
   if (options.json) {
     const modes = options.noCheck ? ['apply'] : ['apply', 'check'];
-    const receipt = invoke(modes, { ...options, json: true }, true);
+    const receipt = invoke(modes, { ...options, json: true, forwardAgent: true }, true);
     process.stdout.write(receipt.stdout || '');
     process.stderr.write(receipt.stderr || '');
     if (receipt.status !== 0) printPlaceholderHint(receipt.stdout);
@@ -604,7 +627,7 @@ async function main(argv = process.argv.slice(2)) {
     }
     if (parsed.command === 'init') return await runInit(parsed.options);
     if (parsed.command === 'handoff') return runHandoff(parsed.options);
-    if (parsed.command === 'plan') return invoke('plan', { ...parsed.options, json: true }).status || 0;
+    if (parsed.command === 'plan') return invoke('plan', { ...parsed.options, json: true, forwardAgent: true }).status || 0;
     if (parsed.command === 'check') return invoke('check', parsed.options).status || 0;
     throw new Error(`unknown command: ${parsed.command}`);
   } catch (error) {
@@ -622,6 +645,7 @@ module.exports = {
   DEFAULT_AGENT_PROMPT,
   TIER_CHOICES,
   agentMenuItems,
+  agentArguments,
   availableAgents,
   buildAgentPrompt,
   commandAvailable,

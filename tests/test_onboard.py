@@ -34,6 +34,8 @@ def fill_placeholders(root: Path) -> None:
     for relative in ("AGENTS.md", "CLAUDE.md", "ai.json", "AI.md",
                      "docs/methodology/agent-policy.yaml", "docs/methodology/profile.yaml"):
         target = root / relative
+        if not target.is_file():
+            continue
         text = target.read_text(encoding="utf-8")
         for placeholder, value in PLACEHOLDER_VALUES.items():
             text = text.replace(placeholder, value)
@@ -152,6 +154,26 @@ class OnboardTests(unittest.TestCase):
         self.assertIn("docs/methodology/production/change-record.template.json", targets)
         self.assertNotIn("docs/fitness/scripts/fitness.py", targets)
 
+    def test_install_plan_includes_opencode_skill(self) -> None:
+        actions = onboard.source_actions(self.source, self.source / "tests", 1, "fresh")
+        targets = {action.target for action in actions}
+        self.assertIn(".opencode/skills/engineering", targets)
+
+    def test_selected_agent_gets_only_its_native_context_and_skill(self) -> None:
+        claude_targets = {action.target for action in onboard.source_actions(self.source, self.source / "tests", 1, "fresh", "claude")}
+        self.assertIn("CLAUDE.md", claude_targets)
+        self.assertNotIn("AGENTS.md", claude_targets)
+        self.assertIn(".claude/skills/engineering", claude_targets)
+        self.assertNotIn(".agents/skills/engineering", claude_targets)
+        self.assertNotIn(".opencode/skills/engineering", claude_targets)
+
+        codex_targets = {action.target for action in onboard.source_actions(self.source, self.source / "tests", 1, "fresh", "codex")}
+        self.assertIn("AGENTS.md", codex_targets)
+        self.assertNotIn("CLAUDE.md", codex_targets)
+        self.assertIn(".agents/skills/engineering", codex_targets)
+        self.assertNotIn(".claude/skills/engineering", codex_targets)
+        self.assertNotIn(".opencode/skills/engineering", codex_targets)
+
     def test_install_plan_includes_requirement_reflection_core(self) -> None:
         actions = onboard.source_actions(self.source, self.source / "tests", 1, "fresh")
         targets = {action.target for action in actions}
@@ -159,6 +181,14 @@ class OnboardTests(unittest.TestCase):
         skill = (self.source / "templates/engineering/SKILL.md").read_text(encoding="utf-8")
         self.assertIn("## Requirement Reflection", skill)
         self.assertIn("docs/methodology/core/requirement-reflection.md", skill)
+
+    def test_install_plan_includes_cache_protocol_and_portable_compaction(self) -> None:
+        actions = onboard.source_actions(self.source, self.source / "tests", 1, "fresh")
+        targets = {action.target for action in actions}
+        self.assertIn("docs/methodology/scripts/context_cache.py", targets)
+        self.assertIn("docs/methodology/compaction/README.md", targets)
+        self.assertIn("docs/methodology/compaction/codex-save-state.sh", targets)
+        self.assertNotIn(".claude/hooks/save-state.sh", targets)
 
     def test_tier_one_install_passes_agent_policy_check(self) -> None:
         """A Tier 1 install with filled placeholders must satisfy check_agent_policy."""
@@ -247,6 +277,24 @@ class OnboardTests(unittest.TestCase):
                     onboard.apply_actions(root, self.source, actions)
             self.assertEqual(target.read_text(encoding="utf-8"), "old\n")
 
+    def test_apply_rejects_symlinked_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "project"
+            outside = Path(directory) / "outside"
+            root.mkdir()
+            outside.mkdir()
+            (root / "docs").mkdir()
+            (root / "docs/methodology").symlink_to(outside, target_is_directory=True)
+            sentinel = outside / "sentinel.txt"
+            sentinel.write_text("keep\n", encoding="utf-8")
+            actions = [onboard.Action("create", "VERSION", "docs/methodology/VERSION", "test")]
+
+            with self.assertRaises(OSError):
+                onboard.apply_actions(root, self.source, actions)
+
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep\n")
+            self.assertFalse((outside / "VERSION").exists())
+
     def test_source_preflight_reports_missing_assets(self) -> None:
         action = onboard.Action("create", "missing.txt", "missing.txt", "test")
         errors = onboard.validate_action_sources(self.source, [action])
@@ -274,10 +322,10 @@ class OnboardTests(unittest.TestCase):
             actions = onboard.source_actions(self.source, root, 1, "fresh")
             first = onboard.apply_actions(root, self.source, actions)
             verbs = {entry["target"]: entry["result"] for entry in first if entry["target"].endswith("skills/engineering")}
-            self.assertEqual(sorted(verbs.values()), ["created", "created"])
+            self.assertEqual(sorted(verbs.values()), ["created", "created", "created"])
             second = onboard.apply_actions(root, self.source, actions)
             verbs = {entry["target"]: entry["result"] for entry in second if entry["target"].endswith("skills/engineering")}
-            self.assertEqual(sorted(verbs.values()), ["unchanged", "unchanged"])
+            self.assertEqual(sorted(verbs.values()), ["unchanged", "unchanged", "unchanged"])
 
     def test_json_apply_failure_still_prints_a_receipt(self) -> None:
         """M2: machine mode emits one JSON receipt even when apply rolls back."""
@@ -311,6 +359,16 @@ class OnboardTests(unittest.TestCase):
             self.assertEqual(passed.returncode, 0, passed.stdout)
             self.assertIn("ONBOARDING CHECK PASSED", passed.stdout)
             self.assertNotIn("Read-only plan", passed.stdout)
+
+    def test_selected_agent_check_does_not_require_other_native_adapter(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            onboard.apply_actions(root, self.source, onboard.source_actions(self.source, root, 1, "fresh", "claude"))
+            fill_placeholders(root)
+            self.assertFalse((root / "AGENTS.md").exists())
+            checked = run_onboard("--project-root", str(root), "--source-root", str(self.source), "--agent", "claude", "--check")
+            self.assertEqual(checked.returncode, 0, checked.stdout)
 
 
 if __name__ == "__main__":
