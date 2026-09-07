@@ -19,7 +19,17 @@ const AGENTS = [
   { id: 'trae-work', label: 'Trae Work', aliases: ['trae', 'trae work'], command: null, kind: 'manual' },
 ];
 
-const DEFAULT_AGENT_PROMPT = '请在当前项目完成 Harness Engineering Kit 初始化：先读取项目中的 AGENTS.md 或 CLAUDE.md 与 docs/methodology/agent-policy.yaml，再根据需要继续工作。';
+const DEFAULT_AGENT_PROMPT = '直接按用户语言理解并回答，不做中英中转译。读取当前项目的 AGENTS.md 或 CLAUDE.md 及 docs/methodology/agent-policy.yaml，完成 Harness Engineering Kit 初始化。';
+
+const AGENT_PROMPT_PREFIX = [
+  '任务：完成 Harness Engineering Kit 初始化或增量升级',
+  '语言：直接按用户语言理解并同语回答，不做中英中转译',
+  '上下文：读取项目事实（AGENTS.md/CLAUDE.md、ai.json、AI.md、项目配置），只加载当前任务需要的事实',
+  '流程：先执行只读计划，获批后应用并检查',
+  '约束：保留现有配置和旧入口；不臆造技术栈、命令、路径或权限；Tier 是本次目标范围，升级须同步全部 Tier 1 核心资源',
+  '异常：存在影响结果的歧义、事实冲突或缺少授权时，停止有后果的操作，说明依据并请求确认',
+  '输出：仅报告创建/更新/保留文件、检查结果和待决事项，不复述输入',
+].join('；');
 
 const TIER_CHOICES = [
   { value: '2', label: '完整接入（Tier 2，默认）', hint: '核心控制面 + Fitness 门禁 + 经验记忆' },
@@ -331,25 +341,12 @@ function buildAgentPrompt(projectRoot, options) {
   const tier = options.tier || '2';
   const agent = options.agent ? findAgent(options.agent) : null;
   const agentOption = agent ? ` --agent ${agent.id}` : '';
-  const approval = options.yes || options.apply
-    ? '用户已通过命令参数预先确认；完成只读检查后直接应用。'
-    : '先展示只读计划并等待用户明确确认，确认前不得写入文件。';
-  const parts = [
-    '请作为 Harness Engineering Kit 的项目接入 Agent，完成当前项目初始化或增量升级。',
-    `目标项目：${projectRoot}`,
-    `Kit 源码：${sourceRoot}`,
-    `安装范围：Tier ${tier}（${tier === '1' ? '轻量接入' : '完整接入'}）`,
-    agent ? `初始化目标：${agent.label}，只生成该 Agent 的原生上下文入口和 Skill` : '未指定 Agent 时生成全部兼容的原生上下文入口和 Skill',
-    approval,
-    '先读取项目事实（包括现有的 AGENTS.md、CLAUDE.md、ai.json、AI.md 和项目配置），识别真实技术栈、命令、目录边界与已有接入状态；Tier 只表示本次期望的安装范围，不表示 Tier 1 已经安装，任何低版本到高版本升级都必须核对并同步所有 Tier 1 核心资源。',
-    '每次回答或执行前都进行需求反思：将结果判定为 ready、clarify、correct 或 blocked；如果需求有会影响结果的歧义、与仓库事实冲突、缺少授权或证据，先停止有后果的操作，说明依据，给出最佳方案并向用户确认，不要暴露私有思维链。',
-    `使用 canonical onboarding 脚本生成计划：${pythonCommand()} "${path.join(sourceRoot, 'scripts', 'onboard.py')}" --project-root "${projectRoot}" --source-root "${sourceRoot}" --tier ${tier}${agentOption} --plan --json`,
-    `根据项目事实补齐或调整配置占位符；保留已有配置和旧入口，不要盲目覆盖或删除。得到确认后，使用同一脚本${agent ? `并始终带上${agentOption}` : '并保持未指定 Agent'}执行 --apply，再执行 --check。`,
-    '最后汇报创建、更新、保留的文件、检查结果和仍需人工决策的事项。',
-  ];
+  const approval = options.yes || options.apply ? '已预授权' : '计划后待确认';
+  const target = agent ? `${agent.id}（仅该 Agent 原生入口与 Skill）` : '全部兼容入口与 Skill';
+  const command = `${pythonCommand()} "${path.join(sourceRoot, 'scripts', 'onboard.py')}" --project-root "${projectRoot}" --source-root "${sourceRoot}" --tier ${tier}${agentOption} --plan --json`;
   // Keep the prompt single-line: Windows passes it through cmd.exe, where a
   // newline would split the command and truncate the onboarding contract.
-  return options.prompt || parts.map((part) => part.replace(/[。]$/, '')).join('；') + '。';
+  return options.prompt || `${AGENT_PROMPT_PREFIX}；参数：范围=Tier ${tier}（${tier === '1' ? '轻量接入' : '完整接入'}），目标=${target}，授权=${approval}；计划命令：${command}；获批后将 --plan 依次替换为 --apply、--check。`;
 }
 
 function handoffPayload(projectRoot, options, plan) {
@@ -642,6 +639,7 @@ if (require.main === module) {
 
 module.exports = {
   AGENTS,
+  AGENT_PROMPT_PREFIX,
   DEFAULT_AGENT_PROMPT,
   TIER_CHOICES,
   agentMenuItems,

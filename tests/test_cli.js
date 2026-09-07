@@ -138,19 +138,29 @@ test('init can apply then hand off to a no-CLI Agent', () => {
 
 test('builds an agent-first onboarding prompt', () => {
   const prompt = cliModule.buildAgentPrompt('/tmp/target-project', { sourceRoot: root, tier: '1' });
-  assert.match(prompt, /读取项目事实/);
-  assert.match(prompt, /Tier 只表示本次期望的安装范围/);
-  assert.match(prompt, /任何低版本到高版本升级都必须核对并同步所有 Tier 1 核心资源/);
+  assert.match(prompt, /只加载当前任务需要的事实/);
+  assert.match(prompt, /Tier 是本次目标范围/);
+  assert.match(prompt, /升级须同步全部 Tier 1 核心资源/);
   assert.match(prompt, /--plan --json/);
   assert.match(prompt, /--apply/);
-  assert.match(prompt, /等待用户明确确认/);
-  assert.match(prompt, /需求反思/);
-  assert.match(prompt, /clarify/);
-  assert.match(prompt, /给出最佳方案并向用户确认/);
+  assert.match(prompt, /授权=计划后待确认/);
+  assert.match(prompt, /不做中英中转译/);
+  assert.match(prompt, /不复述输入/);
+  assert.ok(prompt.startsWith(cliModule.AGENT_PROMPT_PREFIX));
+  assert.ok(prompt.length <= 650, `default prompt is too verbose: ${prompt.length} characters`);
   // M3: cmd.exe splits commands at newlines, so the prompt must stay single-line.
   assert.ok(!prompt.includes('\n'), 'agent prompt must be a single line');
   const custom = cliModule.buildAgentPrompt('/tmp/target-project', { sourceRoot: root, prompt: 'line1\nline2' });
   assert.equal(custom, 'line1\nline2');
+});
+
+test('keeps static prompt instructions before dynamic handoff data', () => {
+  const first = cliModule.buildAgentPrompt('/tmp/project-a', { sourceRoot: root, tier: '1' });
+  const second = cliModule.buildAgentPrompt('/tmp/project-b', { sourceRoot: root, tier: '2', agent: 'codex' });
+  assert.ok(first.startsWith(`${cliModule.AGENT_PROMPT_PREFIX}；参数：`));
+  assert.ok(second.startsWith(`${cliModule.AGENT_PROMPT_PREFIX}；参数：`));
+  assert.ok(first.indexOf('/tmp/project-a') > first.indexOf('参数：'));
+  assert.ok(second.indexOf('/tmp/project-b') > second.indexOf('参数：'));
 });
 
 test('json mode warns instead of failing when --agent/--open is supplied', () => {
