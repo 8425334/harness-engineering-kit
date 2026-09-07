@@ -4,6 +4,13 @@ All notable changes to the AI-Assisted Development Methodology will be documente
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- Added cross-platform CI coverage for Linux, macOS, and Windows across Node.js 18 and 22.
+- Added a package-consumer regression test that packs, installs, and runs the distributable CLI from an isolated project.
+- Added a single `npm run verify` release-facing command for unit tests, package validation, Skill contract checks, and full lifecycle smoke coverage.
+
 ## [0.4.0] — 2026-09-06
 
 ### Added

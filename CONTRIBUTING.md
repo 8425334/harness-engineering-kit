@@ -35,7 +35,10 @@ Thanks for your interest in contributing to the AI-Assisted Development Methodol
 ## Development
 
 ```bash
-# Preview onboarding changes (read-only)
+# Run unit, package-consumer, Skill contract, and lifecycle checks
+npm run verify
+
+# Preview onboarding changes separately (read-only)
 python3 scripts/onboard.py --plan --json
 ```
 

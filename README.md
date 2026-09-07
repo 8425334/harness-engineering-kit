@@ -132,3 +132,13 @@ Use `preflight_lessons.py` before Explore closes, `record_failure.py` for Fitnes
 - [Transplant Guide](TRANSPLANT.md)
 
 `manifest.yaml` is a Harness availability contract, not a claim that every platform has a native manifest format. Platform auto-selection must be observed at runtime; deterministic installation and resource integrity are verified by `verify_skill.py` and `smoke_test_skills.py`.
+
+## Verification
+
+Run the complete release-facing verification locally:
+
+```bash
+npm run verify
+```
+
+This covers the Node CLI, Python control scripts, an install-and-run test of the generated npm package, the Engineering Skill source contract, and the backend/frontend/fullstack lifecycle smoke test. CI runs the unit and package-consumer tests on Linux, macOS, and Windows, including the minimum supported Node.js 18 release.

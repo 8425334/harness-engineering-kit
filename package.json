@@ -31,8 +31,10 @@
     "LICENSE"
   ],
   "scripts": {
-    "test:node": "node --test tests/test_cli.js",
+    "test:node": "node --test tests/test_cli.js tests/test_package.js",
     "test:python": "python3 -m unittest discover -s tests -p 'test_*.py'",
-    "test": "npm run test:node && npm run test:python"
+    "test:skill": "python3 scripts/verify_skill.py engineering --source-only && python3 scripts/smoke_test_skills.py",
+    "test": "npm run test:node && npm run test:python",
+    "verify": "npm test && npm run test:skill"
   }
 }
