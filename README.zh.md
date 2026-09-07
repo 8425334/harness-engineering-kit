@@ -4,6 +4,8 @@
 
 English documentation: [README.md](README.md)
 
+> 📖 **[Harness AI Coding 实战教程](docs/ai-coding-tutorial.zh.md)**：从"为什么需要工程化"到用真实命令跑通一次非平凡变更的完整导览（含全栈并行进阶；图表以飞书在线版白板呈现）。
+
 ## 架构
 
 | 层 | 负责 | 不负责 |
@@ -117,6 +119,7 @@ Explore 结束前运行 `preflight_lessons.py`；用 `record_failure.py` 记录 
 
 ## 权威文档
 
+- [AI Coding 实战教程](docs/ai-coding-tutorial.zh.md)
 - [Harness 架构](i18n/zh/core/harness-engineering.md)
 - [变更生命周期](i18n/zh/core/change-lifecycle.md)
 - [SDD 工作流](i18n/zh/core/sdd-workflow.md)

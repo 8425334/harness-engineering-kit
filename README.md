@@ -4,6 +4,8 @@ A repository-native control system for AI-assisted software changes. It makes co
 
 Chinese documentation: [README.zh.md](README.zh.md)
 
+> 📖 [Harness AI Coding Tutorial (Chinese)](docs/ai-coding-tutorial.zh.md): a hands-on walkthrough from "why engineering" to running one non-trivial change with real commands.
+
 ## Architecture
 
 | Layer | Owns | Must not own |
@@ -117,6 +119,7 @@ Use `preflight_lessons.py` before Explore closes, `record_failure.py` for Fitnes
 
 ## Canonical Documents
 
+- [Harness AI Coding Tutorial (Chinese)](docs/ai-coding-tutorial.zh.md)
 - [Harness Architecture](core/harness-engineering.md)
 - [Change Lifecycle](core/change-lifecycle.md)
 - [SDD Workflow](core/sdd-workflow.md)
