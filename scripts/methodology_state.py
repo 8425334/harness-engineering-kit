@@ -69,7 +69,27 @@ def main() -> int:
     try:
         with file_lock(record_path):
             record = read_json(record_path)
+            events_path = change_dir / "evidence" / "events.jsonl"
+            failure_path = change_dir / "evidence" / "failure-events.jsonl"
+            original_record = record_path.read_bytes()
+            original_events = events_path.read_bytes() if events_path.is_file() else None
+            original_failures = failure_path.read_bytes() if failure_path.is_file() else None
+
+            def restore() -> None:
+                record_path.write_bytes(original_record)
+                if original_events is None:
+                    events_path.unlink(missing_ok=True)
+                else:
+                    events_path.write_bytes(original_events)
+                if original_failures is None:
+                    failure_path.unlink(missing_ok=True)
+                else:
+                    failure_path.write_bytes(original_failures)
+
             current = record.get("state")
+            if not isinstance(record.get("events", []), list):
+                print("Cannot update change record: events must be an array")
+                return 2
             if args.next_state not in TRANSITIONS.get(str(current), set()):
                 print(f"INVALID TRANSITION: {current} -> {args.next_state}")
                 return 2
@@ -100,12 +120,16 @@ def main() -> int:
                         "actor": args.actor,
                         "at": blocked_at,
                     }
-                    append_failure_event(change_dir, failure)
-                    blocked_event = event(record, "phase.blocked", args.actor, phase=gate, target_state=args.next_state, errors=errors)
-                    append_event_line(change_dir, blocked_event)
-                    record.setdefault("events", []).append(blocked_event)
-                    record["updated_at"] = blocked_event["at"]
-                    write_json(record_path, record)
+                    try:
+                        append_failure_event(change_dir, failure)
+                        blocked_event = event(record, "phase.blocked", args.actor, phase=gate, target_state=args.next_state, errors=errors)
+                        append_event_line(change_dir, blocked_event)
+                        record.setdefault("events", []).append(blocked_event)
+                        record["updated_at"] = blocked_event["at"]
+                        write_json(record_path, record)
+                    except (OSError, UnicodeError, ValueError):
+                        restore()
+                        raise
                     print(f"BLOCKED: {args.next_state} requires {gate} evidence")
                     for error in errors:
                         print(f"- {error}")
@@ -117,14 +141,18 @@ def main() -> int:
                 args.actor,
                 **{"from": current, "to": args.next_state, "evidence": args.evidence, "reason": args.reason},
             )
-            if completed is not None:
-                append_event_line(change_dir, completed)
-                record.setdefault("events", []).append(completed)
-            append_event_line(change_dir, transition)
-            record["state"] = args.next_state
-            record["updated_at"] = transition["at"]
-            record.setdefault("events", []).append(transition)
-            write_json(record_path, record)
+            try:
+                if completed is not None:
+                    append_event_line(change_dir, completed)
+                    record.setdefault("events", []).append(completed)
+                append_event_line(change_dir, transition)
+                record["state"] = args.next_state
+                record["updated_at"] = transition["at"]
+                record.setdefault("events", []).append(transition)
+                write_json(record_path, record)
+            except (OSError, UnicodeError, ValueError):
+                restore()
+                raise
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(f"Cannot update change record: {exc}")
         return 2

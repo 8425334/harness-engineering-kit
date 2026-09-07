@@ -98,6 +98,75 @@ def baseline_has_fitness(project_root: Path, base_ref: str | None) -> bool:
     return bool(result.stdout.strip(b"\0"))
 
 
+def canonical_bootstrap_receipt(project_root: Path, changes: Mapping[str, str]) -> bool:
+    """Accept first-time Fitness files only when onboarding recorded them."""
+    if not changes or any(status != "A" for status in changes.values()):
+        return False
+    receipt = project_root / "docs/methodology/onboarding.json"
+    try:
+        payload = json.loads(receipt.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+        return False
+    if Path(str(payload.get("project_root", ""))).resolve() != project_root.resolve():
+        return False
+    if payload.get("read_only") is not False or payload.get("tier") != 2:
+        return False
+    if not isinstance(payload.get("confirmed_at"), str) or not payload["confirmed_at"].strip():
+        return False
+    actions = payload.get("actions")
+    results = payload.get("results")
+    if not isinstance(actions, list) or not isinstance(results, list):
+        return False
+    fitness_actions = [
+        item for item in actions
+        if isinstance(item, dict) and str(item.get("target", "")).startswith(PROTECTED_PREFIX)
+    ]
+    fitness_results = [
+        item for item in results
+        if isinstance(item, dict) and str(item.get("target", "")).startswith(PROTECTED_PREFIX)
+    ]
+    action_targets = [str(item.get("target")) for item in fitness_actions]
+    result_targets = [str(item.get("target")) for item in fitness_results]
+    if len(action_targets) != len(set(action_targets)) or len(result_targets) != len(set(result_targets)):
+        return False
+    if any(item.get("kind") not in {"create", "create-empty"} for item in fitness_actions):
+        return False
+    if any(item.get("result") != "created" for item in fitness_results):
+        return False
+    if set(changes) != set(action_targets) or set(changes) != set(result_targets):
+        return False
+    if not all(path.startswith(PROTECTED_PREFIX) for path in changes):
+        return False
+    receipts = {str(item["target"]): item for item in fitness_results}
+    for path, status in changes.items():
+        if status != "A":
+            return False
+        receipt_digest = receipts[path].get("sha256")
+        if not isinstance(receipt_digest, str) or len(receipt_digest) != 64:
+            return False
+        target = project_root / path
+        if target.is_symlink() or not target.is_file():
+            return False
+        current = project_root
+        for part in Path(path).parts:
+            current /= part
+            if current.is_symlink():
+                return False
+        try:
+            target.resolve().relative_to(project_root.resolve())
+        except (OSError, ValueError):
+            return False
+        try:
+            current_digest = hashlib.sha256(target.read_bytes()).hexdigest()
+        except (OSError, UnicodeError):
+            return False
+        if receipt_digest != current_digest:
+            return False
+    return True
+
+
 def post_change_digest(project_root: Path, status: str, relative: str) -> str:
     path = project_root / relative
     if status == "D" or not path.exists():
@@ -169,7 +238,7 @@ def check(project_root: Path, base: str | None = None, environment: Mapping[str,
         return {"status": "PASS", "reason": "unchanged", "base_commit": base_commit, "changes": []}
 
     digest, records = change_digest(project_root, base_commit, changes)
-    if not baseline_has_fitness(project_root, base_ref) and all(status == "A" for status in changes.values()):
+    if not baseline_has_fitness(project_root, base_ref) and canonical_bootstrap_receipt(project_root, changes):
         return {"status": "PASS", "reason": "initial-bootstrap", "base_commit": base_commit, "digest": digest, "changes": records}
     if is_python_syntax_repair(project_root, base_ref, changes):
         return {"status": "PASS", "reason": "python-syntax-repair", "base_commit": base_commit, "digest": digest, "changes": records}

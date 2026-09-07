@@ -42,6 +42,14 @@ def meaningful(item: Any) -> bool:
     return True
 
 
+def meaningful_text(item: Any) -> bool:
+    return isinstance(item, str) and bool(item.strip()) and "{{" not in item and "}}" not in item
+
+
+def meaningful_text_list(item: Any) -> bool:
+    return isinstance(item, list) and bool(item) and all(meaningful_text(entry) for entry in item)
+
+
 def is_int(item: Any) -> bool:
     """True only for real integers; JSON booleans are not rollout counts."""
     return isinstance(item, int) and not isinstance(item, bool)
@@ -107,7 +115,18 @@ def validate(record: dict[str, Any]) -> list[str]:
         ("approvals.approved_at", value(record, "approvals", "approved_at")),
         ("audit_log", record.get("audit_log")),
     ]
-    errors.extend(f"missing or placeholder: {name}" for name, item in required_values if not meaningful(item))
+    text_fields = {
+        "change_id", "title", "owner", "service", "evidence.spec", "evidence.review",
+        "observability.dashboard", "observability.baseline", "observability.correlation",
+        "rollout.strategy", "rollout.operator", "rollback.strategy", "rollback.runbook",
+        "rollback.owner", "rollback.tested_at", "rollback.data_plan", "approvals.reviewer",
+        "approvals.approved_at", "audit_log", "evidence.threat_model", "evidence.audit",
+    }
+    list_fields = {"evidence.tests", "evidence.gates", "observability.alerts", "rollout.stop_conditions"}
+    for name, item in required_values:
+        valid = meaningful_text(item) if name in text_fields else meaningful_text_list(item) if name in list_fields else meaningful(item)
+        if not valid:
+            errors.append(f"missing or placeholder: {name}")
 
     stages = value(record, "rollout", "stages")
     if not isinstance(stages, list) or not stages or not all(isinstance(stage, str) and stage.strip() for stage in stages):
@@ -129,7 +148,7 @@ def validate(record: dict[str, Any]) -> list[str]:
             errors.append("operational_done must be true before release readiness")
     if record.get("risk") in HIGH_RISK:
         for field in ("threat_model", "audit"):  # optional fields become mandatory for high-risk records
-            if not meaningful(value(record, "evidence", field)):
+            if not meaningful_text(value(record, "evidence", field)):
                 errors.append(f"high-risk change requires evidence.{field}")
     if state == "DEPLOYED":
         window = value(record, "observability", "observation_window_minutes")

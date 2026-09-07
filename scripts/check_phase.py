@@ -7,6 +7,7 @@ import argparse
 import json
 import re
 import sys
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,42 @@ def meaningful_value(value: Any) -> bool:
 def is_exit_code(value: Any) -> bool:
     """A JSON ``false`` is not a zero exit code; require a real integer."""
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def review_change_digest(project_root: Path, files: dict[str, Any]) -> str:
+    """Digest the exact reviewed file set and their current contents."""
+    normalized: list[dict[str, str]] = []
+    for relative in sorted(files):
+        expected = str(files[relative])
+        lexical = project_root / relative
+        if expected == "DELETED":
+            content = "DELETED" if not lexical.exists() and not lexical.is_symlink() else "PRESENT"
+        elif lexical.is_symlink():
+            content = "SYMLINK:" + str(lexical.readlink())
+        elif lexical.is_file():
+            content = sha256(lexical)
+        else:
+            content = "MISSING"
+        normalized.append({"path": relative, "expected": expected, "content": content})
+    payload = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def validate_event_store(change_dir: Path, record: dict[str, Any], errors: list[str]) -> None:
+    path = change_dir / "evidence" / "events.jsonl"
+    if not path.is_file():
+        if record.get("events"):
+            errors.append("evidence/events.jsonl is missing while change.json contains events")
+        return
+    try:
+        lines = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        errors.append("evidence/events.jsonl must contain valid JSON objects")
+        return
+    if not all(isinstance(item, dict) for item in lines):
+        errors.append("evidence/events.jsonl must contain only JSON objects")
+    elif lines != record.get("events", []):
+        errors.append("change.json events must exactly match evidence/events.jsonl")
 
 
 def timestamp(value: Any) -> datetime | None:
@@ -263,16 +300,21 @@ def validate_review(change_dir: Path, record: dict[str, Any], errors: list[str])
                 errors.append("review file entries require a path and SHA-256 or DELETED")
                 continue
             candidate = (project_root / str(relative)).resolve()
+            lexical = project_root / str(relative)
             try:
                 candidate.relative_to(project_root)
             except ValueError:
                 errors.append(f"review file escapes project root: {relative}")
                 continue
             if expected_digest == "DELETED":
-                if candidate.exists():
+                if lexical.exists() or lexical.is_symlink():
                     errors.append(f"review expected deleted file still exists: {relative}")
+            elif lexical.is_symlink():
+                errors.append(f"review file must not be a symlink: {relative}")
             elif not candidate.is_file() or sha256(candidate) != expected_digest:
                 errors.append(f"review file digest mismatch: {relative}")
+        if isinstance(files, dict) and evidence.get("change_digest") != review_change_digest(project_root, files):
+            errors.append("review-evidence.json change_digest does not match the reviewed file contents")
     validate_context_updates(change_dir, record, evidence, errors)
     errors.extend(validate_execution(change_dir, record, evidence))
     require_evidence_after_state(record, evidence, "VERIFYING", "review-evidence.json", errors)
@@ -348,6 +390,14 @@ def validate_lesson_candidate(change_dir: Path, errors: list[str]) -> None:
 def validate_learning_closure(change_dir: Path, errors: list[str]) -> None:
     events, event_errors = load_failure_events(change_dir)
     errors.extend(f"failure events: {error}" for error in event_errors)
+    try:
+        expected_change_id = read_json(change_dir / "change.json").get("change_id")
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        expected_change_id = None
+    if expected_change_id is not None:
+        for event in events:
+            if event.get("change_id") != expected_change_id:
+                errors.append("failure event change_id must match change.json")
     if not events:
         return
     candidate = change_dir / "lesson-candidate.json"
@@ -500,6 +550,7 @@ def check(change_dir: Path, phase: str) -> list[str]:
     if str(record.get("change_id", "")) != change_dir.name:
         errors.append(f"change.json change_id must match the change directory name: {change_dir.name}")
     validate_change_record(record, errors)
+    validate_event_store(change_dir, record, errors)
     validate_requirement(change_dir, errors)
     project_root = Path(str(record.get("project_root", "")))
     if project_root.is_dir():

@@ -142,8 +142,8 @@ def verify(skill: str, project_root: Path, platform: str, source_only: bool = Fa
         result["status"] = "PASS" if not errors else "FAIL"
         return result
 
-    local_base, global_base = PLATFORMS[platform]
-    candidates = (("local", project_root / local_base / skill), ("global", global_base / skill))
+    local_base, _global_base = PLATFORMS[platform]
+    candidates = (("local", project_root / local_base / skill),)
     discovered = next(((kind, path) for kind, path in candidates if (path / "SKILL.md").is_file()), None)
     if not discovered:
         errors.append(f"Skill is not discoverable for platform {platform}")

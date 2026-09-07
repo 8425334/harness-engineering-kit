@@ -231,9 +231,12 @@ def record_completion(change_dir: Path, task_id: str, run: dict[str, Any]) -> li
         return [f"unknown task id: {task_id}"]
 
     evidence_path = change_dir / "execution-evidence.json"
+    markdown_path = change_dir / "tasks.md"
     try:
         with file_lock(evidence_path):
             evidence = read_json(evidence_path)
+            original_evidence = json.dumps(evidence, ensure_ascii=False, indent=2) + "\n"
+            original_markdown = markdown_path.read_text(encoding="utf-8")
             runs = evidence.get("task_runs")
             if not isinstance(runs, list):
                 return ["execution-evidence.json task_runs must be an array"]
@@ -251,10 +254,15 @@ def record_completion(change_dir: Path, task_id: str, run: dict[str, Any]) -> li
             runs.append(run)
             order = {task: index for index, task in enumerate(task_map)}
             runs.sort(key=lambda item: order.get(str(item.get("task_id")), len(order)))
-            write_json(evidence_path, evidence)
-            sync_errors = sync_checkboxes(change_dir, evidence)
-            if sync_errors:
-                return ["task evidence was recorded but tasks.md synchronization failed", *sync_errors]
+            try:
+                write_json(evidence_path, evidence)
+                sync_errors = sync_checkboxes(change_dir, evidence)
+                if sync_errors:
+                    raise ValueError("; ".join(sync_errors))
+            except (OSError, UnicodeError, ValueError) as exc:
+                evidence_path.write_text(original_evidence, encoding="utf-8")
+                markdown_path.write_text(original_markdown, encoding="utf-8")
+                return ["task evidence and tasks.md update rolled back", str(exc)]
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         return [f"cannot record task completion: {exc}"]
 

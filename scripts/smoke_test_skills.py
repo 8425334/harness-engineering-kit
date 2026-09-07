@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import shutil
@@ -17,7 +18,7 @@ from change_state import main as production_state_main
 from check_agent_policy import validate as validate_agent_policy
 from check_context_docs import validate_context_impact, validate_project as validate_context_docs
 from check_fitness_protection import check as check_fitness_protection
-from check_phase import check, validate_production_closure
+from check_phase import check, review_change_digest, validate_production_closure
 from check_root_context import validate as validate_root_context
 from approve_lesson import main as approve_lesson_main
 from create_lesson_candidate import main as create_lesson_main
@@ -321,6 +322,21 @@ def exercise_fitness_protection() -> None:
         scripts.mkdir(parents=True)
         (fitness / "README.md").write_text("# Fitness\n", encoding="utf-8")
         (scripts / "check_example.py").write_text("print('ok')\n", encoding="utf-8")
+        write_json(project / "docs/methodology/onboarding.json", {
+            "schema_version": 1,
+            "project_root": str(project),
+            "read_only": False,
+            "tier": 2,
+            "confirmed_at": utc_now(),
+            "actions": [
+                {"target": "docs/fitness/README.md", "kind": "create"},
+                {"target": "docs/fitness/scripts/check_example.py", "kind": "create"},
+            ],
+            "results": [
+                {"target": "docs/fitness/README.md", "result": "created", "sha256": hashlib.sha256((fitness / "README.md").read_bytes()).hexdigest()},
+                {"target": "docs/fitness/scripts/check_example.py", "result": "created", "sha256": hashlib.sha256((scripts / "check_example.py").read_bytes()).hexdigest()},
+            ]
+        })
         bootstrap = check_fitness_protection(project)
         assert bootstrap["status"] == "PASS" and bootstrap["reason"] == "initial-bootstrap", bootstrap
         run_git(project, "add", "docs/fitness")
@@ -527,7 +543,7 @@ def exercise_mode(project: Path, profile: Path, mode: str) -> None:
     })
     review_payload = {
         "schema_version": 1, "status": "passed", "actor": "reviewer",
-        "at": utc_now(), "change_digest": "a" * 64, "tasks_complete": True,
+        "at": utc_now(), "change_digest": review_change_digest(project, review_files), "tasks_complete": True,
         "files": review_files,
         "commands": [{"command": verification_command, "exit_code": 0, "evidence": "smoke"}],
         "uncovered_cases": [], "exceptions": [],

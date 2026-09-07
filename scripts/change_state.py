@@ -117,6 +117,9 @@ def main() -> int:
             except ValueError:
                 print(f"BLOCKED: audit_log must stay under {allowed_audit}")
                 return 2
+            if audit.exists() and not audit.is_file():
+                print(f"BLOCKED: audit_log must be a regular file: {audit}")
+                return 2
 
             timestamp = datetime.now(timezone.utc).isoformat()
             transition = {
@@ -124,13 +127,26 @@ def main() -> int:
                 "at": timestamp, "evidence": args.evidence,
                 "rollout_stage": args.rollout_stage if args.next_state == "DEPLOYED" else None,
             }
-            record["state"] = args.next_state
-            record.setdefault("events", []).append(transition)
-            write_json(record_path, record)
-            if record.get("audit_log"):
-                audit.parent.mkdir(parents=True, exist_ok=True)
-                with audit.open("a", encoding="utf-8") as stream:
-                    stream.write(json.dumps(transition, ensure_ascii=False) + "\n")
+            original_record = json.loads(json.dumps(record, ensure_ascii=False))
+            original_audit = audit.read_bytes() if audit.is_file() else None
+            try:
+                record["state"] = args.next_state
+                record.setdefault("events", []).append(transition)
+                write_json(record_path, record)
+                if record.get("audit_log"):
+                    audit.parent.mkdir(parents=True, exist_ok=True)
+                    with audit.open("a", encoding="utf-8") as stream:
+                        stream.write(json.dumps(transition, ensure_ascii=False) + "\n")
+            except (OSError, UnicodeError, ValueError):
+                write_json(record_path, original_record)
+                if original_audit is None:
+                    try:
+                        audit.unlink()
+                    except FileNotFoundError:
+                        pass
+                else:
+                    audit.write_bytes(original_audit)
+                raise
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         print(f"Cannot update record: {exc}")
         return 2

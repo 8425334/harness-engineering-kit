@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from methodology_common import read_json, utc_now, write_json
+from methodology_common import file_lock, read_json, utc_now, write_json
 
 
 LESSON_ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9-]{1,62}")
@@ -33,6 +33,7 @@ def load_failure_events(change_dir: Path) -> tuple[list[dict[str, Any]], list[st
         return [], []
     events: list[dict[str, Any]] = []
     errors: list[str] = []
+    event_ids: set[str] = set()
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         if not line.strip():
             continue
@@ -44,7 +45,14 @@ def load_failure_events(change_dir: Path) -> tuple[list[dict[str, Any]], list[st
         if not isinstance(item, dict):
             errors.append(f"failure-events.jsonl line {line_number} must be an object")
             continue
-        events.append(item)
+        event_errors = validate_failure_event(item)
+        event_id = item.get("event_id")
+        if not event_errors and event_id in event_ids:
+            event_errors.append("failure event_id must be unique")
+        errors.extend(f"failure-events.jsonl line {line_number}: {error}" for error in event_errors)
+        if not event_errors:
+            events.append(item)
+            event_ids.add(str(event_id))
     return events, errors
 
 
@@ -53,16 +61,20 @@ def validate_failure_event(event: dict[str, Any]) -> list[str]:
     for field in ("schema_version", "event_id", "change_id", "source", "category", "rule", "message", "actor", "at"):
         if not meaningful_value(event.get(field)):
             errors.append(f"failure event missing {field}")
+    for field in ("event_id", "change_id", "rule", "message", "actor", "at"):
+        value = event.get(field)
+        if not isinstance(value, str) or not meaningful_value(value):
+            errors.append(f"failure event {field} must be a non-empty string")
     if event.get("schema_version") != 1:
         errors.append("failure event schema_version must be 1")
     if event.get("source") not in FAILURE_SOURCES:
         errors.append(f"failure event source must be one of {sorted(FAILURE_SOURCES)}")
     if event.get("category") not in FAILURE_CATEGORIES:
         errors.append(f"failure event category must be one of {sorted(FAILURE_CATEGORIES)}")
-    if not isinstance(event.get("paths", []), list):
-        errors.append("failure event paths must be an array")
-    if not isinstance(event.get("evidence", []), list):
-        errors.append("failure event evidence must be an array")
+    for field in ("paths", "evidence"):
+        value = event.get(field, [])
+        if not isinstance(value, list) or not all(isinstance(item, str) and meaningful_value(item) for item in value):
+            errors.append(f"failure event {field} must be an array of non-empty strings")
     return errors
 
 

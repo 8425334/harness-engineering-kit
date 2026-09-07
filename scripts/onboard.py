@@ -557,7 +557,7 @@ def main() -> int:
     parser.add_argument("--project-root", type=Path)
     parser.add_argument("--source-root", "--source", dest="source_root", type=Path, help="Harness kit checkout; defaults to this script's repository")
     parser.add_argument("--agent", choices=tuple(AGENT_TARGETS))
-    parser.add_argument("--tier", type=int, choices=(1, 2, 3), default=2)
+    parser.add_argument("--tier", type=int, choices=(1, 2), default=2)
     parser.add_argument("--name", help=argparse.SUPPRESS)
     parser.add_argument("--stack", help=argparse.SUPPRESS)
     parser.add_argument("--plan", action="store_true", help="print a read-only plan (default)")

@@ -144,38 +144,52 @@ def _openspec_block(project_root: Path, command: str) -> list[str]:
     lifecycle actions or bypass change-scoped dispatch are blocked.
     """
     try:
-        tokens = shlex.split(command)
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()<>\n")
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        tokens = list(lexer)
     except ValueError:
         tokens = command.split()
-    if any(os.path.basename(token) in HARNESS_SCRIPT_NAMES for token in tokens):
-        return []
-    for index, token in enumerate(tokens):
-        if os.path.basename(token) != "openspec":
+    separators = {";", ";;", "&&", "||", "|", "|&", "&", "\n"}
+    segments: list[list[str]] = [[]]
+    for token in tokens:
+        if token in separators:
+            segments.append([])
+        else:
+            segments[-1].append(token)
+
+    for segment in segments:
+        harness_tokens = {os.path.basename(token) for token in segment}
+        has_openspec_binary = any(os.path.basename(token) == "openspec" for token in segment)
+        if "dispatch_openspec.py" in harness_tokens and not has_openspec_binary:
             continue
-        subcommand = next((t for t in tokens[index + 1 :] if not t.startswith("-")), None)
-        if subcommand is None:
-            return []
-        if subcommand not in OPENSPEC_LIFECYCLE_VERBS | OPENSPEC_CHANGE_READS:
-            return []
-        remaining = tokens[index + 1 :]
-        if subcommand == "new":
-            # `openspec new change ...` creates a change; `new` for other item
-            # kinds (spec, initiative, ...) is not a lifecycle transition.
-            if "change" not in remaining:
-                return []
+        for index, token in enumerate(segment):
+            if os.path.basename(token) != "openspec":
+                continue
+            subcommand = next((t for t in segment[index + 1 :] if not t.startswith("-")), None)
+            if subcommand is None:
+                continue
+            if subcommand not in OPENSPEC_LIFECYCLE_VERBS | OPENSPEC_CHANGE_READS:
+                continue
+            remaining = segment[index + 1 :]
+            if subcommand == "new":
+                # `openspec new change ...` creates a change; `new` for other item
+                # kinds (spec, initiative, ...) is not a lifecycle transition.
+                if "change" not in remaining:
+                    continue
+                return [
+                    "standalone OpenSpec change creation is disabled in an instrumented repo; "
+                    "create the change with `init_change.py` (the Engineering lifecycle owns openspec/changes)"
+                ]
+            if subcommand in OPENSPEC_CHANGE_READS:
+                return [
+                    f"direct `openspec {subcommand}` is disabled for managed changes; "
+                    "invoke the allowlisted child capability through `dispatch_openspec.py`"
+                ]
             return [
-                "standalone OpenSpec change creation is disabled in an instrumented repo; "
-                "create the change with `init_change.py` (the Engineering lifecycle owns openspec/changes)"
+                f"standalone `openspec {subcommand}` is disabled in an instrumented repo; "
+                "Harness owns creation, lifecycle state, approval, implementation, sync, and archive"
             ]
-        if subcommand in OPENSPEC_CHANGE_READS:
-            return [
-                f"direct `openspec {subcommand}` is disabled for managed changes; "
-                "invoke the allowlisted child capability through `dispatch_openspec.py`"
-            ]
-        return [
-            f"standalone `openspec {subcommand}` is disabled in an instrumented repo; "
-            "Harness owns creation, lifecycle state, approval, implementation, sync, and archive"
-        ]
     return []
 
 
@@ -188,16 +202,27 @@ def _file_block(project_root: Path, raw_path: str) -> list[str]:
     path = Path(raw_path)
     if not path.is_absolute():
         path = project_root / path
-    changes_root = (project_root / CHANGES_REL).resolve()
-    try:
-        relative = path.resolve().relative_to(changes_root)
-    except (OSError, ValueError):
+    changes_root = project_root / CHANGES_REL
+    normalized = os.path.normpath(os.fspath(path))
+    marker = f"{os.sep}{CHANGES_REL}{os.sep}"
+    marker_index = normalized.find(marker)
+    if marker_index < 0:
         return []
+    relative = Path(normalized[marker_index + len(marker):])
     if not relative.parts:
         return []
     first = relative.parts[0]
     if first == ARCHIVE_NAME or first.startswith("."):
         return []
+    current = changes_root
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            return [f"write through symlinked change path blocked: {current}"]
+    try:
+        path.resolve().relative_to(changes_root.resolve())
+    except (OSError, ValueError):
+        return [f"write path escapes managed change workspace: {path}"]
     registered, problem = change_is_registered(changes_root / first)
     if registered:
         return []

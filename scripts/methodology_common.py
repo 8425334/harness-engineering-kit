@@ -129,17 +129,34 @@ def append_event_line(change_dir: Path, event: dict[str, Any]) -> None:
 def append_event(change_dir: Path, event: dict[str, Any], update_record: bool = True) -> None:
     record_path = change_dir / "change.json"
     with file_lock(record_path):
-        append_event_line(change_dir, event)
-        if update_record:
-            record = read_json(record_path)
-            record.setdefault("events", []).append(event)
-            record["updated_at"] = event["at"]
-            write_json(record_path, record)
+        events_path = change_dir / "evidence" / "events.jsonl"
+        original_events = events_path.read_bytes() if events_path.is_file() else None
+        original_record = record_path.read_bytes() if record_path.is_file() else None
+        try:
+            if update_record:
+                record = read_json(record_path)
+                record.setdefault("events", []).append(event)
+                record["updated_at"] = event["at"]
+                write_json(record_path, record)
+            append_event_line(change_dir, event)
+        except BaseException:
+            if original_record is None:
+                record_path.unlink(missing_ok=True)
+            else:
+                record_path.write_bytes(original_record)
+            if original_events is None:
+                events_path.unlink(missing_ok=True)
+            else:
+                events_path.parent.mkdir(parents=True, exist_ok=True)
+                events_path.write_bytes(original_events)
+            raise
 
 
 def append_failure_event(change_dir: Path, failure: dict[str, Any]) -> None:
     """Append a normalized failure without changing the lifecycle state."""
     evidence_dir = change_dir / "evidence"
     evidence_dir.mkdir(parents=True, exist_ok=True)
-    with (evidence_dir / "failure-events.jsonl").open("a", encoding="utf-8") as stream:
-        stream.write(json.dumps(failure, ensure_ascii=False) + "\n")
+    path = evidence_dir / "failure-events.jsonl"
+    with file_lock(path):
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(failure, ensure_ascii=False) + "\n")
