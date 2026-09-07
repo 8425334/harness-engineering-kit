@@ -1,0 +1,13 @@
+<whiteboard type="mermaid">
+flowchart TD
+    P["Agent 产出方案 / 代码"]
+    A["① 需求反思（回答级）：ready / clarify / correct / blocked——误解拦在动手前"]
+    B["② Self-Refine（门禁前）：生成 → 自我批判 → 优化 → 再检查（profile.yaml 控策略与轮次）"]
+    C["③ 确定性门禁（阶段级）：check_phase.py · Fitness——脚本判断，不靠自述"]
+    D["④ 人工 Review / 审批（信任级）：外部身份，Self-Refine 不能替代"]
+    L["经验记忆：失败 → record_failure 采集 → create_lesson_candidate 提炼 → approve_lesson 外部审批激活 → Explore 预检"]
+    P --> A --> B --> C --> D
+    C -. 失败 .-> L
+    D -. 失败 .-> L
+    L -. 下一任务 Explore 前预检 .-> P
+</whiteboard>

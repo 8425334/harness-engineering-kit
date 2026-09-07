@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 1,
   "change_id": "{{CHANGE_ID}}",
   "title": "{{TITLE}}",
   "profile": "standard",
@@ -10,19 +10,13 @@
   "delivery_scope": "technical",
   "production_record": null,
   "project_root": "{{ABSOLUTE_PROJECT_ROOT}}",
-  "state": "INTAKE",
   "owner": "{{OWNER}}",
   "orchestration": {
-    "parent": "harness-engineering",
     "change_id": "{{CHANGE_ID}}",
-    "children": {
-      "openspec": {
-        "role": "specification-authoring-and-validation",
-        "dispatcher": "docs/methodology/scripts/dispatch_openspec.py",
-        "allowed_actions": ["status", "instructions", "validate", "show", "templates"],
-        "denied_ownership": ["change-creation", "lifecycle-state", "approval", "implementation", "sync", "archive"]
-      }
-    }
+    "lifecycle_owner": "openspec",
+    "governance_provider": "harness-engineering",
+    "workflows": ["explore", "propose", "apply", "verify", "sync", "archive"],
+    "governance": ["context", "requirement-reflection", "approval", "execution-evidence", "fitness", "production"]
   },
   "created_at": "{{YYYY-MM-DDTHH:MM:SSZ}}",
   "updated_at": "{{YYYY-MM-DDTHH:MM:SSZ}}",

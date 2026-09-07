@@ -1,0 +1,13 @@
+<whiteboard type="mermaid">
+flowchart LR
+    SP["Spec：需求 + WHEN/THEN 场景"]
+    JU["JUnit 业务测试（每类一个测试类）"]
+    MV["mvn compile / test"]
+    FI["Fitness：--tier fast 门禁"]
+    RV["Review 门禁：改动文件摘要 × 任务 run × 上下文更新"]
+    DONE["Sync → Archive"]
+    SP --> JU --> MV --> FI --> RV --> DONE
+    JU -. 失败：按调试日志三阶段自检 .-> DBG["加临时日志 → 逐条验证数据流 → 清理保留业务日志"]
+    FI -. 失败 .-> DBG
+    RV -. 不通过 .-> BACK["回 Apply 修正"]
+</whiteboard>

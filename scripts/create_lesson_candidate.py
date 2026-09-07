@@ -35,7 +35,7 @@ def main() -> int:
             print(f"- {error}")
         return 2
     try:
-        record = read_json(change_dir / "change.json")
+        record = read_json(change_dir / "governance.json")
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(f"Cannot read change record: {exc}")
         return 2

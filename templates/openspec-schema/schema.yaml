@@ -1,0 +1,49 @@
+name: harness-engineering
+version: 1
+description: OpenSpec lifecycle with Harness Engineering governance and design review
+artifacts:
+  - id: proposal
+    generates: proposal.md
+    description: Change motivation, scope, capabilities, and impact
+    template: proposal.md
+    instruction: |
+      Explain why the change is needed, what changes, new or modified capabilities,
+      and affected modules. Keep implementation details in design.md.
+    requires: []
+  - id: specs
+    generates: "specs/**/*.md"
+    description: Testable behavior deltas
+    template: spec.md
+    instruction: |
+      Create one delta spec per capability. Use ADDED, MODIFIED, REMOVED, or
+      RENAMED Requirements. Every requirement uses SHALL or MUST and includes a
+      four-hash Scenario with WHEN and THEN steps.
+    requires: [proposal]
+  - id: design
+    generates: design.md
+    description: Implementation-ready developer review packet
+    template: design.md
+    instruction: |
+      Complete every section from repository evidence. Include Mermaid topology
+      and runtime flow, an ownership table, numbered D<n> decisions, alternatives,
+      verification traceability, rollback, risks, and C<n> confirmation items.
+      Use Not applicable with a reason for conditional concerns. This artifact
+      requires explicit developer confirmation before implementation.
+    requires: [proposal, specs]
+  - id: tasks
+    generates: tasks.md
+    description: OpenSpec implementation checklist and sole task progress source
+    template: tasks.md
+    instruction: |
+      Create dependency-ordered, independently verifiable tasks. Every task must
+      use OpenSpec's `- [ ] X.Y Description` format. Include scope, contract
+      references, acceptance, and exact focused verification in the task text.
+    requires: [specs, design]
+apply:
+  requires: [tasks]
+  tracks: tasks.md
+  instruction: |
+    Before implementation, require Harness approval.json for the current contract.
+    Execute pending OpenSpec tasks, record each run in execution-evidence.json,
+    run focused verification, then mark that OpenSpec task complete. Pause on
+    contract drift and obtain renewed approval before continuing.

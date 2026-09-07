@@ -28,16 +28,18 @@ Before code changes, `resolve_context.py` turns target paths and explicit `read_
 ## Lifecycle
 
 ```text
-Explore → Propose (Spec → Design → Approval) → Apply → Sync → Archive
+Explore → Propose → Apply → Verify → Sync → Archive
 ```
 
 The exact artifacts, gates, states, drift transitions, and production extension are defined once in [Canonical Change Lifecycle](core/change-lifecycle.md). Backend RAM and frontend RAD finish during Explore/Propose; Apply consumes the approved contract.
 
-Design also produces an approval-bound `task-plan.json` DAG. During Apply, the coordinator runs dependency-ready tasks concurrently only when the Agent runtime and worktree/disjoint-scope isolation support it; otherwise it executes the same graph sequentially and records why. `execution-evidence.json` proves task ownership, actual concurrency, integration order, and coordinator-level verification. See [Task Graph and Parallel Execution](core/task-orchestration.md).
+Design first produces an implementation-ready developer review packet: architecture and relationship topology, runtime flows, responsibility boundaries, interfaces/data, cross-cutting qualities, delivery/rollback, decisions and alternatives, verification traceability, risks, and numbered confirmation items. `check_design.py` enforces the structure, and explicit developer confirmation is required before approval. See [Implementation-Ready Design Review](core/design-review.md).
 
-Harness Engineering is the parent lifecycle and OpenSpec is a child authoring/validation capability. All change-scoped OpenSpec operations cross the allowlisted Harness dispatcher; after every successful DAG task, Harness records its run and automatically checks the matching OpenSpec `tasks.md` item. See [Harness and OpenSpec Parent-Child Orchestration](core/openspec-orchestration.md).
+OpenSpec `tasks.md` is the sole task definition and progress source. Engineering records `execution-evidence.json` for checked tasks, including ownership, verification, changed files, integration order, and any parallel/sequential execution choice. See [Task Evidence](core/task-orchestration.md).
 
-If Apply is interrupted, keep the change in `IMPLEMENTING` and run `record_task_completion.py resume <change-dir> --actor <agent> --json`; it repairs checked-task projection from validated evidence and returns the next ready task wave.
+OpenSpec is the lifecycle owner. Engineering calls its native `openspec-*` Skills and CLI directly, then attaches governance evidence with `governance.json`; there is no second lifecycle or dispatcher. See [OpenSpec Integration](core/openspec-orchestration.md).
+
+If Apply is interrupted, resume the native OpenSpec Apply workflow after checking `openspec status --change <id> --json`; Engineering only verifies that execution evidence matches OpenSpec's checked tasks.
 
 Production delivery extends—not replaces—the Engineering lifecycle. A production-scoped change cannot archive until its linked production record is `CLOSED` with observability, staged rollout, stop conditions, rollback, and audit evidence.
 
@@ -101,19 +103,19 @@ Resolve task context with the installed project controls. See the [CLI Onboardin
 ## Change Controls
 
 ```bash
-python3 docs/methodology/scripts/init_change.py add-capability \
+openspec new change add-capability --schema harness-engineering
+python3 docs/methodology/scripts/init_governance.py add-capability \
   --title "Add capability" --mode fullstack --owner team \
-  --trigger explicit-selection \
-  --profile-path docs/methodology/profile.yaml
+  --trigger explicit-selection
 
 python3 docs/methodology/scripts/approve_design.py openspec/changes/add-capability \
   --actor reviewer --source pull-request --approval-id PR-123
 
-python3 docs/methodology/scripts/methodology_state.py \
-  openspec/changes/add-capability EXPLORED --actor agent
+openspec status --change add-capability --json
+openspec validate add-capability --type change --strict --no-interactive
 ```
 
-Use `check_phase.py` for direct gate inspection, `check_task_plan.py` to inspect deterministic task waves and execution evidence, `record_skill_event.py` for explicit fallback/intervention events, and `skill_metrics.py` for structured adoption metrics.
+Use `check_phase.py` for governance gates, `check_design.py` for the implementation-ready design packet, `check_execution.py` for OpenSpec task evidence, `record_skill_event.py` for explicit fallback/intervention events, and `skill_metrics.py` for structured adoption metrics.
 
 Use `preflight_lessons.py` before Explore closes, `record_failure.py` for Fitness/test/diff/production failures, `create_lesson_candidate.py` to propose reusable prevention, `retrieve_lessons.py` to inspect active lessons, and `approve_lesson.py` to activate an externally approved lesson.
 
@@ -122,6 +124,7 @@ Use `preflight_lessons.py` before Explore closes, `record_failure.py` for Fitnes
 - [Harness AI Coding Tutorial (Chinese)](docs/ai-coding-tutorial.zh.md)
 - [Harness Architecture](core/harness-engineering.md)
 - [Change Lifecycle](core/change-lifecycle.md)
+- [Implementation-Ready Design Review](core/design-review.md)
 - [SDD Workflow](core/sdd-workflow.md)
 - [Governance](core/methodology-governance.md)
 - [Self-Refine Feedback Loop](core/self-refine.md)

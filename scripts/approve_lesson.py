@@ -23,7 +23,7 @@ def main() -> int:
     change_dir = candidate_path.parent
     try:
         candidate = read_json(candidate_path)
-        record = read_json(change_dir / "change.json")
+        record = read_json(change_dir / "governance.json")
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(f"LESSON APPROVAL BLOCKED: {exc}")
         return 2

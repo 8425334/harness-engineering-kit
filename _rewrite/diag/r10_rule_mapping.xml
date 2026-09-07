@@ -1,0 +1,12 @@
+<whiteboard type="mermaid">
+flowchart TB
+    BT["BusinessType（枚举）"]
+    REG["RuleSpecRegistry"]
+    SPEC["BusinessTypeRuleSpec：声明 步骤 + 分配器 + 上限"]
+    BT --> REG --> SPEC
+    SPEC --> C1["普通零售：PROPORTIONAL + 单商品金额上限"]
+    SPEC --> C2["跨境：TAX_DEDUCT + PROPORTIONAL + 30% 上限"]
+    SPEC --> C3["秒杀：EQUAL_BY_QUANTITY + 末笔承担零头"]
+    SPEC --> C4["团购：LOW_PRICE_FIRST + PROPORTIONAL"]
+    SPEC --> C5["会员专享：POINTS_DEDUCT + PROPORTIONAL"]
+</whiteboard>

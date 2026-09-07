@@ -1,0 +1,16 @@
+<whiteboard type="mermaid">
+flowchart LR
+    subgraph W1["没有 Harness：一次提问 = 一次回答"]
+        direction LR
+        A1["用户问题"] --> A2["LLM 一次性生成"] --> A3["一次性答案（无验证）"]
+    end
+    subgraph W2["有 Harness：同一句需求被推进成工程闭环"]
+        direction LR
+        B1["需求 / 任务"] --> B2["Explore：确定性加载上下文 · 经验预检"]
+        B2 --> B3["需求反思：ready / clarify / correct"]
+        B3 --> B4["Propose：Spec → Design → 人工审批（绑定契约）"]
+        B4 --> B5["Apply：按已审批任务图执行 · 逐任务留证据"]
+        B5 --> B6["门禁验证：测试 · Fitness · Review"]
+        B6 --> B7["Sync → Archive：交付，或回到上一环修正"]
+    end
+</whiteboard>

@@ -1,0 +1,12 @@
+<whiteboard type="mermaid">
+flowchart TB
+    A["失败观察：门禁 / 测试 / 审查 / 生产事件"]
+    B["record_failure.py 采集 → evidence/failure-events.jsonl（不可变观察）"]
+    C["create_lesson_candidate.py 提炼 → lesson-candidate.json（模式 · 根因 · 预防）"]
+    D["approve_lesson.py 外部审批激活 → docs/methodology/lessons/*.json"]
+    E["Explore 前 preflight_lessons.py 预检 · 新变更命中即预防"]
+    F["跨变更反复复用，越用越好"]
+    G["升级为确定性 Fitness 规则 / 强制预检查"]
+    A --> B --> C --> D --> E --> F
+    F -. 同签名反复出现且经外部审核 .-> G
+</whiteboard>

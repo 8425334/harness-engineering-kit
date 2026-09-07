@@ -1,13 +1,5 @@
-# 支持能力
+# 必需 Skill
 
-本套件唯一拥有生命周期的 Skill 是 `engineering`。其他工具都是由任务和项目策略按需选择的支持能力：
+`engineering` 是非平凡变更的治理外壳。OpenSpec 原生 Skill 负责 Explore、Propose、Apply、Sync、Archive 和 Update；OpenSpec CLI 负责 status、instructions、validate、schema；Engineering 负责上下文、审批、执行/Review 证据、Fitness、经验和生产控制。
 
-| 能力 | 用途 | 降级 |
-|---|---|---|
-| OpenSpec 子能力 | 规格写作指引与校验，只能由 Harness 父级通过 `dispatch_openspec.py` 调度 | CLI 不可用时仍保持相同产物；绝不允许 `/opsx:*` 或直接 change 级 OpenSpec 调用拥有创建、状态、审批、实施、Sync 或 Archive |
-| 代码导航/索引 | 查符号、调用方和依赖 | 定向仓库搜索 |
-| 测试/构建/Fitness | 产出验证证据 | 执行策略中项目命令 |
-| 浏览器或 API 工具 | 验证用户可见/集成行为 | 聚焦人工证据 |
-| 多 Agent 执行 | 审批后降低墙钟时间 | 相同门禁下串行执行 |
-
-使用时必须验证工具可用性。支持缺失要显式记录降级，但不能改变权威、产物、审批或 Review 要求。
+若 OpenSpec 或所需原生 Skill 不可用，应停止生命周期工作并报告依赖缺失，不在 Engineering 内重建 OpenSpec 流程。

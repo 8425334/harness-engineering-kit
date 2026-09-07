@@ -1,0 +1,29 @@
+<whiteboard type="svg">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 470" font-family="-apple-system,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="r6a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3B6FC0"/></marker>
+  </defs>
+  <g fill="#EEF3FC" stroke="#3B6FC0" stroke-width="1.6">
+    <rect x="90" y="30"  width="460" height="96" rx="10"/>
+    <rect x="90" y="166" width="460" height="96" rx="10"/>
+    <rect x="90" y="302" width="460" height="96" rx="10"/>
+  </g>
+  <g stroke="#3B6FC0" stroke-width="1.6" marker-end="url(#r6a)">
+    <line x1="320" y1="128" x2="320" y2="164"/>
+    <line x1="320" y1="264" x2="320" y2="300"/>
+  </g>
+  <g text-anchor="middle">
+    <text x="320" y="58"  font-size="15.5" font-weight="bold" fill="#1F3864">视图层：页面 / 组件</text>
+    <text x="320" y="82"  font-size="12" fill="#44546A">只消费 API 层导出的函数与类型</text>
+    <text x="320" y="104" font-size="12.5" fill="#B4453C">禁：视图层直接 axios / fetch / 底层 request</text>
+    <text x="320" y="194" font-size="15.5" font-weight="bold" fill="#1F3864">API 层：services / api</text>
+    <text x="320" y="218" font-size="12" fill="#44546A">每个接口一个模块，同时导出类型</text>
+    <text x="320" y="240" font-size="12" fill="#44546A">数据必须逐层经 API 传递</text>
+    <text x="320" y="330" font-size="15.5" font-weight="bold" fill="#1F3864">请求层：request 实例 / 拦截器</text>
+    <text x="320" y="354" font-size="12" fill="#44546A">axios / fetch 只允许出现在这一层</text>
+  </g>
+  <text x="568" y="200" font-size="11.5" fill="#777777">数据逐层传递</text>
+  <text x="336" y="146" font-size="11.5" fill="#3B6FC0">调用</text>
+  <text x="336" y="282" font-size="11.5" fill="#3B6FC0">调用</text>
+</svg>
+</whiteboard>

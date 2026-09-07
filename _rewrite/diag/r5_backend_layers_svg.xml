@@ -1,0 +1,40 @@
+<whiteboard type="svg">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 570" font-family="-apple-system,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="r5a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3B6FC0"/></marker>
+    <marker id="r5r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4E8B4E"/></marker>
+  </defs>
+  <g fill="#EEF3FC" stroke="#3B6FC0" stroke-width="1.6">
+    <rect x="120" y="30"  width="440" height="98" rx="10"/>
+    <rect x="120" y="160" width="440" height="98" rx="10"/>
+    <rect x="120" y="290" width="440" height="98" rx="10"/>
+    <rect x="120" y="420" width="440" height="98" rx="10"/>
+  </g>
+  <g stroke="#3B6FC0" stroke-width="1.6" marker-end="url(#r5a)">
+    <line x1="340" y1="130" x2="340" y2="158"/>
+    <line x1="340" y1="260" x2="340" y2="288"/>
+  </g>
+  <line x1="340" y1="518" x2="340" y2="392" stroke="#4E8B4E" stroke-width="1.8" marker-end="url(#r5r)"/>
+  <g text-anchor="middle">
+    <text x="340" y="56"  font-size="15.5" font-weight="bold" fill="#1F3864">adapter（适配层）</text>
+    <text x="340" y="80"  font-size="12" fill="#44546A">REST / RPC / 事件 / 定时：只消费 application 契约</text>
+    <text x="340" y="102" font-size="12" fill="#44546A">做 DTO/BO/VO 出入参转换，不包含业务逻辑</text>
+    <text x="340" y="186" font-size="15.5" font-weight="bold" fill="#1F3864">application（应用层）</text>
+    <text x="340" y="210" font-size="12" fill="#44546A">用例编排 · 事务边界 · 安全</text>
+    <text x="340" y="232" font-size="12" fill="#44546A">不包含业务规则</text>
+    <text x="340" y="316" font-size="15.5" font-weight="bold" fill="#1F3864">domain（领域层 · 纯 Java）</text>
+    <text x="340" y="340" font-size="12" fill="#44546A">聚合 / 值对象 / 领域服务 / 仓储接口</text>
+    <text x="340" y="362" font-size="12.5" fill="#B4453C">禁：import Spring / Redis / MyBatis 等框架注解</text>
+    <text x="340" y="446" font-size="15.5" font-weight="bold" fill="#1F3864">infrastructure（基础设施层）</text>
+    <text x="340" y="470" font-size="12" fill="#44546A">仓储实现 · PO · 外部集成</text>
+    <text x="340" y="492" font-size="12" fill="#44546A">向上实现 domain 声明的端口（依赖倒置）</text>
+  </g>
+  <text x="360" y="144" font-size="11.5" fill="#3B6FC0">依赖</text>
+  <text x="360" y="274" font-size="11.5" fill="#3B6FC0">依赖</text>
+  <text x="358" y="466" font-size="11.5" fill="#4E8B4E">实现 domain 接口</text>
+  <g font-size="11.5" fill="#777777">
+    <text x="620" y="46">adapter 只消费</text>
+    <text x="620" y="63">application 契约</text>
+  </g>
+</svg>
+</whiteboard>

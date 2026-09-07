@@ -1,0 +1,9 @@
+<whiteboard type="mermaid">
+flowchart LR
+    IN["输入素材：文档 / 代码 / 历史任务 / 用户需求"]
+    EMB["Embedding：把内容编码成语义向量（解决“找什么”）"]
+    CTX["上下文组装：检索命中 Top-K + 当前任务"]
+    TR["Transformer：通过 Attention 建立关系（解决“怎么理解”）"]
+    LLM["LLM：预测下一个 Token · 生成代码 / 方案（解决“怎么生成”）"]
+    IN --> EMB --> CTX --> TR --> LLM
+</whiteboard>

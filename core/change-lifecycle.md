@@ -1,54 +1,48 @@
-# Canonical Change Lifecycle
+# OpenSpec Change Lifecycle
 
-This is the only lifecycle owned by Harness Engineering. Backend, frontend, and fullstack profiles specialize Design and verification; they do not create independent workflows.
-
-```text
-Explore → Propose (Spec → Design → Approval) → Apply → Sync → Archive
-```
-
-## Phase Contract
-
-| Phase | Required artifacts | Gate | Resulting state |
-|---|---|---|---|
-| Explore | `change.json`, `context-pack.md`, `impact-analysis.md`, `context-impact.json`, `evidence/lesson-preflight.json` | `EXPLORE` | `EXPLORED` |
-| Propose / Spec | `proposal.md`, `specs/<capability>/spec.md` | `SPEC` | `CONTRACT_READY` |
-| Propose / Design | `design.md`, `tasks.md`, `task-plan.json` | `DESIGN` | `DESIGN_READY` |
-| Approval | external identity plus digests of every contract artifact | `EXECUTE` | `APPROVED` |
-| Apply | approved contract, completed tasks, `execution-evidence.json`, changed-file digests, exact verification commands | `EXECUTE`, then `REVIEW` | `IMPLEMENTING → VERIFYING → VERIFIED` |
-| Sync | verified behavior copied to canonical specs/docs with matching digests | `SYNC` | `SYNCED` |
-| Archive | archive evidence; learning conclusion; production closure when applicable | `ARCHIVE` | `ARCHIVED` |
-
-Advance state only with `methodology_state.py`. A failed gate records `phase.blocked`. Contract drift after approval moves to `CONTRACT_CHANGED`; repository drift moves to `DRIFT_DETECTED`; failed verification moves to `REMEDIATING`.
-
-Self-Refine is a bounded inner loop inside the phases, not an additional state machine:
+OpenSpec is the lifecycle owner for every governed change:
 
 ```text
-Generate → Self-Critique → Refine → Re-check → phase gate
+Explore → Propose → Apply → Verify → Sync → Archive
 ```
 
-Its policy is selected by the project Profile. When required, Review must include `self-refine-evidence.json`; the record documents findings and resolutions but cannot approve contract changes or replace objective verification. See [Self-Refine Feedback Loop](self-refine.md).
+Use native OpenSpec Skills and CLI for change creation, artifact ordering, task
+progress, validation, spec synchronization, and archiving. Engineering adds
+governance evidence around those actions; it does not introduce another state
+machine or task projection.
 
-## Contract Boundary
+| OpenSpec action | Native entrypoint | Engineering governance |
+|---|---|---|
+| Explore | `openspec-explore` | context resolution, requirement reflection, lesson preflight |
+| Propose | `openspec-propose` / `openspec new change` | design review, approval, context impact |
+| Apply | `openspec-apply-change` | execution evidence, focused verification, Fitness |
+| Verify | `openspec-verify-change` | strict artifact validation, review evidence, drift and production gates |
+| Sync | `openspec-sync-specs` | sync evidence and canonical digest |
+| Archive | `openspec-archive-change` / `openspec archive` | archive evidence, lessons, production closure |
 
-The approval contract is the exact content of context, impact, context-update decisions, proposal, all behavior specs, design, and the machine-readable task graph. `tasks.md` is the OpenSpec child projection of that graph: ids/order are checked at Design, while checkbox marks are runtime progress and therefore excluded from approval digests. `context-impact.json` lists every planned deliverable and declares whether root `ai.json` or indexed `AI.md` details must change. `approve_design.py` records the external approval source and stable approval ID plus SHA-256 digests. The script proves integrity, not approver authenticity; CI or the approval system must verify identity and authorization.
+## Governance sidecar
 
-Explore also records the active project lessons matched by the task in `evidence/lesson-preflight.json`. Recorded failures must reach a lesson candidate or an explicit non-generalizable decision before Archive; this learning conclusion does not change the approval contract.
+After OpenSpec creates `openspec/changes/<id>/`, attach `governance.json` with
+`init_governance.py`. The sidecar records ownership, profile, risk, context,
+approval, execution, review, Fitness, lessons, and production evidence. The
+OpenSpec `.openspec.yaml` marker and native artifact graph remain authoritative.
 
-Backend RAM (`Read → Analyze → Model`) and frontend RAD (`Read → Analyze → Decompose`) occur inside Explore and Propose. Apply may perform a small drift check, but it must not silently redesign the approved contract.
+`tasks.md` is the only task definition and checkbox progress source. Engineering
+records `execution-evidence.json` and verifies that each checked task has one
+successful run; it never rewrites task checkboxes or maintains a parallel DAG.
 
-Apply follows the approved DAG in `task-plan.json`. A single coordinator may dispatch ready tasks concurrently when the Agent platform and isolation support it, or run the identical graph sequentially with a recorded fallback reason. After every successful task, `record_task_completion.py` atomically records its run and synchronizes the corresponding OpenSpec checkbox. The coordinator alone integrates results; Review re-runs full verification and checks task/file/checkbox agreement. See [Task Graph and Parallel Execution](task-orchestration.md).
+## Gates
 
-## Production Extension
+Use `check_change_workspace.py` for workspace registration, `check_phase.py` for
+governance gates, and OpenSpec for lifecycle validation:
 
-Technical completion and production completion are separate state machines linked by the same `change_id`:
-
-```text
-RELEASE_READY → DEPLOYED(stage 1..n) → OBSERVING → CLOSED
-                  ↘ ROLLED_BACK ───────────────────↗
+```bash
+openspec status --change <id> --json
+openspec validate <id> --type change --strict --no-interactive
+python3 docs/methodology/scripts/check_phase.py <change-dir> DESIGN
 ```
 
-A production-scoped Engineering change cannot archive until its linked production record is `CLOSED`. Every declared rollout stage advances in order with evidence; stop conditions can route to an evidenced rollback and closure. The record must carry observability, rollback ownership, rollback rehearsal, and an audit log confined to the project production directory.
-
-## Trivial Changes
-
-A profile may allow a workspace-free path only when the change is local, reversible, does not alter a public contract/schema/trust boundary, and does not affect production controls. The final response must still report changed files, exact verification, and uncovered cases.
+Approval binds normalized contract artifacts. Apply evidence binds checked
+OpenSpec tasks to actors, workspaces, commands, changed files, and integration.
+Review requires current digests; Sync requires source and canonical spec digests;
+Archive requires OpenSpec validation plus governance and any production closure.

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""SDD quality checks: config populated and change structure validation.
+"""SDD quality checks: config populated and OpenSpec change structure validation.
 
 Verifies openspec/config.yaml has populated context + rules blocks, and that
-active openspec changes have the required proposal.md + tasks.md +
-task-plan.json artifacts.
+active OpenSpec changes have the required marker, proposal.md, tasks.md, and
+governance.json artifacts.
 
 Generic — no project-specific placeholders. Works with any OpenSpec-style layout.
 
@@ -73,7 +73,7 @@ def check_config_populated() -> int:
 
 
 def check_change_structure() -> int:
-    """Verify active openspec changes have proposal.md, tasks.md, and task-plan.json."""
+    """Verify active OpenSpec changes have marker, tasks, and governance."""
     changes_dir = OPENSPEC_DIR / "changes"
     if not changes_dir.exists():
         print("No openspec/changes/ directory — no active changes to validate")
@@ -88,14 +88,17 @@ def check_change_structure() -> int:
 
         has_proposal = (entry / "proposal.md").exists()
         has_tasks = (entry / "tasks.md").exists()
-        has_task_plan = (entry / "task-plan.json").exists()
+        has_marker = (entry / ".openspec.yaml").exists()
+        has_governance = (entry / "governance.json").exists()
 
+        if not has_marker:
+            issues.append(f"{entry.name}: missing .openspec.yaml")
         if not has_proposal:
             issues.append(f"{entry.name}: missing proposal.md")
         if not has_tasks:
             issues.append(f"{entry.name}: missing tasks.md")
-        if not has_task_plan:
-            issues.append(f"{entry.name}: missing task-plan.json")
+        if not has_governance:
+            issues.append(f"{entry.name}: missing governance.json")
 
     if issues:
         print("OpenSpec change structure issues:")

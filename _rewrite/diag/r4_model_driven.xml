@@ -1,0 +1,23 @@
+<whiteboard type="mermaid">
+flowchart TB
+    API["EducationFeatureServiceApi（编排入口）"]
+    REPO["EducationProfileRepository（屏蔽 Mapper / 缓存 / 查询）"]
+    IDX["SchoolReferenceIndex（排名 · 985/211 标签）"]
+    PROF["EducationProfile（聚合学历记录 + 学籍状态）"]
+    CTX["EducationFeatureContext（一次计算所需数据）"]
+    ENG["EducationFeatureEngine（调度计算器 · 隔离单变量失败）"]
+    CALC["Calculator 列表：每变量一个实现（契约可独立测试）"]
+    RES["EducationFeatureResult（正常值 / 无数据 / 业务异常）"]
+    ASM["ResponseAssembler → VarLogicResponse"]
+    API --> REPO
+    API --> IDX
+    REPO --> PROF
+    IDX --> PROF
+    API --> CTX
+    PROF --> CTX
+    CTX --> ENG
+    ENG --> CALC
+    CALC --> RES
+    API --> ASM
+    RES --> ASM
+</whiteboard>

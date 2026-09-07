@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a canonical, auditable Engineering change workspace."""
+"""Attach canonical Harness governance to an OpenSpec-owned change."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from check_agent_policy import validate as validate_agent_policy
+from check_change_workspace import REQUIRED_SCHEMA, change_schema
 from check_context_docs import validate_project as validate_context_docs
 from check_profile import read_project_profile
 from methodology_common import append_event, utc_now, write_json
@@ -36,7 +37,6 @@ def main() -> int:
     parser.add_argument("--title", required=True)
     parser.add_argument("--mode", choices=("backend", "frontend", "fullstack"), required=True)
     parser.add_argument("--owner", required=True)
-    parser.add_argument("--capability")
     parser.add_argument("--trigger", choices=("native-selection", "explicit-selection", "manual-fallback"), required=True)
     parser.add_argument("--fallback-reason")
     parser.add_argument("--delivery-scope", choices=("technical", "production"), default="technical")
@@ -98,18 +98,23 @@ def main() -> int:
     else:
         production_record = None
     change_dir = args.root.resolve() / args.change_id
-    if change_dir.exists():
-        print(f"EXISTS: {change_dir}")
+    if not change_dir.is_dir():
+        print(f"GOVERNANCE INIT BLOCKED: OpenSpec change does not exist: {change_dir}")
+        print("- create it first with openspec-propose or openspec new change --schema harness-engineering")
         return 2
-    capability = args.capability or args.change_id
-    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,62}", capability):
-        print("INVALID: capability must be a 2-63 character lowercase slug")
+    schema = change_schema(change_dir)
+    if schema != REQUIRED_SCHEMA:
+        print(f"GOVERNANCE INIT BLOCKED: OpenSpec change must use schema {REQUIRED_SCHEMA} (got {schema!r})")
+        print(f"- create it with: openspec new change {args.change_id} --schema {REQUIRED_SCHEMA}")
         return 2
-    (change_dir / "specs" / capability).mkdir(parents=True)
-    (change_dir / "evidence").mkdir()
+    governance_path = change_dir / "governance.json"
+    if governance_path.exists():
+        print(f"GOVERNANCE INIT BLOCKED: metadata already exists: {governance_path}")
+        return 2
+    (change_dir / "evidence").mkdir(exist_ok=True)
     timestamp = utc_now()
     record = {
-        "schema_version": 3,
+        "schema_version": 1,
         "change_id": args.change_id,
         "title": args.title,
         "profile": profile,
@@ -120,14 +125,13 @@ def main() -> int:
         "delivery_scope": args.delivery_scope,
         "production_record": str(production_record) if production_record else None,
         "project_root": str(project_root),
-        "state": "INTAKE",
         "owner": args.owner,
         "orchestration": orchestration_contract(args.change_id),
         "created_at": timestamp,
         "updated_at": timestamp,
         "events": [],
     }
-    write_json(change_dir / "change.json", record)
+    write_json(governance_path, record)
     event = {
         "event": "skill.fallback" if args.trigger == "manual-fallback" else "skill.triggered",
         "change_id": args.change_id,
@@ -140,7 +144,7 @@ def main() -> int:
         "at": timestamp,
     }
     append_event(change_dir, event)
-    print(f"CHANGE CREATED: {change_dir}")
+    print(f"GOVERNANCE ATTACHED: {change_dir}")
     return 0
 
 

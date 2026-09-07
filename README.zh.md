@@ -28,16 +28,18 @@ English documentation: [README.md](README.md)
 ## 生命周期
 
 ```text
-Explore → Propose（Spec → Design → Approval）→ Apply → Sync → Archive
+Explore → Propose → Apply → Verify → Sync → Archive
 ```
 
 [统一变更生命周期](i18n/zh/core/change-lifecycle.md) 唯一定义产物、门禁、状态、漂移处理和生产扩展。后端 RAM 与前端 RAD 在 Explore/Propose 完成；Apply 只消费已审批契约。
 
-Design 还会生成受审批绑定的 `task-plan.json` DAG。Apply 阶段只有在 Agent 运行时和工作树/不相交范围隔离都支持时，协调者才并发执行依赖已满足的任务；否则按同一任务图顺序执行并记录原因。`execution-evidence.json` 证明任务归属、真实并发、集成顺序和协调者级验证。详见[任务图与并行执行](i18n/zh/core/task-orchestration.md)。
+Design 首先生成可供开发者确认的可实施方案包：架构与关系拓扑、运行流程、职责边界、接口/数据、横切质量、交付/回滚、决策与备选方案、验证追踪、风险和编号确认项。`check_design.py` 强制检查结构，审批前必须得到开发者明确确认。详见[可实施设计评审](i18n/zh/core/design-review.md)。
 
-Harness Engineering 是父级生命周期，OpenSpec 是子级写作/校验能力。所有 change 级 OpenSpec 操作都必须经过 Harness 白名单调度器；每个 DAG 任务成功后，Harness 会记录 run 并自动勾选对应的 OpenSpec `tasks.md` 项。详见 [Harness 与 OpenSpec 父子调度](i18n/zh/core/openspec-orchestration.md)。
+OpenSpec 的 `tasks.md` 是唯一任务定义和进度来源。Engineering 只为已勾选任务记录 `execution-evidence.json`，包含归属、验证、变更文件、集成顺序及并行/串行选择。详见[任务证据](i18n/zh/core/task-orchestration.md)。
 
-如果 Apply 中断，保持 change 处于 `IMPLEMENTING`，执行 `record_task_completion.py resume <change-dir> --actor <agent> --json`；该命令从经过校验的证据修复任务投影，并返回下一就绪任务波次。
+OpenSpec 是生命周期所有者。Engineering 直接调用原生 `openspec-*` Skill 和 CLI，再通过 `governance.json` 附加治理证据；不存在第二套生命周期或调度器。详见 [OpenSpec 集成](i18n/zh/core/openspec-orchestration.md)。
+
+如果 Apply 中断，先执行 `openspec status --change <id> --json`，再继续原生 OpenSpec Apply；Engineering 只校验执行证据与 OpenSpec 已勾选任务一致。
 
 生产交付是 Engineering 生命周期的扩展。生产范围变更只有在关联生产记录以观测、分阶段灰度、停止条件、回滚与审计证据达到 `CLOSED` 后，才能 Archive。
 
@@ -101,19 +103,19 @@ npx --yes --package github:8425334/harness-engineering-kit hek handoff --agent t
 ## 变更控制
 
 ```bash
-python3 docs/methodology/scripts/init_change.py add-capability \
+openspec new change add-capability --schema harness-engineering
+python3 docs/methodology/scripts/init_governance.py add-capability \
   --title "新增能力" --mode fullstack --owner team \
-  --trigger explicit-selection \
-  --profile-path docs/methodology/profile.yaml
+  --trigger explicit-selection
 
 python3 docs/methodology/scripts/approve_design.py openspec/changes/add-capability \
   --actor reviewer --source pull-request --approval-id PR-123
 
-python3 docs/methodology/scripts/methodology_state.py \
-  openspec/changes/add-capability EXPLORED --actor agent
+openspec status --change add-capability --json
+openspec validate add-capability --type change --strict --no-interactive
 ```
 
-直接检查门禁用 `check_phase.py`，检查确定性任务波次和执行证据用 `check_task_plan.py`，显式记录降级/人工介入用 `record_skill_event.py`，统计结构化采用效果用 `skill_metrics.py`。
+直接检查治理门禁用 `check_phase.py`，检查可实施设计方案包用 `check_design.py`，检查 OpenSpec 任务执行证据用 `check_execution.py`，显式记录降级/人工介入用 `record_skill_event.py`，统计结构化采用效果用 `skill_metrics.py`。
 
 Explore 结束前运行 `preflight_lessons.py`；用 `record_failure.py` 记录 Fitness/测试/差异/生产失败，用 `create_lesson_candidate.py` 提议可复用预防，用 `retrieve_lessons.py` 检索激活经验，并通过 `approve_lesson.py` 在外部审批后激活。
 
@@ -122,6 +124,7 @@ Explore 结束前运行 `preflight_lessons.py`；用 `record_failure.py` 记录 
 - [AI Coding 实战教程](docs/ai-coding-tutorial.zh.md)
 - [Harness 架构](i18n/zh/core/harness-engineering.md)
 - [变更生命周期](i18n/zh/core/change-lifecycle.md)
+- [可实施设计评审](i18n/zh/core/design-review.md)
 - [SDD 工作流](i18n/zh/core/sdd-workflow.md)
 - [治理基线](i18n/zh/core/methodology-governance.md)
 - [Self-Refine 反馈闭环](i18n/zh/core/self-refine.md)

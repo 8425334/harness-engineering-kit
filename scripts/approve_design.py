@@ -20,9 +20,9 @@ def main() -> int:
     args = parser.parse_args()
     change_dir = args.change_dir.resolve()
     try:
-        record = read_json(change_dir / "change.json")
+        record = read_json(change_dir / "governance.json")
     except (OSError, ValueError) as exc:
-        print(f"APPROVAL BLOCKED: cannot read change record: {exc}")
+        print(f"APPROVAL BLOCKED: cannot read governance record: {exc}")
         return 2
     approval_path = change_dir / "approval.json"
     if approval_path.is_file():

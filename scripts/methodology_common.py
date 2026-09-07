@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tempfile
 import time
 from contextlib import contextmanager
@@ -110,12 +111,21 @@ def contract_files(change_dir: Path) -> list[Path]:
         change_dir / "proposal.md",
         *spec_files(change_dir),
         change_dir / "design.md",
-        change_dir / "task-plan.json",
+        change_dir / "tasks.md",
     ]
 
 
 def relative_digests(change_dir: Path, files: list[Path]) -> dict[str, str]:
-    return {str(path.relative_to(change_dir)): sha256(path) for path in files}
+    return {str(path.relative_to(change_dir)): contract_digest(path) for path in files}
+
+
+def contract_digest(path: Path) -> str:
+    """Digest contract content while ignoring OpenSpec task progress marks."""
+    if path.name != "tasks.md":
+        return sha256(path)
+    content = path.read_text(encoding="utf-8")
+    normalized = re.sub(r"(?m)^(-\s+\[)[ xX](\]\s+)", r"\1 \2", content)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def append_event_line(change_dir: Path, event: dict[str, Any]) -> None:
@@ -127,7 +137,7 @@ def append_event_line(change_dir: Path, event: dict[str, Any]) -> None:
 
 
 def append_event(change_dir: Path, event: dict[str, Any], update_record: bool = True) -> None:
-    record_path = change_dir / "change.json"
+    record_path = change_dir / "governance.json"
     with file_lock(record_path):
         events_path = change_dir / "evidence" / "events.jsonl"
         original_events = events_path.read_bytes() if events_path.is_file() else None

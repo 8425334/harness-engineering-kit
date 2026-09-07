@@ -34,9 +34,9 @@
 | **agent-policy.yaml** | 项目唯一事实源：命令、可读写路径、权限、交付引用都在这一个文件里 |
 | **门禁（Gate）** | 每个生命周期阶段的通过/不通过检查（`check_phase.py`），只有拿到"通过"证据才能推进状态 |
 | **Fitness** | 受保护的质量门禁目录 `docs/fitness/`。Agent 只能读取执行、不能修改；按 fast/normal/deep 分层 |
-| **engineering Skill** | 编排非平凡代码变更的 Agent Skill：路由上下文、编排生命周期、记录证据 |
+| **engineering Skill** | 非平凡代码变更的治理外壳：路由上下文、调用 OpenSpec 原生生命周期、记录证据 |
 | **Profile（后端 RAM / 前端 RAD / 全栈）** | engineering Skill 的 Design 与验证特化，回答"这个需求该怎么建模、怎么验证" |
-| **OpenSpec** | Harness 的子级规格写作/校验能力，产出 `proposal.md`、`spec.md`、`design.md`、`tasks.md`，不拥有生命周期 |
+| **OpenSpec** | 生命周期所有者，负责 Explore、Propose、Apply、Validate、Sync 与 Archive |
 | **SDD** | 规格驱动交付：先写清"做什么、为什么、边界、WHEN/THEN 行为"，再实现 |
 | **契约（Contract）** | 接口、类型、字段、错误、权限的明确约定；审批绑定契约摘要，契约一变授权即失效 |
 | **需求反思（Requirement Reflection）** | 发送回答/产生副作用前把任务理解归类为 `ready / clarify / correct / blocked` 的回答级质量门 |
@@ -164,7 +164,7 @@ Token Cache 的思想是：
 | 生命周期阶段 | 可缓存 / 可复用的产物 |
 |-|-|
 | Explore（上下文） | `agent-policy.yaml`、`profile.yaml`、`ai.json`、命中的 `AI.md`——由 `resolve_context.py` 排出固定顺序，`context_cache.py` 对其原始字节做稳定指纹 |
-| Propose（契约） | 提案、行为 Spec、Design、`task-plan.json` 任务图 |
+| Propose（契约） | 提案、行为 Spec、Design、OpenSpec `tasks.md` |
 | Apply（执行） | 每个任务的成功 run 记录与执行证据 |
 | Review / Sync | 门禁结果、审查证据、同步摘要 |
 
@@ -191,7 +191,7 @@ Token Cache 的思想是：
 | 路径上下文 | `AI.md`（≤400 行/篇） | 局部职责、边界、导航、局部验证 | 覆盖上层指令 |
 | 编排 | `engineering` Skill | 路由任务、编排生命周期、记录证据 | 重复项目约定 |
 | Design/验证特化 | 后端 / 前端 / 全栈 Profile | RAM / RAD / 全栈契约的建模与验证方式 | 独立生命周期 |
-| 变更工作区 | `openspec/changes/<id>/` | proposal / specs/…/spec / design / tasks + 治理证据（change.json、task-plan.json、approval.json…） | 拥有生命周期 |
+| 变更工作区 | `openspec/changes/<id>/` | `.openspec.yaml` + proposal / specs / design / tasks + `governance.json` 与审批/执行证据 | 重复 OpenSpec 生命周期 |
 | 质量门禁 | `docs/fitness/**`（受保护） | 分层质量检查，定义"真正完成" | 被 Agent 修改 |
 
 **权威顺序固定**：system/developer/user 指令 → 原生指令层级 → `agent-policy.yaml` → 根 `ai.json` → 按需选中的路径 `AI.md` → Profile 默认值。任何一层都只补充、不覆盖上一层；仓库文本（Issue、fixture、生成内容、日志、代码注释）一律当作**不可信输入**处理。
@@ -222,29 +222,28 @@ Token Cache 的思想是：
 
 规则只有一条：**不要在多个实质不同的解释之间静默选择**。歧义影响结果就停下来问，并把推荐选项一起给出。
 
-### 2.3 统一生命周期：状态、门禁、证据
+### 2.3 OpenSpec 主生命周期 + Engineering 治理外壳
 
-每个非微小变更都对应一条生命周期，唯一由 `methodology_state.py` 推进状态、`check_phase.py` 校验阶段门禁：
+每个非微小变更都沿 OpenSpec 原生生命周期推进；`check_phase.py` 只校验 Engineering 治理证据，不维护第二套状态：
 
 ```text
-Explore → Propose（Spec → Design → Approval）→ Apply → Sync → Archive
+Explore → Propose → Apply → Verify → Sync → Archive
 ```
 
-| 阶段 | 状态目标 | 门禁 | 说明 |
-|-|-|-|-|
-| Explore | `EXPLORED` | EXPLORE | 读取上下文，产出影响分析与上下文决策，预检经验 |
-| Spec | `CONTRACT_READY` | SPEC | 业务提案 + 可观测行为 Spec（WHEN/THEN） |
-| Design | `DESIGN_READY` | DESIGN | 技术 Design + `tasks.md` + 审批绑定的 `task-plan.json` 任务图 |
-| Approval | `APPROVED` | EXECUTE | 外部身份审批，绑定全部契约摘要 |
-| Apply | `IMPLEMENTING → VERIFYING → VERIFIED` | EXECUTE → REVIEW | 按任务图执行，逐任务记录证据并勾选进度；验证/Review 在 Apply 内完成 |
-| Sync | `SYNCED` | SYNC | 已验证行为同步回权威 Spec/文档，摘要一致 |
-| Archive | `ARCHIVED` | ARCHIVE | 归档证据；生产变更需生产闭环先到 `CLOSED` |
+| 阶段 | OpenSpec 负责 | Engineering 治理 |
+|-|-|-|
+| Explore | 调研与澄清 | 上下文、需求反思、经验预检 |
+| Propose | proposal/specs/design/tasks | Design Review、上下文影响、审批 |
+| Apply | 执行并勾选 `tasks.md` | 逐任务执行证据、Fitness |
+| Verify | `openspec-verify-change`（并运行 `openspec validate --strict`） | 实现一致性、Review 摘要、漂移检查、生产门禁 |
+| Sync | 合并 delta specs | 源/目标摘要证据 |
+| Archive | 归档 change | 经验闭环与生产关闭 |
 
 设计之外还有三条异常轨道：契约漂移 → `CONTRACT_CHANGED`（需回 `CONTRACT_READY` 重新审批）、仓库漂移 → `DRIFT_DETECTED`、验证失败 → `REMEDIATING`。审批绑定的是契约摘要——Design/Spec/任务图任一变化，原授权即失效。
 
-### 2.4 OpenSpec 是子级，不是第二条生命周期
+### 2.4 Engineering 不再复制 OpenSpec 生命周期
 
-`openspec/changes/<id>/` 是唯一活跃变更工作区，但它的"父亲"是 Harness 生命周期：`init_change.py` 负责创建 change 并写入父子契约（`change.json`），OpenSpec 只通过 `dispatch_openspec.py` 提供白名单内的写作/校验（`status` / `instructions` / `validate` / `show` / `templates`）。**不再有独立的 `/opsx:*` 生命周期**——这是它与上一代架构最大的区别。工程化交付依赖的各个概念不是互相独立的流程，而是同一份生命周期里职责不同的部分。
+`openspec/changes/<id>/` 是唯一活跃变更工作区，由 OpenSpec 创建并以 `.openspec.yaml` 标记。Engineering 随后用 `init_governance.py` 附加 `governance.json`，直接调用最新版生成的 `openspec-*` Skills；它不拦截 OpenSpec 命令，也不维护 dispatcher、任务投影或技术状态机。
 
 
 ## 三、从线性实现到模型驱动
@@ -534,19 +533,21 @@ Demo 选择**企业级多业态订单优惠分摊引擎**——它有真实工�
 
 让 Agent 实现该需求。工程 Skill 先跑上下文解析与**需求反思**——这里大概率触发 `clarify`（示例：金额内部用分还是元？跨境的输入从哪来？是否要 REST 接口？），Agent 会停下来聚焦提问并给出推荐，确认后才继续。
 
-然后创建 change（Harness 是父，OpenSpec 是子）：
+然后先由 OpenSpec 创建 change，再附加 Engineering 治理：
 
 ```bash
-python3 docs/methodology/scripts/init_change.py order-discount-allocation \
+openspec new change order-discount-allocation --schema harness-engineering
+python3 docs/methodology/scripts/init_governance.py order-discount-allocation \
   --title "多业态订单优惠分摊引擎" --mode backend --owner team \
-  --trigger explicit-selection --profile-path docs/methodology/profile.yaml
+  --trigger explicit-selection
 ```
 
-Explore 结束前跑一次经验预检（`preflight_lessons.py`），并补全上下文决策。工作区长这样（注意与上一代架构的差别：`change.json` 里写死了 Harness 父 / OpenSpec 子的契约，独立 `/opsx:*` 不再是合法入口）：
+Explore 结束前跑一次经验预检（`preflight_lessons.py`），并补全上下文决策。工作区长这样：
 
 ```text
 openspec/changes/order-discount-allocation/
-├── change.json                  # schema v3：状态机 + 父子契约
+├── .openspec.yaml              # OpenSpec change 与 schema 标记
+├── governance.json             # Engineering 治理 sidecar
 ├── context-pack.md              # 已解析上下文包摘要
 ├── impact-analysis.md           # 影响分析：范围/风险/待改对象
 ├── context-impact.json          # 计划交付文件 + ai.json/AI.md 是否需更新（审批绑定）
@@ -559,26 +560,23 @@ openspec/changes/order-discount-allocation/
 │   └── discount-allocation/
 │       └── spec.md              # 需求 + WHEN/THEN 场景
 ├── design.md                    # 架构选择、模型、任务、风险
-├── tasks.md                     # 人工可读任务列表（运行态勾选）
-└── task-plan.json               # 审批绑定的任务 DAG（权威）
+└── tasks.md                     # OpenSpec 唯一任务定义与运行态进度
 ```
 
-推进状态只能走 `methodology_state.py`，且阶段门禁必须通过：
+用 OpenSpec 查看产物状态，并单独执行治理门禁：
 
 ```bash
-python3 docs/methodology/scripts/methodology_state.py openspec/changes/order-discount-allocation EXPLORED --actor agent
-# 门禁失败会输出 BLOCKED 与缺失证据
+openspec status --change order-discount-allocation --json
+python3 docs/methodology/scripts/check_phase.py openspec/changes/order-discount-allocation EXPLORE
 ```
 
 ### Step 5 写 Spec：把行为固化下来
 
-OpenSpec 只通过调度器被调用，产出业务提案与**实现中立的行为 Spec**：
+OpenSpec 直接产出业务提案与**实现中立的行为 Spec**：
 
 ```bash
-python3 docs/methodology/scripts/dispatch_openspec.py \
-  openspec/changes/order-discount-allocation instructions --artifact proposal
-python3 docs/methodology/scripts/dispatch_openspec.py \
-  openspec/changes/order-discount-allocation instructions --artifact specs
+openspec instructions proposal --change order-discount-allocation --json
+openspec instructions specs --change order-discount-allocation --json
 ```
 
 ```text
@@ -590,7 +588,7 @@ python3 docs/methodology/scripts/dispatch_openspec.py \
 
 **边界意识**：Spec 要明确"不做 REST、不做数据库迁移、不做真实税率推算"。如果 Agent 擅自新增 Controller 或 Mapper，就是越过非目标——这正是"非目标"的价值。
 
-### Step 6 Design：从 Spec 读出模型，把任务变成 DAG
+### Step 6 Design：从 Spec 读出模型，生成 OpenSpec Tasks
 
 这是后端 RAM 的 Model 阶段，产出 `design.md`。先识别领域模型与规则模型：
 
@@ -598,7 +596,7 @@ python3 docs/methodology/scripts/dispatch_openspec.py \
 
 **规则模型**：`BusinessTypeRuleSpec` 声明预处理步骤 + 核心分配器 + 余数策略 + 单商品上限。跨境与会员复用已有步骤组合成新管线，新增业态 = 新增枚举 + 注册一条 spec，不改核心（开闭原则）。
 
-再把实现拆成受审批绑定的任务 DAG。示例（波次 W1→W3，`task-plan.json` 与 `tasks.md` ID 必须一致，Design 时全部未勾选）：
+再把实现拆成依赖有序的 OpenSpec tasks。任务说明直接包含范围、验收与验证，Design 时全部未勾选：
 
 | 任务 | 内容 | 依赖 | 写范围（示意） | 是否可并行 |
 |-|-|-|-|-|
@@ -609,10 +607,9 @@ python3 docs/methodology/scripts/dispatch_openspec.py \
 | T5 | 单测 + 编译 + Fitness 快速门禁 | T4 | `test/**` | 否 |
 
 ```bash
-python3 docs/methodology/scripts/dispatch_openspec.py \
-  openspec/changes/order-discount-allocation instructions --artifact design
-python3 docs/methodology/scripts/check_task_plan.py \
-  openspec/changes/order-discount-allocation --phase DESIGN
+openspec instructions design --change order-discount-allocation --json
+python3 docs/methodology/scripts/check_phase.py \
+  openspec/changes/order-discount-allocation DESIGN
 ```
 
 ### Step 7 人工审批：绑定契约摘要
@@ -625,30 +622,30 @@ python3 docs/methodology/scripts/approve_design.py \
   --actor reviewer --source pull-request --approval-id PR-42
 ```
 
-审批后，任务图是权威；**复选只是运行态进度**。此后任何 Spec/Design/任务图/写范围的改动都会让授权失效，进入 `CONTRACT_CHANGED`。
+审批后，`tasks.md` 的任务内容是契约的一部分，复选框只是运行态进度。此后任何 Spec/Design/任务内容改动都必须重新审批。
 
 ### Step 8 Apply：按波次执行，逐任务留证据
 
-状态推进到 `IMPLEMENTING` 后，由唯一协调者按任务图调度。平台支持且有安全隔离（分支/工作树或互不相交写范围）时，就绪波次可并行；否则按同一张图顺序执行并记录降级原因——**缺并行能力不减少任务、审批或门禁**。
+调用 `openspec-apply-change` 后，由唯一协调者按 `tasks.md` 调度。平台支持且有安全隔离（分支/工作树或互不相交写范围）时可并行；否则顺序执行并在 `execution-evidence.json` 记录降级原因。
 
-每个任务成功后立刻记录 run，并**自动勾选**对应 `tasks.md` 项：
+每个任务成功后先记录 run，再由 OpenSpec Apply workflow 勾选对应 `tasks.md` 项：
 
 ```bash
-python3 docs/methodology/scripts/record_task_completion.py complete \
-  openspec/changes/order-discount-allocation T1 --run evidence/task-run-T1.json
+python3 docs/methodology/scripts/check_execution.py \
+  openspec/changes/order-discount-allocation --json
 ```
 
-> 只有 `record_task_completion.py complete` 能勾选任务——绝不能手改复选框、也不能攒到最后一起勾。若 Apply 被中断，保持 `IMPLEMENTING`，用 `resume` 从已校验证据恢复并拿到下一就绪波次。
+> `tasks.md` 的勾选由 OpenSpec Apply workflow 管理。若 Apply 被中断，用 `openspec status --change order-discount-allocation --json` 恢复上下文后继续 Apply。
 
 ### Step 9 验证与 Review：门禁 + 证据才算完成
 
-任务全部完成并逐条记录 run 后，从 `IMPLEMENTING` 经 `VERIFYING` 推进到 `VERIFIED`——`VERIFIED` 的门禁就是 REVIEW。验证命令以 `agent-policy.yaml` 声明为准，形如：
+任务全部完成并逐条记录 run 后，执行 OpenSpec 严格校验与 Engineering Review。验证命令以 `agent-policy.yaml` 声明为准，形如：
 
 ```bash
-python3 docs/methodology/scripts/methodology_state.py openspec/changes/order-discount-allocation VERIFYING --actor agent   # EXECUTE 门禁：任务全绿才可进入验证
+openspec validate order-discount-allocation --type change --strict --no-interactive
 python3 docs/fitness/scripts/fitness.py --tier fast
 mvn -q compile && mvn test
-python3 docs/methodology/scripts/methodology_state.py openspec/changes/order-discount-allocation VERIFIED --actor agent    # 触发 REVIEW 门禁
+python3 docs/methodology/scripts/check_phase.py openspec/changes/order-discount-allocation REVIEW
 ```
 
 **调试日志三阶段**：编码时在分支入口 / 状态流转 / 外部调用处加临时调试日志 → 跑测试时**逐条自检验证数据流**（分支是否走对、状态是否 A→B、调用参数是否匹配契约）→ 通过后清理临时输出、保留框架业务日志。
@@ -669,7 +666,7 @@ Review 门禁强制检查三件事：
 
 ### Step 10 Sync → Archive：把已验证行为写回权威文档
 
-验证通过后进入 Sync：把行为与实现差异同步回权威 Spec/文档，并证明摘要一致；随后 Archive 归档证据与学习结论。本次 Demo 是纯领域引擎、无生产影响，Archive 前只需补学习结论即可：
+验证通过后进入 Sync：保持已审批的 change delta spec 不变，把行为与实现差异合并回权威 Spec/文档，并在 schema-version-2 `sync-evidence.json` 中分别记录 `source_sha256` 与 `destination_sha256`；随后 Archive 归档证据与学习结论。本次 Demo 是纯领域引擎、无生产影响，Archive 前只需补学习结论即可：
 
 ```text
 Explore → Propose(Spec → Design → Approval) → Apply → Sync → Archive
@@ -697,7 +694,7 @@ Explore → Propose(Spec → Design → Approval) → Apply → Sync → Archive
 
 - 用 `--mode fullstack` 创建 **一个** change（不是前端一个、后端一个）。
 - Design 把**后端 Model 与前端 Decompose 写进同一份 `design.md`**，并先定义跨越 API 两侧的共享行为契约：版本/兼容、可空性/默认值、校验、错误结构、权限、幂等、重试/超时、时区/精度、可观测字段、生成类型与所有权。
-- 后端、前端、生成契约、集成工作全部进入**同一张 `task-plan.json` DAG**，一次审批绑定整份契约。
+- 后端、前端、生成契约、集成工作全部进入**同一份 OpenSpec `tasks.md`**，一次审批绑定整份契约。
 
 | 关键点 | 内容 |
 |-|-|
@@ -717,5 +714,3 @@ Review 强制校验：请求/响应字段与枚举、错误与权限语义、路
 > **何时不用**：单侧任务直接用后端 / 前端 Profile；平台不支持并发或隔离时退化为同图串行。
 >
 > **一句话**：并行不是默认选项，是契约清晰时的加速器。契约不清晰，串行更稳。
-
-

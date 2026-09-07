@@ -1,0 +1,12 @@
+<whiteboard type="mermaid">
+flowchart TB
+    REQ["分摊请求"]
+    SHAPE["应用层：形状校验（空请求 / 缺字段 / 负数 / 未知业态）"]
+    AGG["OrderSettlement 聚合（Money 整数分 · ItemLine）"]
+    REG["RuleSpec Registry：按 BusinessType 选规则 spec"]
+    PRE["预处理步骤管线：TAX_DEDUCT / POINTS_DEDUCT / LOW_PRICE_FIRST …"]
+    ALC["核心分配器：PROPORTIONAL / EQUAL_BY_QUANTITY"]
+    CHK["整数分 · 单商品上限校验"]
+    OUT["AllocationResult：正常值 / 未成团 / 金额不足（错误即值，不用异常）"]
+    REQ --> SHAPE --> AGG --> REG --> PRE --> ALC --> CHK --> OUT
+</whiteboard>

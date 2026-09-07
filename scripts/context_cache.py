@@ -83,7 +83,7 @@ def record(change_dir: Path, event: dict[str, Any]) -> None:
     with file_lock(evidence):
         with evidence.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(event, ensure_ascii=False) + "\n")
-    if (change_dir / "change.json").is_file():
+    if (change_dir / "governance.json").is_file():
         append_event(change_dir, event)
 
 

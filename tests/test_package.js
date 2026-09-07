@@ -32,7 +32,7 @@ test('published package installs and runs without repository-only files', () => 
       'scripts/verify_skill.py',
       'templates/engineering/SKILL.md',
       'templates/engineering/manifest.yaml',
-      'templates/workflow/change.json.template',
+      'templates/openspec-schema/schema.yaml',
       'VERSION',
     ]) {
       assert.ok(includedFiles.has(required), `package is missing ${required}`);

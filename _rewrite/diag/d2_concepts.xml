@@ -1,0 +1,17 @@
+<whiteboard type="mermaid">
+flowchart TB
+    N0["一次需求 / 任务"]
+    N1["入口：根 CLAUDE.md / AGENTS.md（必读 · 安全边界 · 路由）"]
+    N2["策略：agent-policy.yaml（命令 / 路径 / 权限 / 交付引用）+ profile.yaml（档位）"]
+    N3["上下文：resolve_context.py 确定性加载 → ai.json 索引 + 命中的 AI.md"]
+    N4["需求反思：ready / clarify / correct / blocked"]
+    N5["engineering Skill：编排统一生命周期（状态 + 门禁 + 证据）"]
+    N6["Design / 验证特化：后端 RAM · 前端 RAD · 全栈"]
+    N7["子能力：OpenSpec（写作 / 校验）· Fitness 门禁（受保护）· 经验记忆（预检）"]
+    N8["证据化交付：状态推进 + 测试 / 构建 / 门禁 / 审查"]
+    N0 --> N1 --> N2 --> N3 --> N4 --> N5
+    N5 --> N6
+    N5 --> N7
+    N6 --> N7
+    N7 --> N8
+</whiteboard>

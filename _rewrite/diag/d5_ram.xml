@@ -1,0 +1,10 @@
+<whiteboard type="mermaid">
+flowchart TB
+    P1["Read · 发生在 Explore：权威策略 / 最近路径上下文 / 相关代码 / 测试 / 契约 / 历史"]
+    P2["Analyze · 发生在 Explore · Spec：不变量 / 所有权 / 信任边界 / 调用方 / 兼容性 / 迁移 / 失败模式"]
+    P3["Model · 发生在 Design：领域边界 / 接口 / 持久化规则 / 权限 / 幂等 / 事务 · 并发 / 实现顺序"]
+    P4["人工审批：绑定契约摘要（Design / 任务图 / 写范围）"]
+    P5["Apply：只消费已审批的模型，只做局部漂移检查，不静默重做设计"]
+    P6["验证：compile → test → fitness（命令以 agent-policy.yaml 为准，风险决定深度）"]
+    P1 --> P2 --> P3 --> P4 --> P5 --> P6
+</whiteboard>

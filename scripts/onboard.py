@@ -15,6 +15,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import cmp_to_key
@@ -57,6 +58,36 @@ SKILL_ROOTS = {
     "codex": ".agents/skills",
     "opencode": ".opencode/skills",
 }
+
+OPENSPEC_TOOLS = {
+    "claude": "claude",
+    "codex": "codex",
+    "opencode": "opencode",
+    "cursor": "cursor",
+    "gemini": "gemini",
+    "trae-work": "trae",
+}
+
+OPENSPEC_SKILL_ROOTS = {
+    "claude": ".claude/skills",
+    "codex": ".agents/skills",
+    "opencode": ".opencode/skills",
+    "cursor": ".cursor/skills",
+    "gemini": ".gemini/skills",
+    "trae": ".trae/skills",
+}
+
+REQUIRED_OPENSPEC_SKILLS = (
+    "openspec-explore",
+    "openspec-propose",
+    "openspec-apply-change",
+    "openspec-sync-specs",
+    "openspec-archive-change",
+    "openspec-update-change",
+    "openspec-verify-change",
+)
+
+OPENSPEC_WORKFLOWS = ("propose", "explore", "apply", "update", "sync", "archive", "verify")
 
 LEGACY_MARKERS = (
     "docs/sdd",
@@ -133,6 +164,13 @@ def skill_platforms_for(agent: str | None) -> tuple[str, ...]:
     return (platform,) if platform else ()
 
 
+def openspec_tools_for(agent: str | None) -> tuple[str, ...]:
+    if agent is None:
+        return ("claude", "codex", "opencode")
+    tool = OPENSPEC_TOOLS.get(agent)
+    return (tool,) if tool else ()
+
+
 def detect_status(root: Path, agent: str | None = None) -> str:
     legacy = any((root / marker).exists() for marker in LEGACY_MARKERS)
     if legacy:
@@ -181,6 +219,10 @@ def source_actions(source: Path, root: Path, tier: int, status: str, agent: str 
         actions.append(Action("sync", str(relative.relative_to(source)), f"docs/methodology/scripts/{relative.name}", "canonical control script"))
     for relative in sorted((source / "templates/workflow").glob("*.template")):
         actions.append(Action("sync", str(relative.relative_to(source)), f"docs/methodology/change-templates/{relative.name}", "change evidence template"))
+    for relative in sorted((source / "templates/openspec-schema").rglob("*")):
+        if relative.is_file():
+            target = Path("openspec/schemas/harness-engineering") / relative.relative_to(source / "templates/openspec-schema")
+            actions.append(Action("sync", str(relative.relative_to(source)), target.as_posix(), "OpenSpec lifecycle schema"))
     for relative in sorted((source / "templates/compaction").glob("*")):
         if relative.is_file():
             target_name = relative.name.replace(".template", "")
@@ -226,6 +268,11 @@ def source_actions(source: Path, root: Path, tier: int, status: str, agent: str 
 
     for platform in skill_platforms_for(agent):
         actions.append(Action("sync-tree", "templates/engineering", f"{SKILL_ROOTS[platform]}/engineering", "selected Agent Skill discovery"))
+    tools = openspec_tools_for(agent)
+    if tools:
+        actions.append(Action("openspec-init", None, ",".join(tools), "generate native OpenSpec lifecycle Skills"))
+    else:
+        actions.append(Action("report", None, "OpenSpec native Skills", "selected Agent has no OpenSpec Skill adapter; use OpenSpec CLI operations directly"))
 
     if status == "legacy":
         actions.append(Action("report", None, "legacy architecture", "preserve legacy files; route future work to engineering Skill"))
@@ -375,7 +422,7 @@ def ensure_safe_target(root: Path, target: Path) -> None:
 
 def validate_action_sources(source: Path, actions: list[Action], agent: str | None = None) -> list[str]:
     errors: list[str] = []
-    for directory in ("core", "scripts", "templates/engineering", "templates/workflow"):
+    for directory in ("core", "scripts", "templates/engineering", "templates/workflow", "templates/openspec-schema"):
         if not (source / directory).is_dir():
             errors.append(f"missing required source directory: {directory}")
     required = list(root_files_for(agent))
@@ -387,6 +434,7 @@ def validate_action_sources(source: Path, actions: list[Action], agent: str | No
         if path.name not in KIT_DEV_ONLY_SCRIPTS
     )
     required.extend(path.relative_to(source).as_posix() for path in (source / "templates/workflow").glob("*.template"))
+    required.extend(path.relative_to(source).as_posix() for path in (source / "templates/openspec-schema").rglob("*") if path.is_file())
     required.extend(path.relative_to(source).as_posix() for path in (source / "templates/compaction").glob("*"))
     required.extend(path.relative_to(source).as_posix() for path in (source / "templates/production").glob("*.template"))
     if any(action.target == "docs/fitness/README.md" for action in actions):
@@ -476,6 +524,68 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
                 result = "created" if not existed else ("unchanged" if changed == 0 else "updated")
                 results.append({"target": action.target, "result": result, "files": copied})
                 continue
+            if action.kind == "openspec-init":
+                with tempfile.TemporaryDirectory(prefix="hek-openspec-home-") as isolated_home:
+                    staging = Path(isolated_home) / "project"
+                    environment = dict(os.environ)
+                    environment["HOME"] = isolated_home
+                    environment["USERPROFILE"] = isolated_home
+                    environment["OPENSPEC_TELEMETRY"] = "0"
+                    commands = (
+                        ["openspec", "config", "set", "profile", "custom"],
+                        ["openspec", "config", "set", "workflows", json.dumps(OPENSPEC_WORKFLOWS)],
+                        ["openspec", "init", str(staging), "--tools", action.target, "--profile", "custom", "--no-animation"],
+                    )
+                    for command in commands:
+                        completed = subprocess.run(command, text=True, capture_output=True, env=environment, check=False)
+                        if completed.returncode:
+                            raise OSError(completed.stderr.strip() or completed.stdout.strip() or "openspec init failed")
+                    missing = [
+                        f"{OPENSPEC_SKILL_ROOTS[tool]}/{skill}/SKILL.md"
+                        for tool in action.target.split(",")
+                        for skill in REQUIRED_OPENSPEC_SKILLS
+                        if not (staging / OPENSPEC_SKILL_ROOTS[tool] / skill / "SKILL.md").is_file()
+                    ]
+                    if missing:
+                        raise OSError("OpenSpec did not generate required Skills: " + ", ".join(missing))
+                    copied = 0
+                    changed = 0
+                    for tool in action.target.split(","):
+                        for skill in REQUIRED_OPENSPEC_SKILLS:
+                            source_dir = staging / OPENSPEC_SKILL_ROOTS[tool] / skill
+                            target_dir = root / OPENSPEC_SKILL_ROOTS[tool] / skill
+                            ensure_safe_target(root, target_dir)
+                            ensure_dir(target_dir)
+                            for item in source_dir.rglob("*"):
+                                if not item.is_file():
+                                    continue
+                                destination = target_dir / item.relative_to(source_dir)
+                                ensure_safe_target(root, destination)
+                                ensure_dir(destination.parent)
+                                snapshot(destination)
+                                copied += 1
+                                if not destination.exists() or sha256(item) != sha256(destination):
+                                    changed += 1
+                                shutil.copy2(item, destination)
+                schema_check = subprocess.run(
+                    ["openspec", "schema", "validate", "harness-engineering", "--json"],
+                    cwd=root,
+                    text=True,
+                    capture_output=True,
+                    env={**os.environ, "OPENSPEC_TELEMETRY": "0"},
+                    check=False,
+                )
+                if schema_check.returncode:
+                    raise OSError(schema_check.stderr.strip() or schema_check.stdout.strip() or "OpenSpec schema validation failed")
+                try:
+                    schema_payload = json.loads(schema_check.stdout)
+                except json.JSONDecodeError as exc:
+                    raise OSError("OpenSpec schema validation did not return JSON") from exc
+                if schema_payload.get("valid") is not True:
+                    raise OSError("OpenSpec harness-engineering schema is invalid")
+                result = "unchanged" if changed == 0 else "generated"
+                results.append({"target": action.target, "result": result, "provider": "openspec", "files": copied})
+                continue
             if not action.source:
                 continue
             source_file = source / action.source
@@ -507,6 +617,7 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
 
 def run_check(root: Path, source: Path, agent: str | None = None) -> tuple[int, list[str]]:
     context_files = ("AGENTS.md", "CLAUDE.md") if agent is None else (str(agent_target(agent)["root_file"]),)
+    failures: list[str] = []
     checks = [
         ("check_root_context.py", ["check_root_context.py", str(root), "--context-file", *context_files]),
         ("check_context_docs.py", ["check_context_docs.py", str(root)]),
@@ -524,7 +635,11 @@ def run_check(root: Path, source: Path, agent: str | None = None) -> tuple[int, 
         )
         for platform in skill_platforms_for(agent)
     )
-    failures: list[str] = []
+    for tool in openspec_tools_for(agent):
+        for skill in REQUIRED_OPENSPEC_SKILLS:
+            path = root / OPENSPEC_SKILL_ROOTS[tool] / skill / "SKILL.md"
+            if not path.is_file():
+                failures.append(f"OpenSpec Skill missing ({tool}): {path}")
     for name, command in checks:
         script = source / "scripts" / command[0]
         if not script.is_file():

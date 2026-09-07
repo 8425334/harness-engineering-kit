@@ -26,7 +26,7 @@ PLACEHOLDER_VALUES = {
     "{{ENTRY_POINTS}}": "src", "{{RELATED_CONTRACTS}}": "none", "{{RULE_OWNER}}": "team",
     "{{METHODOLOGY_OWNER}}": "team", "{{PROJECT_SPECIFIC_DEFINITION_OR_DEFAULT}}": ">2 files",
     "{{FAST_NORMAL_OR_DEEP}}": "normal", "{{EXCEPTION_RECORD_PATH}}": "docs/methodology/exceptions.md",
-    "{{METHODOLOGY_VERSION}}": "0.4.0", "{{YYYY-MM-DD}}": "2027-01-01",
+    "{{METHODOLOGY_VERSION}}": "0.5.0", "{{YYYY-MM-DD}}": "2027-01-01",
 }
 
 
@@ -78,7 +78,7 @@ class OnboardTests(unittest.TestCase):
                 [],
             )
             self.assertEqual(plan["installed_version"], "0.2.0")
-            self.assertEqual(plan["source_version"], "0.4.0")
+            self.assertEqual(plan["source_version"], "0.5.0")
             self.assertEqual(plan["version_relation"], "upgrade")
             self.assertEqual(plan["version_transition"]["from"], "0.2.0")
             self.assertEqual(plan["migration_manifest_errors"], [])
@@ -111,7 +111,7 @@ class OnboardTests(unittest.TestCase):
             (root / ".git").mkdir()
             version_path = root / "docs/methodology/VERSION"
             version_path.parent.mkdir(parents=True)
-            version_path.write_text("0.5.0\n", encoding="utf-8")
+            version_path.write_text("0.6.0\n", encoding="utf-8")
             result = run_onboard(
                 "--project-root", str(root), "--source-root", str(self.source),
                 "--tier", "1", "--apply", "--json",
@@ -158,6 +158,10 @@ class OnboardTests(unittest.TestCase):
         actions = onboard.source_actions(self.source, self.source / "tests", 1, "fresh")
         targets = {action.target for action in actions}
         self.assertIn(".opencode/skills/engineering", targets)
+
+    def test_native_workflow_contract_includes_verify(self) -> None:
+        self.assertIn("openspec-verify-change", onboard.REQUIRED_OPENSPEC_SKILLS)
+        self.assertEqual(onboard.OPENSPEC_WORKFLOWS[-1], "verify")
 
     def test_selected_agent_gets_only_its_native_context_and_skill(self) -> None:
         claude_targets = {action.target for action in onboard.source_actions(self.source, self.source / "tests", 1, "fresh", "claude")}

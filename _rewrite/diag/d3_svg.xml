@@ -1,0 +1,68 @@
+<whiteboard type="svg">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 470" font-family="-apple-system,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="d3a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3B6FC0"/></marker>
+    <marker id="d3r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#B4453C"/></marker>
+  </defs>
+  <g fill="#EEF3FC" stroke="#3B6FC0" stroke-width="1.6">
+    <rect x="18"  y="24" width="184" height="112" rx="10"/>
+    <rect x="230" y="24" width="250" height="112" rx="10"/>
+    <rect x="508" y="24" width="260" height="112" rx="10"/>
+    <rect x="796" y="24" width="172" height="112" rx="10"/>
+    <rect x="996" y="24" width="172" height="112" rx="10"/>
+  </g>
+  <g stroke="#3B6FC0" stroke-width="1.6" marker-end="url(#d3a)">
+    <line x1="206" y1="80" x2="228" y2="80"/>
+    <line x1="484" y1="80" x2="506" y2="80"/>
+    <line x1="772" y1="80" x2="794" y2="80"/>
+    <line x1="972" y1="80" x2="994" y2="80"/>
+  </g>
+  <g text-anchor="middle" fill="#1F3864">
+    <text x="110"  y="66" font-size="17" font-weight="bold">Explore</text>
+    <text x="110"  y="100" font-size="13" fill="#44546A">状态：EXPLORED</text>
+    <text x="355"  y="46" font-size="17" font-weight="bold">Propose</text>
+    <text x="355"  y="76" font-size="13">Spec → Design → Approval</text>
+    <text x="355"  y="102" font-size="11" fill="#44546A">CONTRACT_READY · DESIGN_READY · APPROVED</text>
+    <text x="638"  y="46" font-size="17" font-weight="bold">Apply</text>
+    <text x="638"  y="76" font-size="13">IMPLEMENTING → VERIFYING → VERIFIED</text>
+    <text x="638"  y="102" font-size="11" fill="#44546A">验证 / Review 在 Apply 内完成</text>
+    <text x="882"  y="66" font-size="17" font-weight="bold">Sync</text>
+    <text x="882"  y="100" font-size="13" fill="#44546A">状态：SYNCED</text>
+    <text x="1082" y="66" font-size="17" font-weight="bold">Archive</text>
+    <text x="1082" y="100" font-size="13" fill="#44546A">状态：ARCHIVED</text>
+  </g>
+  <g text-anchor="middle" font-size="12" fill="#2F2F2F">
+    <g>
+      <rect x="46"  y="158" width="128" height="30" rx="15" fill="#F7F7F8" stroke="#B4B4B4"/>
+      <text x="110" y="178">门禁 EXPLORE</text>
+    </g>
+    <g>
+      <rect x="245" y="158" width="220" height="30" rx="15" fill="#F7F7F8" stroke="#B4B4B4"/>
+      <text x="355" y="178">门禁 SPEC · DESIGN · EXECUTE</text>
+    </g>
+    <g>
+      <rect x="520" y="158" width="236" height="30" rx="15" fill="#F7F7F8" stroke="#B4B4B4"/>
+      <text x="638" y="178">门禁 EXECUTE · REVIEW</text>
+    </g>
+    <g>
+      <rect x="824" y="158" width="116" height="30" rx="15" fill="#F7F7F8" stroke="#B4B4B4"/>
+      <text x="882" y="178">门禁 SYNC</text>
+    </g>
+    <g>
+      <rect x="1024" y="158" width="116" height="30" rx="15" fill="#F7F7F8" stroke="#B4B4B4"/>
+      <text x="1082" y="178">门禁 ARCHIVE</text>
+    </g>
+  </g>
+  <g stroke="#B4453C" stroke-width="1.5" stroke-dasharray="6 5" fill="none" marker-end="url(#d3r)">
+    <line x1="1150" y1="248" x2="360" y2="248"/>
+    <line x1="1150" y1="316" x2="120" y2="316"/>
+    <line x1="1150" y1="384" x2="640" y2="384"/>
+  </g>
+  <g font-size="12.5" fill="#B4453C" text-anchor="end">
+    <text x="1150" y="238">契约漂移 CONTRACT_CHANGED → 回 Propose 重新审批（原授权失效）</text>
+    <text x="1150" y="306">仓库漂移 DRIFT_DETECTED → 回 Explore 重读上下文</text>
+    <text x="1150" y="374">验证失败 REMEDIATING → 回 Apply 修正后继续</text>
+  </g>
+  <text x="590" y="452" text-anchor="middle" font-size="12.5" fill="#777777">状态唯一由 methodology_state.py 推进 · 门禁由 check_phase.py 校验 · 审批绑定契约摘要，任一变更即失效</text>
+</svg>
+</whiteboard>

@@ -1,0 +1,9 @@
+<whiteboard type="mermaid">
+flowchart TB
+    START["需求：从学历 / 学籍 / 学校排名 / 985·211 标签加工多个风控变量"]
+    SVC["EducationFeatureServiceImpl：注入 4 个 Mapper + RedisTemplate"]
+    V1["把所有变量的取数 · 换算 · 缓存 · 异常处理都写进方法体"]
+    V2["补日期解析 / 校名归一化 / 缓存 / 异常 / 响应组装，继续叠进同一个类"]
+    P["问题：新增变量、替换数据源、调整语义都要改同一个类；领域概念只存在于方法名里，无法独立测试与复用"]
+    START --> SVC --> V1 --> V2 --> P
+</whiteboard>

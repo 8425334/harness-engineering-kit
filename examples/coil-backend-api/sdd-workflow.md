@@ -1,6 +1,6 @@
 # coil-backend-api SDD Adaptation
 
-The project uses the canonical change artifact layout and lifecycle. Its approval-bound parent `task-plan.json` DAG and OpenSpec child `tasks.md` progress projection normally follow this dependency order:
+The project uses the OpenSpec-native change layout and lifecycle. OpenSpec `tasks.md` is the sole dependency-ordered task list; Engineering records matching execution evidence:
 
 1. Shared domain/API contract
 2. Domain and application behavior

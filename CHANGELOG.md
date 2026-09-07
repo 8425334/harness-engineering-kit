@@ -6,10 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-09-07
+
 ### Added
 - Added cross-platform CI coverage for Linux, macOS, and Windows across Node.js 18 and 22.
 - Added a package-consumer regression test that packs, installs, and runs the distributable CLI from an isolated project.
 - Added a single `npm run verify` release-facing command for unit tests, package validation, Skill contract checks, and full lifecycle smoke coverage.
+
+### Fixed
+- Sync now preserves approval-bound delta specs and records separate source and merged canonical digests in schema-version-2 evidence; byte-identical schema-version-1 evidence remains supported.
+- Spec gates now accept both bare `WHEN`/`THEN` lines and OpenSpec-style `- **WHEN**`/`- **THEN**` lines.
+- The approval template now includes `requirement-reflection.json`, matching the contract digests produced and validated by the approval scripts.
+
+### Changed
+- Upgraded the supported OpenSpec baseline to `1.12.0` and aligned onboarding with its project-local `.agents/skills` layout and seven native workflow Skills, including `openspec-update-change` and `openspec-verify-change`.
+- Made OpenSpec the lifecycle owner for change creation, artifact progression, task checkboxes, validation, synchronization, and archiving; Engineering now attaches governance evidence without a parallel state machine.
+- Replaced the retired Harness-parent/OpenSpec-child dispatcher, lifecycle state, task-plan, and task-completion compatibility layer with the OpenSpec-native schema and governance sidecar.
 
 ## [0.4.0] — 2026-09-06
 

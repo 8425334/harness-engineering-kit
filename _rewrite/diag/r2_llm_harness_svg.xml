@@ -1,0 +1,25 @@
+<whiteboard type="svg">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" font-family="-apple-system,'PingFang SC','Microsoft YaHei',sans-serif">
+  <rect x="40"  y="24" width="440" height="58" rx="10" fill="#FBF3E4" stroke="#C8902E" stroke-width="1.6"/>
+  <text x="260" y="52" text-anchor="middle" font-size="17" font-weight="bold" fill="#7A5A12">LLM：生成智能（概率引擎）</text>
+  <text x="260" y="73" text-anchor="middle" font-size="12" fill="#9A7A30">天生不受控</text>
+  <rect x="520" y="24" width="440" height="58" rx="10" fill="#EEF3FC" stroke="#3B6FC0" stroke-width="1.6"/>
+  <text x="740" y="52" text-anchor="middle" font-size="17" font-weight="bold" fill="#1F3864">Harness：仓库内工程运行时</text>
+  <text x="740" y="73" text-anchor="middle" font-size="12" fill="#44546A">负责组织 · 约束 · 验证</text>
+  <g font-size="13.5" fill="#333333">
+    <circle cx="78"  cy="132" r="4" fill="#C8902E"/><text x="96"  y="137">上下文决定质量：输入里有什么，上限就在哪</text>
+    <circle cx="78"  cy="186" r="4" fill="#C8902E"/><text x="96"  y="191">上下文越长越贵：Token 即成本、延迟越高</text>
+    <circle cx="78"  cy="240" r="4" fill="#C8902E"/><text x="96"  y="245">调用无状态：不“记住”上一次对话</text>
+    <circle cx="78"  cy="294" r="4" fill="#C8902E"/><text x="96"  y="299">输出概率性：可能犯错 / 幻觉，需外部验证</text>
+    <circle cx="78"  cy="348" r="4" fill="#C8902E"/><text x="96"  y="353">不天然守流程：需要外部系统约束步骤</text>
+    <circle cx="558" cy="132" r="4" fill="#3B6FC0"/><text x="576" y="137">工作目录 · 权威规则与策略文件</text>
+    <circle cx="558" cy="186" r="4" fill="#3B6FC0"/><text x="576" y="191">确定性上下文加载（resolve_context.py）</text>
+    <circle cx="558" cy="240" r="4" fill="#3B6FC0"/><text x="576" y="245">工具调用边界 · 生命周期状态 · 阶段门禁</text>
+    <circle cx="558" cy="294" r="4" fill="#3B6FC0"/><text x="576" y="299">审批绑定契约 · 测试 / Fitness / Review 证据</text>
+    <circle cx="558" cy="348" r="4" fill="#3B6FC0"/><text x="576" y="353">失败修正 · 经验记忆沉淀（lessons）</text>
+  </g>
+  <rect x="40" y="440" width="920" height="86" rx="10" fill="#EFF7EE" stroke="#4E8B4E" stroke-width="1.6"/>
+  <text x="500" y="472" text-anchor="middle" font-size="15.5" font-weight="bold" fill="#2E5E2E">LLM 提供认知能力，Harness 提供工程确定性</text>
+  <text x="500" y="502" text-anchor="middle" font-size="12.5" fill="#335533">LLM 决定“能不能做”；Harness 决定“允许它怎么做、做完怎么证明”</text>
+</svg>
+</whiteboard>

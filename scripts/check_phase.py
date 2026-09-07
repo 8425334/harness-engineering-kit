@@ -14,10 +14,11 @@ from typing import Any
 
 from check_agent_policy import validate as validate_agent_policy
 from check_context_docs import validate_context_impact, validate_project as validate_context_docs
+from check_design import validate as validate_design
 from check_profile import read_project_profile, self_refine_max_iterations, self_refine_policy, validate as validate_profile
 from check_production_readiness import rollout_cycles, validate as validate_production_record
 from check_root_context import validate as validate_root_context
-from check_task_plan import validate_execution, validate_plan
+from check_execution import validate_execution
 from lessons_common import lesson_matches, load_failure_events, load_lessons, validate_lesson
 from methodology_common import contract_files, meaningful, read_json, relative_digests, sha256, spec_files
 from requirement_reflection import validate as validate_requirement_reflection
@@ -25,6 +26,8 @@ from openspec_common import validate_orchestration
 
 
 PHASES = ("EXPLORE", "SPEC", "DESIGN", "EXECUTE", "REVIEW", "SYNC", "ARCHIVE")
+WHEN_PATTERN = re.compile(r"^(?:WHEN\s+|-\s+\*\*WHEN\*\*\s+)", re.MULTILINE)
+THEN_PATTERN = re.compile(r"^(?:THEN\s+|-\s+\*\*THEN\*\*\s+)", re.MULTILINE)
 
 
 def meaningful_value(value: Any) -> bool:
@@ -65,7 +68,7 @@ def validate_event_store(change_dir: Path, record: dict[str, Any], errors: list[
     path = change_dir / "evidence" / "events.jsonl"
     if not path.is_file():
         if record.get("events"):
-            errors.append("evidence/events.jsonl is missing while change.json contains events")
+            errors.append("evidence/events.jsonl is missing while governance.json contains events")
         return
     try:
         lines = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -75,7 +78,7 @@ def validate_event_store(change_dir: Path, record: dict[str, Any], errors: list[
     if not all(isinstance(item, dict) for item in lines):
         errors.append("evidence/events.jsonl must contain only JSON objects")
     elif lines != record.get("events", []):
-        errors.append("change.json events must exactly match evidence/events.jsonl")
+        errors.append("governance.json events must exactly match evidence/events.jsonl")
 
 
 def timestamp(value: Any) -> datetime | None:
@@ -88,36 +91,34 @@ def timestamp(value: Any) -> datetime | None:
         return None
 
 
-def require_evidence_after_state(record: dict[str, Any], evidence: dict[str, Any], state: str, name: str, errors: list[str]) -> None:
+def require_evidence_after(change_dir: Path, evidence: dict[str, Any], prerequisite: str, name: str, errors: list[str]) -> None:
     evidence_at = timestamp(evidence.get("at"))
-    transitions = [
-        timestamp(item.get("at")) for item in record.get("events", [])
-        if isinstance(item, dict) and item.get("event") == "methodology.transition" and item.get("to") == state
-    ]
-    state_times = [item for item in transitions if item is not None]
+    prerequisite_path = change_dir / prerequisite
     if evidence_at is None:
         errors.append(f"{name} at must be an ISO-8601 timestamp")
-    elif not state_times or evidence_at < max(state_times):
-        errors.append(f"{name} must be created after the latest transition to {state}")
+    elif not prerequisite_path.is_file():
+        errors.append(f"{name} requires {prerequisite}")
+    elif evidence_at.timestamp() < prerequisite_path.stat().st_mtime:
+        errors.append(f"{name} must be created after {prerequisite}")
 
 
 def validate_change_record(record: dict[str, Any], errors: list[str]) -> None:
-    required = ("schema_version", "change_id", "title", "profile", "risk", "skill", "mode", "delivery_scope", "project_root", "state", "owner")
+    required = ("schema_version", "change_id", "title", "profile", "risk", "skill", "mode", "delivery_scope", "project_root", "owner")
     for field in required:
         if not meaningful_value(record.get(field)):
-            errors.append(f"change.json missing or placeholder: {field}")
-    if record.get("schema_version") != 3:
-        errors.append("change.json schema_version must be 3")
+            errors.append(f"governance.json missing or placeholder: {field}")
+    if record.get("schema_version") != 1:
+        errors.append("governance.json schema_version must be 1")
     errors.extend(validate_orchestration(record))
     if record.get("skill") != "engineering":
-        errors.append("change.json skill must be engineering")
+        errors.append("governance.json skill must be engineering")
     if record.get("mode") not in {"backend", "frontend", "fullstack"}:
-        errors.append("change.json mode must be backend, frontend, or fullstack")
+        errors.append("governance.json mode must be backend, frontend, or fullstack")
     if record.get("delivery_scope") not in {"technical", "production"}:
-        errors.append("change.json delivery_scope must be technical or production")
+        errors.append("governance.json delivery_scope must be technical or production")
     project_root = Path(str(record.get("project_root", "")))
     if not project_root.is_absolute() or not project_root.is_dir():
-        errors.append("change.json project_root must be an existing absolute directory")
+        errors.append("governance.json project_root must be an existing absolute directory")
         return
     errors.extend(f"root context: {error}" for error in validate_root_context(project_root))
     errors.extend(f"agent policy: {error}" for error in validate_agent_policy(project_root / "docs/methodology/agent-policy.yaml"))
@@ -127,9 +128,9 @@ def validate_change_record(record: dict[str, Any], errors: list[str]) -> None:
     except (OSError, ValueError):
         actual_profile = actual_risk = None  # validate_profile already reported the underlying error
     if actual_profile and record.get("profile") != actual_profile:
-        errors.append("change.json profile must match the project profile.yaml")
+        errors.append("governance.json profile must match the project profile.yaml")
     if actual_risk and record.get("risk") != actual_risk:
-        errors.append("change.json risk must match the project profile.yaml project_risk")
+        errors.append("governance.json risk must match the project profile.yaml project_risk")
     context_errors, _ = validate_context_docs(project_root)
     errors.extend(f"context docs: {error}" for error in context_errors)
 
@@ -239,8 +240,22 @@ def validate_specs(change_dir: Path, errors: list[str]) -> None:
         if not scenarios:
             errors.append(f"{path.relative_to(change_dir)} requires a #### Scenario")
         for scenario in scenarios:
-            if not re.search(r"^WHEN\s+", scenario, re.MULTILINE) or not re.search(r"^THEN\s+", scenario, re.MULTILINE):
+            if not WHEN_PATTERN.search(scenario) or not THEN_PATTERN.search(scenario):
                 errors.append(f"{path.relative_to(change_dir)} has a scenario without WHEN/THEN")
+
+
+def validate_spec_content(path: Path, label: str, errors: list[str]) -> None:
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        errors.append(f"{label} is not readable UTF-8: {exc}")
+        return
+    scenarios = re.split(r"(?=^#### Scenario:\s*)", content, flags=re.MULTILINE)[1:]
+    if not scenarios:
+        errors.append(f"{label} requires a #### Scenario")
+    for scenario in scenarios:
+        if not WHEN_PATTERN.search(scenario) or not THEN_PATTERN.search(scenario):
+            errors.append(f"{label} has a scenario without WHEN/THEN")
 
 
 def validate_approval(change_dir: Path, errors: list[str]) -> None:
@@ -317,7 +332,7 @@ def validate_review(change_dir: Path, record: dict[str, Any], errors: list[str])
             errors.append("review-evidence.json change_digest does not match the reviewed file contents")
     validate_context_updates(change_dir, record, evidence, errors)
     errors.extend(validate_execution(change_dir, record, evidence))
-    require_evidence_after_state(record, evidence, "VERIFYING", "review-evidence.json", errors)
+    require_evidence_after(change_dir, evidence, "execution-evidence.json", "review-evidence.json", errors)
     validate_self_refine(change_dir, record, errors)
 
 
@@ -368,7 +383,7 @@ def validate_self_refine(change_dir: Path, record: dict[str, Any], errors: list[
             errors.append("required-independent self-refine policy needs a passed independent_check")
         elif independent.get("actor") == evidence.get("actor"):
             errors.append("required-independent self-refine check must use a different actor")
-    require_evidence_after_state(record, evidence, "VERIFYING", "self-refine-evidence.json", errors)
+    require_evidence_after(change_dir, evidence, "approval.json", "self-refine-evidence.json", errors)
 
 
 def validate_lesson_candidate(change_dir: Path, errors: list[str]) -> None:
@@ -391,13 +406,13 @@ def validate_learning_closure(change_dir: Path, errors: list[str]) -> None:
     events, event_errors = load_failure_events(change_dir)
     errors.extend(f"failure events: {error}" for error in event_errors)
     try:
-        expected_change_id = read_json(change_dir / "change.json").get("change_id")
+        expected_change_id = read_json(change_dir / "governance.json").get("change_id")
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
         expected_change_id = None
     if expected_change_id is not None:
         for event in events:
             if event.get("change_id") != expected_change_id:
-                errors.append("failure event change_id must match change.json")
+                errors.append("failure event change_id must match governance.json")
     if not events:
         return
     candidate = change_dir / "lesson-candidate.json"
@@ -445,16 +460,31 @@ def validate_sync(change_dir: Path, record: dict[str, Any], errors: list[str]) -
         return
     project_root = Path(str(record.get("project_root", "")))
     synchronized_sources: set[str] = set()
+    synchronized_destinations: set[str] = set()
+    schema_version = evidence.get("schema_version")
+    if schema_version not in {1, 2}:
+        errors.append("sync-evidence.json schema_version must be 1 or 2")
     for target in targets:
         if not isinstance(target, dict):
             errors.append("sync target must be an object")
             continue
         source_name = target.get("source")
         destination_name = target.get("destination")
-        expected_digest = target.get("sha256")
-        if not all(meaningful_value(item) for item in (source_name, destination_name, expected_digest)):
-            errors.append("sync target requires source, destination, and sha256")
+        if schema_version == 1:
+            source_digest = destination_digest = target.get("sha256")
+            digest_fields = (source_digest,)
+        else:
+            source_digest = target.get("source_sha256")
+            destination_digest = target.get("destination_sha256")
+            digest_fields = (source_digest, destination_digest)
+        if not all(meaningful_value(item) for item in (source_name, destination_name, *digest_fields)):
+            requirement = "source, destination, and sha256" if schema_version == 1 else (
+                "source, destination, source_sha256, and destination_sha256"
+            )
+            errors.append(f"sync target requires {requirement}")
             continue
+        source_name = str(source_name)
+        destination_name = str(destination_name)
         source = (change_dir / str(source_name)).resolve()
         destination = (project_root / str(destination_name)).resolve()
         try:
@@ -463,15 +493,30 @@ def validate_sync(change_dir: Path, record: dict[str, Any], errors: list[str]) -
         except ValueError:
             errors.append(f"sync path escapes allowed root: {source_name} -> {destination_name}")
             continue
+        source_relative = Path(source_name)
+        if len(source_relative.parts) != 3 or source_relative.parts[0] != "specs" or source_relative.name != "spec.md":
+            errors.append(f"sync source must be specs/<capability>/spec.md: {source_name}")
+            continue
+        expected_destination = Path("openspec/specs") / source_relative.parts[1] / "spec.md"
+        if Path(destination_name) != expected_destination:
+            errors.append(f"sync destination must be {expected_destination.as_posix()} for source {source_name}")
+            continue
         if not source.is_file() or not destination.is_file():
             errors.append(f"sync source or destination missing: {source_name} -> {destination_name}")
-        elif sha256(source) != expected_digest or sha256(destination) != expected_digest:
+        elif sha256(source) != source_digest or sha256(destination) != destination_digest:
             errors.append(f"sync digest mismatch: {source_name} -> {destination_name}")
-        synchronized_sources.add(str(source_name))
+        else:
+            validate_spec_content(destination, destination_name, errors)
+        if source_name in synchronized_sources:
+            errors.append(f"duplicate sync source: {source_name}")
+        if destination_name in synchronized_destinations:
+            errors.append(f"duplicate sync destination: {destination_name}")
+        synchronized_sources.add(source_name)
+        synchronized_destinations.add(destination_name)
     expected_sources = {str(path.relative_to(change_dir)) for path in spec_files(change_dir)}
     if synchronized_sources != expected_sources:
         errors.append("sync targets must cover every and only specs/<capability>/spec.md source")
-    require_evidence_after_state(record, evidence, "VERIFIED", "sync-evidence.json", errors)
+    require_evidence_after(change_dir, evidence, "review-evidence.json", "sync-evidence.json", errors)
 
 
 def validate_production_closure(record: dict[str, Any], errors: list[str]) -> None:
@@ -479,7 +524,7 @@ def validate_production_closure(record: dict[str, Any], errors: list[str]) -> No
         return
     production_record = record.get("production_record")
     if not production_record:
-        errors.append("production delivery requires change.json production_record")
+        errors.append("production delivery requires governance.json production_record")
         return
     path = Path(str(production_record))
     if not path.is_absolute():
@@ -497,7 +542,7 @@ def validate_production_closure(record: dict[str, Any], errors: list[str]) -> No
         errors.append(f"cannot read production record: {path}")
         return
     if production.get("change_id") != record.get("change_id"):
-        errors.append("production record change_id does not match Engineering change")
+        errors.append("production record change_id does not match OpenSpec change")
     for error in validate_production_record(production):
         errors.append(f"production record invalid: {error}")
     if production.get("state") != "CLOSED":
@@ -544,11 +589,11 @@ def check(change_dir: Path, phase: str) -> list[str]:
     if phase not in PHASES:
         return [f"unknown phase: {phase}"]
     try:
-        record = read_json(change_dir / "change.json")
+        record = read_json(change_dir / "governance.json")
     except (OSError, json.JSONDecodeError, ValueError):
-        return ["change.json must be a valid JSON object"]
+        return ["governance.json must be a valid JSON object"]
     if str(record.get("change_id", "")) != change_dir.name:
-        errors.append(f"change.json change_id must match the change directory name: {change_dir.name}")
+        errors.append(f"governance.json change_id must match the change directory name: {change_dir.name}")
     validate_change_record(record, errors)
     validate_event_store(change_dir, record, errors)
     validate_requirement(change_dir, errors)
@@ -569,9 +614,13 @@ def check(change_dir: Path, phase: str) -> list[str]:
         validate_specs(change_dir, errors)
     if phase in {"DESIGN", "EXECUTE", "REVIEW", "SYNC", "ARCHIVE"}:
         require_markdown(change_dir, ("design.md", "tasks.md"), errors)
-    if phase in {"DESIGN", "EXECUTE"}:
-        _, task_errors = validate_plan(change_dir, status_mode="planning" if phase == "DESIGN" else "runtime")
+        errors.extend(validate_design(change_dir / "design.md"))
+    if phase == "DESIGN":
+        from check_execution import task_status
+        tasks, task_errors = task_status(change_dir)
         errors.extend(task_errors)
+        if any(tasks.values()):
+            errors.append("OpenSpec tasks must be unchecked before approval")
     if phase in {"EXECUTE", "REVIEW", "SYNC", "ARCHIVE"}:
         validate_approval(change_dir, errors)
     if phase in {"REVIEW", "SYNC", "ARCHIVE"}:
@@ -582,7 +631,7 @@ def check(change_dir: Path, phase: str) -> list[str]:
     if phase == "ARCHIVE":
         archive = validate_named_evidence(change_dir, "archive-evidence.json", ("actor", "at", "destination"), errors)
         if archive:
-            require_evidence_after_state(record, archive, "SYNCED", "archive-evidence.json", errors)
+            require_evidence_after(change_dir, archive, "sync-evidence.json", "archive-evidence.json", errors)
         validate_learning_closure(change_dir, errors)
         validate_production_closure(record, errors)
     return errors

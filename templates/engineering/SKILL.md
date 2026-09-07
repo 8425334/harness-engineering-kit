@@ -1,68 +1,72 @@
 ---
 name: engineering
-description: Orchestrate non-trivial code changes through repository context, specification, design approval, implementation, verification, sync, and archive. Use for requested implementation or refactoring; do not use for read-only explanation, diagnosis, or review.
+description: Govern non-trivial code changes while delegating lifecycle actions to native OpenSpec Skills. Use for requested implementation or refactoring; do not use for read-only explanation, diagnosis, or review.
 ---
 
 # Engineering
 
-Operate as the task-level orchestrator. Project policy and code rules come from applicable `AGENTS.md`/`CLAUDE.md`, `docs/methodology/agent-policy.yaml`, and path documents; never redefine or weaken them here.
+Engineering is a governance wrapper, not a competing lifecycle. OpenSpec owns change creation, artifact order, task progress, Sync, and Archive. Repository policy comes from applicable native instructions, `docs/methodology/agent-policy.yaml`, the resolved path context, and the selected profile.
 
 ## Onboarding
 
-When the user asks to接入、初始化、升级或迁移 Harness, use [references/onboarding.md](references/onboarding.md) before routing a code change. This is a repository operation performed in the conversation, not a request for the user to run `init.sh` manually. First run the read-only plan; show the detected state and file actions; ask for confirmation before `--apply`; then run the deterministic checks and report evidence. Legacy files are preserved unless the user explicitly approves a separate cleanup change.
+When the user asks to接入、初始化、升级或迁移 Harness, use [references/onboarding.md](references/onboarding.md). Generate the read-only plan, explain the exact file and OpenSpec Skill actions, ask for confirmation, then apply and run deterministic checks. Never copy OpenSpec Skill prompts into Harness; `openspec init` or `openspec update` owns them.
 
 ## Requirement Reflection
 
-After drafting every task response, run the response-level requirement reflection described in `docs/methodology/core/requirement-reflection.md` before sending the response or taking a side effect. Classify the result as `ready`, `clarify`, `correct`, or `blocked`.
-
-- For `ready`, state material assumptions, the plan, and verification before acting within the authorized scope.
-- For `clarify`, stop consequential writes and ask focused questions for ambiguities that could change the result; include the recommended option and its trade-off.
-- For `correct`, show the repository or technical evidence that conflicts with the request, propose the smallest viable correction, and wait for confirmation.
-- For `blocked`, explain the missing authorization or evidence and provide the safest next plan.
-
-Never silently select between materially different interpretations or present a recommendation as an approved requirement. After confirmation changes the requirement, update the plan and repeat the reflection. Do not expose private chain-of-thought; report only the finding, evidence, recommendation, and confirmation needed.
+Before a consequential action, follow `docs/methodology/core/requirement-reflection.md`. Report only the result, evidence, assumptions, recommendation, and confirmation needed. Stop on material ambiguity, conflict, missing authorization, or missing evidence.
 
 ## Route
 
-1. Run `resolve_context.py` for every target path and explicit task keyword, then read its exact parent-to-child load order. A resolution failure blocks implementation.
-2. Classify the change as `backend`, `frontend`, or `fullstack`. An explicit user mode wins unless it conflicts with the actual scope.
-3. Read only the matching reference:
-   - Backend: [references/backend.md](references/backend.md)
-   - Frontend: [references/frontend.md](references/frontend.md)
-   - Fullstack: [references/fullstack.md](references/fullstack.md)
-4. Create the canonical `openspec/changes/<change-id>/` workspace with `init_change.py` for non-trivial work. Declare the observed trigger as `native-selection`, `explicit-selection`, or `manual-fallback`; the fallback form requires a reason. Small reversible changes may use the selected profile directly with focused verification.
-   Record the approved requirement reflection with `requirement_reflection.py record` before closing Explore; its digest is part of the approval contract.
-5. For every non-trivial change, complete `context-impact.json`. Read [references/context.md](references/context.md) when any context signal may apply.
-   Generate the stable context prefix with `context_cache.py fingerprint`; record provider results as `hit`, `miss`, or `bypass` without changing host Agent configuration.
-6. Apply the project Profile's Self-Refine policy before requesting a phase gate. Keep iterations bounded; when evidence is required, write `self-refine-evidence.json` after the final verification pass.
-7. Before closing Explore, run `preflight_lessons.py` for every target path and explicit task keyword. Record matching lessons and feed them into Self-Refine; record Fitness, test, diff, phase, and production failures with `record_failure.py`.
-8. Confirm the parent-child contract: every live `openspec/changes/<id>/` must carry the canonical `change.json` relationship created by `init_change.py`. Harness is the parent and owns change identity, state, approval, implementation, Sync, and Archive. OpenSpec is a child used only through `dispatch_openspec.py` for allowlisted JSON `status`, `instructions`, `validate`, `show`, or `templates` operations. Read `docs/methodology/core/openspec-orchestration.md`; never enter a standalone `/opsx:*` lifecycle or call change-scoped OpenSpec directly.
-9. During Design, create matching `tasks.md` and `task-plan.json`. Read `docs/methodology/core/task-orchestration.md`, declare stable task ids, dependencies, exclusive write scopes, contract references, acceptance criteria, focused verification, and coordinator integration commands, then run `check_task_plan.py <change-dir> --phase DESIGN`.
+1. Run `resolve_context.py` for every target path and explicit task keyword, then read the returned order exactly.
+2. Classify the scope as backend, frontend, or fullstack and read only the matching reference.
+3. Run `preflight_lessons.py` before implementation planning closes. Complete `context-impact.json` for non-trivial work and use `context_cache.py` for stable-prefix telemetry.
+4. Select the native OpenSpec Skill that matches the user's action:
+   - explore or clarify: `openspec-explore`
+   - create a complete proposal: `openspec-propose`
+   - create a change: `openspec new change` (or `openspec-propose` for a complete proposal)
+   - revise planning artifacts: `openspec-update-change`
+   - implement: `openspec-apply-change`
+   - validate artifact structure: `openspec validate --strict`
+   - verify implementation consistency: `openspec-verify-change`
+   - sync delta specs: `openspec-sync-specs`
+   - archive: `openspec-archive-change`
+5. Immediately after OpenSpec creates a change, attach `governance.json` with `init_governance.py`. Never create the OpenSpec change directory yourself.
+6. Use OpenSpec `status`, `instructions`, `validate`, and artifact paths directly. Do not route them through a Harness dispatcher.
+
+## Design Confirmation
+
+The project-local `harness-engineering` OpenSpec schema supplies the implementation-ready `design.md` template. Run `check_design.py` and `check_phase.py <change-dir> DESIGN`, then present the recommendation, scope, topology, runtime flow, boundaries, interfaces/data, failure behavior, delivery/rollback, verification, risks, and every numbered confirmation item.
+
+Require explicit developer confirmation before `approve_design.py` writes `approval.json`. The original request, generated artifacts, OpenSpec readiness, or silence is not approval. Contract changes after approval require renewed approval.
 
 ## Lifecycle
 
-Use the single lifecycle defined in `docs/methodology/core/change-lifecycle.md`:
+Follow the OpenSpec lifecycle exposed by its native Skills:
 
 ```text
-Explore → Propose (Spec → Design → Approval) → Apply → Sync → Archive
+openspec-explore → openspec-propose → openspec-apply-change → openspec-verify-change → openspec-sync-specs → openspec-archive-change
 ```
 
-Advance state only with `methodology_state.py`. The corresponding `check_phase.py` gate must pass. Each gate also enforces the Harness-parent/OpenSpec-child invariant (`check_change_workspace.py`): an unmanaged or incorrectly related OpenSpec change directory fails closed. Approval binds the parent contract artifacts; contract drift invalidates it. Production-scoped changes additionally require a linked production record to reach `CLOSED` before archive.
+Engineering wraps that sequence with governance gates:
 
-Self-Refine is an inner `Generate → Self-Critique → Refine → Re-check` loop. It can prepare remediation but cannot approve changes, replace tests, or weaken any gate.
+- Explore/Propose: context resolution, requirement reflection, lessons, context impact, Design Review, and OpenSpec strict artifact validation.
+- Apply: require current `approval.json`; record actual task runs and integration in `execution-evidence.json` while OpenSpec remains the sole owner of `tasks.md` checkbox state.
+- Verify/Review: invoke `openspec-verify-change`, run project tests/build/Fitness, `check_execution.py`, and `check_phase.py <change-dir> REVIEW`; record exact commands, changed-file digests, context updates, exceptions, and uncovered cases.
+- Sync: let `openspec-sync-specs` perform the intelligent merge, then record source/destination digests and run the `SYNC` governance gate.
+- Archive: require governance and production closure, then let `openspec-archive-change` perform the archive.
+
+Harness has no second change state machine. Approval and evidence files are facts checked against OpenSpec artifacts, not lifecycle state transitions.
 
 ## Apply Orchestration
 
-After Approval, act as the only coordinator. Inspect the Agent runtime for native concurrent-worker support and the repository for worktree or reliable disjoint-scope isolation. Initialize `execution-evidence.json` from its template with an empty `task_runs` array and pending integration. Use `check_task_plan.py`'s deterministic waves: dispatch all safe, parallel-eligible tasks in the current ready wave when supported; otherwise execute the same DAG sequentially and record the concrete fallback reason. Never claim parallel execution unless different actors actually overlap in time.
+Before invoking `openspec-apply-change`, inspect runtime concurrency and isolation. OpenSpec `tasks.md` is the only task definition and progress source. If safe parallel work is available, group only dependency-independent tasks with disjoint write scopes; otherwise execute sequentially and record the fallback reason.
 
-Give each worker only its task entry, resolved path context, listed contract references, write scope, acceptance criteria, and focused verification. Workers may not change lifecycle/approval artifacts, expand scope, integrate another worker, or mark the whole change complete. Prefer one branch/worktree per worker; shared-workspace concurrency requires disjoint write scopes.
+After each OpenSpec task succeeds, append one task run to `execution-evidence.json` with its OpenSpec task id, actor, isolation, timestamps, changed files, exact verification commands, and evidence. Then allow the OpenSpec Apply Skill to mark that task complete. Never maintain a second task graph or repair OpenSpec checkboxes from Harness evidence.
 
-Wait for every dispatched task and inspect its changed files and focused verification. Immediately after a task succeeds, write its run record from `task-run.json.template` and invoke `record_task_completion.py complete <change-dir> <task-id> --run <task-run.json>`; this is the only completion operation and it automatically ticks the matching OpenSpec `tasks.md` item. Never tick a box manually or defer all ticks until the end. If Apply is interrupted, keep the change in `IMPLEMENTING` and invoke `record_task_completion.py resume <change-dir> --actor <agent> --json`; it reconciles validated evidence, repairs checkbox projection, and returns the next ready wave. A changed file without a validated run is still pending and must pass focused verification before completion. Integrate only successful results in `integration.merge_order`. If integration exposes a contract change, stop Apply and enter `CONTRACT_CHANGED`; do not repair the contract silently. The coordinator reruns every `integration.final_verification` command, completes integration evidence, and runs `check_task_plan.py <change-dir> --phase REVIEW` before the normal Review gate. Runtime completion, reassignment, retry, and checkbox state do not alter the approved `task-plan.json`.
+The coordinator owns integration, conflict resolution, final verification, and review evidence. If implementation reveals contract drift, stop, update the OpenSpec artifacts, invalidate stale approval, and request confirmation again.
 
 ## Evidence
 
-Record starts, fallbacks, and human interventions with `record_skill_event.py`; gate failures are recorded automatically. `execution-evidence.json` must identify actual capability, strategy, isolation, workers, commit/diff or shared-workspace result references, task-owned files, focused results, conflicts, merge order, and coordinator verification. Review requires one successful run per approved task and exact equality between those runs and checked `tasks.md` ids; use `record_task_completion.py sync <change-dir>` only to repair the projection from evidence. Review evidence must contain exact commands, exit codes, changed-file digests, and every required `ai.json`/`AI.md` update; its file set must exactly match execution evidence. Project Agents must not edit `docs/fitness/**` except canonical first installation or a demonstrable pre-existing Python syntax repair. Any other Fitness change has no size exemption and requires external human approval matching `check_fitness_protection.py`'s digest. If the Skill or a supporting capability is unavailable, record `skill.fallback` and follow the same lifecycle manually—never silently skip a gate.
+Use `record_skill_event.py`, `record_failure.py`, `create_lesson_candidate.py`, and the governance templates as applicable. `execution-evidence.json` task ids must exactly equal the checked OpenSpec tasks at Review, and its changed files must equal `review-evidence.json` files. Project Agents must not edit `docs/fitness/**` except canonical first installation or an approved repair.
 
-When a failure is reusable, create `lesson-candidate.json` with `create_lesson_candidate.py`. Only an external approval using `approve_lesson.py` may activate it under `docs/methodology/lessons/`; candidates and lessons never replace deterministic gates.
-
-Return the selected mode, current state, changed files, verification evidence, uncovered cases, and the next valid transition.
+If OpenSpec or a required native Skill is unavailable, report the missing dependency and stop lifecycle work; do not recreate its workflow inside Engineering. Return the selected OpenSpec action, governance checks, changed files, exact verification, uncovered cases, and the next valid OpenSpec action.

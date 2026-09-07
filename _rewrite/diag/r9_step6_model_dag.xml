@@ -1,0 +1,8 @@
+<whiteboard type="mermaid">
+flowchart TB
+    DOM["领域模型：OrderSettlement（聚合根）· Money（整数分保存）· BusinessType · AllocationResult"]
+    RUL["规则模型：BusinessTypeRuleSpec 声明 步骤 + 分配器 + 余数策略 + 单商品上限；新业态 = 新增枚举 + 注册 spec"]
+    DAG["task-plan.json 任务 DAG：T1 领域模型 → T2 RuleSpec → T3 分配器/管线 → T4 应用编排 → T5 单测/编译/Fitness"]
+    APPR["一次人工审批：绑定整份契约摘要（Design · 任务图 · 写范围）"]
+    DOM --> RUL --> DAG --> APPR
+</whiteboard>
