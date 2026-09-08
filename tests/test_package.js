@@ -32,6 +32,7 @@ test('published package installs and runs without repository-only files', () => 
       'scripts/verify_skill.py',
       'templates/engineering/SKILL.md',
       'templates/engineering/manifest.yaml',
+      'templates/GEMINI.md.template',
       'templates/openspec-schema/schema.yaml',
       'VERSION',
     ]) {

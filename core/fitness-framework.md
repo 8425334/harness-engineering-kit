@@ -86,3 +86,7 @@ The executor (`fitness.py`) must be:
 - **Single file**: One `.py` file is enough to run
 - **Auditable**: `--dry-run` mode shows what will execute
 - **Tiered**: `--tier fast|normal|deep` select depth on demand
+- **Stage-aware**: `--stage review|sync` selects lifecycle-specific metrics; unannotated legacy metrics belong to Review
+- **Receipted**: `--report <path>` writes a machine-readable receipt consumed by Engineering gates
+
+Review must run Fitness with `--stage review`; the REVIEW gate rejects missing or unsuccessful receipts. Sync must run `--stage sync`, where hard-gate metrics validate delta requirements against canonical `openspec/specs/**` content. `--tier` controls depth independently from `--stage`.

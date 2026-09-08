@@ -6,6 +6,8 @@ English documentation: [README.md](README.md)
 
 > 📖 **[Harness AI Coding 实战教程](docs/ai-coding-tutorial.zh.md)**：从"为什么需要工程化"到用真实命令跑通一次非平凡变更的完整导览（含全栈并行进阶；图表以飞书在线版白板呈现）。
 
+> 🎞️ **[Harness Engineering Kit 全局导览 PPT（中文 · 32 页）](presentations/Harness-Engineering-Kit-全局导览.pptx)**：按 Why → What → How → Grow → Use 展开的总览，含 RAM/RAD 实例页；由 `presentations/build_hek_deck.py` 生成，可随时重新生成。
+
 ## 架构
 
 | 层 | 负责 | 不负责 |
@@ -38,6 +40,8 @@ Design 首先生成可供开发者确认的可实施方案包：架构与关系�
 OpenSpec 的 `tasks.md` 是唯一任务定义和进度来源。Engineering 只为已勾选任务记录 `execution-evidence.json`，包含归属、验证、变更文件、集成顺序及并行/串行选择。详见[任务证据](i18n/zh/core/task-orchestration.md)。
 
 OpenSpec 是生命周期所有者。Engineering 直接调用原生 `openspec-*` Skill 和 CLI，再通过 `governance.json` 附加治理证据；不存在第二套生命周期或调度器。详见 [OpenSpec 集成](i18n/zh/core/openspec-orchestration.md)。
+
+安装后的根入口会把非平凡的功能实现、缺陷修复、重构、API、数据库和 UI 变更自动路由到项目内 `engineering` Skill，用户无需输入 `/engineering`；显式调用仍可作为覆盖方式。该契约会安装到 Claude、Codex、OpenCode、Cursor、Gemini 和 Trae 各自的项目级原生 Skill 目录。
 
 如果 Apply 中断，先执行 `openspec status --change <id> --json`，再继续原生 OpenSpec Apply；Engineering 只校验执行证据与 OpenSpec 已勾选任务一致。
 
@@ -88,15 +92,15 @@ npx --yes --package github:8425334/harness-engineering-kit hek handoff --agent t
 
 无 CLI 的桌面 Agent 先执行 `hek init --direct --yes` 导入项目控制面，再执行 `hek handoff --agent workbuddy` 或 `hek handoff --agent trae-work`。然后在对应 Agent 中打开项目，复制命令生成的提示词，让 Agent 读取项目内的 `AGENTS.md`/`CLAUDE.md` 和 `docs/methodology/agent-policy.yaml`。`handoff` 不会猜测或启动未知桌面应用，也不会写入项目文件。
 
-交互式 `init` 会先询问安装范围（未指定 `--tier` 时用方向键选择完整/轻量接入），再启动所选 Agent，由 Agent 完成接入；所选 Agent 只会得到自己的原生根入口（Claude Code 为 `CLAUDE.md`，Codex/OpenCode 及兼容 Agent 为 `AGENTS.md`）和对应的项目 Skill，不会同时初始化另一套入口。在 Agent 菜单中选择跳过项即可走兼容性确定性流程，未检测到已安装 Agent 时自动回退。非交互环境不会意外拉起外部程序，使用 `--open` 可显式开启（需配合 `--agent`/`HEK_AGENT`）。`--json` 切换为机器可读输出：从不启动 Agent、也从不交互确认——不带 `--yes` 时打印只读计划并以退出码 2 结束；带 `--yes` 时执行安装、检查并输出单一 JSON 回执（apply 失败回滚时也输出含 `errors` 的回执）。`HEK_AGENT` 可作为 `--agent` 的环境变量替代，`--prompt` 可覆盖传给终端 Agent 的首条提示词（提示词以单行传递，避免 Windows `cmd.exe` 截断）。默认提示词直接按用户语言理解和作答，不做“中文→英文→中文”转译；固定规则放在稳定前缀，项目路径、Tier、Agent 和授权状态集中在末尾，便于上下文缓存复用。
+交互式 `init` 会先询问安装范围（未指定 `--tier` 时用方向键选择完整/轻量接入），再启动所选 Agent，由 Agent 完成接入。所选 Agent 只会得到自己的原生根入口（Claude Code 为 `CLAUDE.md`，Gemini CLI 为 `GEMINI.md`，Codex/OpenCode 及兼容 Agent 为 `AGENTS.md`）和对应的项目 Skill，不会同时初始化另一套入口。在 Agent 菜单中选择跳过项即可走兼容性确定性流程，未检测到已安装 Agent 时自动回退。非交互环境不会意外拉起外部程序，使用 `--open` 可显式开启（需配合 `--agent`/`HEK_AGENT`）。`--json` 切换为机器可读输出：从不启动 Agent、也从不交互确认——不带 `--yes` 时打印只读计划并以退出码 2 结束；带 `--yes` 时执行安装、检查并输出单一 JSON 回执（apply 失败回滚时也输出含 `errors` 的回执）。`HEK_AGENT` 可作为 `--agent` 的环境变量替代，`--prompt` 可覆盖传给终端 Agent 的首条提示词（提示词以单行传递，避免 Windows `cmd.exe` 截断）。默认提示词直接按用户语言理解和作答，不做“中文→英文→中文”转译；固定规则放在稳定前缀，项目路径、Tier、Agent 和授权状态集中在末尾，便于上下文缓存复用。
 
 全新项目的占位符必须依据真实仓库事实填写后才能通过接入检查，因此无人值守的 `init --direct --yes` 在全新项目上会先安装脚手架再以退出码 2 结束（fail-closed）；已配置项目的升级则会直接通过。仅需安装脚手架的自动化场景使用 `--no-check`，或在确定性安装后打开 Agent（`--agent <id> --open --yes`）完成"填写-检查"闭环。
 
-`hek init` 采用 Agent 驱动：先选择安装范围与已安装的 Agent，在解析出的项目根目录打开该 Agent 的 CLI，并传入 Kit 路径、接入契约和所选 Agent 目标。由 Agent 读取项目事实、生成只读计划、请求确认、填写项目专属配置、执行 canonical 脚本并运行确定性检查；所选 Agent 只初始化对应的原生上下文入口与项目 Skill。Tier 1（轻量接入）安装核心控制面（含 `agent-policy.yaml` 引用的生产策略脚手架）；默认 Tier 2（完整接入）额外安装 Fitness 门禁脚本、Fitness 规则和经验记忆。每次接入都会写入 `docs/methodology/onboarding.json`，记录版本、文件摘要、创建/更新/保留的文件和校验结果。只有明确需要无 Agent 的兼容性确定性安装时才使用 `--direct`；它会忽略 `--agent` 和 `HEK_AGENT` 并安装全部兼容入口。
+`hek init` 采用 Agent 驱动：先选择安装范围与已安装的 Agent，在解析出的项目根目录打开该 Agent 的 CLI，并传入 Kit 路径、接入契约和所选 Agent 目标。由 Agent 读取项目事实、生成只读计划、请求确认、填写项目专属配置、执行 canonical 脚本并运行确定性检查；所选 Agent 只初始化对应的原生上下文入口与项目 Skill。Tier 1（轻量接入）安装核心控制面和生命周期门禁所需的最小 Fitness 执行器及 SDD 同步规则；默认 Tier 2（完整接入）额外安装完整 Fitness 规则和经验记忆。每次接入都会写入 `docs/methodology/onboarding.json`，记录版本、文件摘要、创建/更新/保留的文件和校验结果。只有明确需要无 Agent 的兼容性确定性安装时才使用 `--direct`；它会忽略 `--agent` 和 `HEK_AGENT` 并安装全部兼容入口。
 
 版本化升级会比较项目已安装版本与 Kit 版本：低版本到高版本同步全部规范资源，同版本仍检查漂移，高版本降级直接阻断，并报告该目标版本声明的特殊迁移事项。详见 [版本化管理](docs/versioning.md)。
 
-`ai.json` 超限或结构非法、`AI.md` 未索引或超限、策略缺失、占位符未填、引用路径断裂、任务图/执行证据非法、Profile 非法、Skill 资源缺失、安装内容过期或平台适配不支持都会失败。Engineering Skill 会针对 Claude Code、Codex 和 OpenCode 安装并校验。Cursor 以及旧 `ramer`、`fe-engineering`、`multi-agent` 入口不再兼容。
+`ai.json` 超限或结构非法、`AI.md` 未索引或超限、策略缺失、占位符未填、引用路径断裂、任务图/执行证据非法、Profile 非法、Skill 资源缺失、安装内容过期或平台适配不支持都会失败。Engineering Skill 会针对 Claude Code、Codex、OpenCode、Cursor、Gemini 和 Trae 安装并校验。旧 `ramer`、`fe-engineering`、`multi-agent` 入口不再兼容。
 
 任务上下文由接入后的项目控制面解析；执行契约见 [CLI 接入指南](templates/engineering/references/onboarding.md)。
 

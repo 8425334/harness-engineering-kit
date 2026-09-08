@@ -45,6 +45,100 @@ def is_exit_code(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
+def command_has_stage(command: Any, stage: str) -> bool:
+    return isinstance(command, str) and bool(re.search(rf"(?:^|\s)--stage(?:=|\s+){re.escape(stage)}(?:\s|$)", command))
+
+
+def command_has_option(command: Any, option: str) -> bool:
+    return isinstance(command, str) and bool(re.search(rf"(?:^|\s)--{re.escape(option)}(?:=|\s+)", command))
+
+
+def validate_command_evidence(project_root: Path, command: dict[str, Any], label: str, errors: list[str]) -> Path | None:
+    evidence = command.get("evidence")
+    expected_digest = command.get("evidence_sha256")
+    if not meaningful_value(evidence) or not meaningful_value(expected_digest):
+        errors.append(f"{label} requires evidence and evidence_sha256")
+        return None
+    path = (project_root / str(evidence)).resolve()
+    try:
+        path.relative_to(project_root.resolve())
+    except ValueError:
+        errors.append(f"{label} evidence escapes project root")
+        return None
+    if not path.is_file():
+        errors.append(f"{label} evidence file is missing")
+        return None
+    if sha256(path) != expected_digest:
+        errors.append(f"{label} evidence digest mismatch")
+    return path
+
+
+def validate_fitness_report(
+    project_root: Path,
+    change_dir: Path,
+    command: dict[str, Any],
+    stage: str,
+    errors: list[str],
+) -> None:
+    report = validate_command_evidence(project_root, command, f"{stage} Fitness", errors)
+    if report is None:
+        return
+    try:
+        payload = read_json(report)
+    except (OSError, json.JSONDecodeError, ValueError):
+        errors.append(f"{stage} Fitness evidence must be valid JSON")
+        return
+    if (
+        payload.get("schema_version") != 1
+        or payload.get("stage") != stage
+        or payload.get("status") != "passed"
+        or not isinstance(payload.get("total"), int)
+        or payload.get("total", 0) < 1
+        or not isinstance(payload.get("metrics"), list)
+        or not payload.get("metrics")
+        or payload.get("hard_gate_failures") != []
+        or payload.get("dry_run") is not False
+    ):
+        errors.append(f"{stage} Fitness evidence must be a non-empty passed stage report")
+    if not meaningful_value(payload.get("input_digest")):
+        errors.append(f"{stage} Fitness evidence requires input_digest")
+    else:
+        change_id = payload.get("change_id")
+        if change_id != change_dir.name:
+            errors.append(f"{stage} Fitness evidence change_id must match the change directory")
+        elif payload.get("input_digest") != fitness_input_digest(project_root, change_dir, stage):
+            errors.append(f"{stage} Fitness evidence input_digest does not match current inputs")
+
+
+def fitness_input_digest(project_root: Path, change_dir: Path, stage: str) -> str:
+    entries: list[tuple[str, str]] = []
+    rules_dir = project_root / "docs" / "fitness"
+    for path in sorted(rules_dir.glob("*.md")):
+        if path.name not in {"README.md", "verification-ledger.md"}:
+            entries.append((path.relative_to(project_root).as_posix(), sha256(path)))
+    if stage == "review":
+        try:
+            review = read_json(change_dir / "review-evidence.json")
+        except (OSError, json.JSONDecodeError, ValueError):
+            review = {}
+        files = review.get("files") if isinstance(review, dict) else None
+        if isinstance(files, dict):
+            for relative in sorted(files):
+                path = project_root / str(relative)
+                entries.append((f"review:{relative}", sha256(path) if path.is_file() else "MISSING"))
+    elif stage == "sync":
+        for delta in sorted((change_dir / "specs").glob("*/spec.md")):
+            capability = delta.parent.name
+            for path, label in (
+                (delta, f"delta:{capability}"),
+                (change_dir / "evidence" / "pre-sync" / capability / "spec.md", f"before:{capability}"),
+                (project_root / "openspec" / "specs" / capability / "spec.md", f"canonical:{capability}"),
+            ):
+                entries.append((label, sha256(path) if path.is_file() else "MISSING"))
+    payload = json.dumps(sorted(entries), ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def review_change_digest(project_root: Path, files: dict[str, Any]) -> str:
     """Digest the exact reviewed file set and their current contents."""
     normalized: list[dict[str, str]] = []
@@ -300,6 +394,17 @@ def validate_review(change_dir: Path, record: dict[str, Any], errors: list[str])
         for item in commands
     ):
         errors.append("every review command requires command and an integer exit_code=0")
+    fitness_commands = [
+        item for item in commands if isinstance(item, dict)
+        and "docs/fitness/scripts/fitness.py" in str(item.get("command", ""))
+        and command_has_stage(item.get("command"), "review")
+    ] if isinstance(commands, list) else []
+    if len(fitness_commands) != 1:
+        errors.append("review-evidence.json requires exactly one successful Fitness command with --stage review")
+    else:
+        if not command_has_option(fitness_commands[0].get("command"), "change") or not command_has_option(fitness_commands[0].get("command"), "report"):
+            errors.append("review Fitness command must include --change and --report")
+        validate_fitness_report(Path(str(record.get("project_root", ""))), change_dir, fitness_commands[0], "review", errors)
     if not isinstance(evidence.get("uncovered_cases"), list) or not isinstance(evidence.get("exceptions"), list):
         errors.append("uncovered_cases and exceptions must be arrays")
     for field in ("actor", "at", "change_digest"):
@@ -462,8 +567,35 @@ def validate_sync(change_dir: Path, record: dict[str, Any], errors: list[str]) -
     synchronized_sources: set[str] = set()
     synchronized_destinations: set[str] = set()
     schema_version = evidence.get("schema_version")
-    if schema_version not in {1, 2}:
-        errors.append("sync-evidence.json schema_version must be 1 or 2")
+    if schema_version not in {1, 2, 3}:
+        errors.append("sync-evidence.json schema_version must be 1, 2, or 3")
+    checks = evidence.get("checks")
+    if schema_version == 3:
+        if not isinstance(checks, list) or not checks:
+            errors.append("sync-evidence.json schema_version 3 requires checks")
+        else:
+            validate_checks = [
+                item for item in checks if isinstance(item, dict) and item.get("id") == "openspec_validate_specs"
+            ]
+            semantic_checks = [
+                item for item in checks if isinstance(item, dict) and item.get("id") == "sync_semantics"
+            ]
+            if len(validate_checks) != 1 or validate_checks[0].get("status") != "passed" or validate_checks[0].get("exit_code") != 0:
+                errors.append("sync-evidence.json requires one passed openspec_validate_specs check")
+            else:
+                if "openspec validate --specs" not in str(validate_checks[0].get("command", "")):
+                    errors.append("openspec_validate_specs check must run openspec validate --specs")
+                validate_command_evidence(project_root, validate_checks[0], "sync OpenSpec validation", errors)
+            if len(semantic_checks) != 1 or semantic_checks[0].get("status") != "passed" or semantic_checks[0].get("exit_code") != 0:
+                errors.append("sync-evidence.json requires one passed sync_semantics check")
+            elif not command_has_stage(semantic_checks[0].get("command"), "sync"):
+                errors.append("sync_semantics check command must use Fitness --stage sync")
+            elif "docs/fitness/scripts/fitness.py" not in str(semantic_checks[0].get("command", "")):
+                errors.append("sync_semantics check must run docs/fitness/scripts/fitness.py")
+            else:
+                if not command_has_option(semantic_checks[0].get("command"), "change") or not command_has_option(semantic_checks[0].get("command"), "report"):
+                    errors.append("sync_semantics command must include --change and --report")
+                validate_fitness_report(project_root, change_dir, semantic_checks[0], "sync", errors)
     for target in targets:
         if not isinstance(target, dict):
             errors.append("sync target must be an object")
@@ -477,6 +609,20 @@ def validate_sync(change_dir: Path, record: dict[str, Any], errors: list[str]) -
             source_digest = target.get("source_sha256")
             destination_digest = target.get("destination_sha256")
             digest_fields = (source_digest, destination_digest)
+        if schema_version == 3:
+            before_snapshot = target.get("before_snapshot")
+            before_digest = target.get("before_sha256")
+            if not meaningful_value(before_snapshot) or not meaningful_value(before_digest):
+                errors.append("sync target requires before_snapshot and before_sha256")
+            else:
+                snapshot = (change_dir / str(before_snapshot)).resolve()
+                try:
+                    snapshot.relative_to(change_dir.resolve())
+                except ValueError:
+                    errors.append(f"sync snapshot escapes change root: {before_snapshot}")
+                else:
+                    if not snapshot.is_file() or sha256(snapshot) != before_digest:
+                        errors.append(f"sync snapshot digest mismatch: {before_snapshot}")
         if not all(meaningful_value(item) for item in (source_name, destination_name, *digest_fields)):
             requirement = "source, destination, and sha256" if schema_version == 1 else (
                 "source, destination, source_sha256, and destination_sha256"
@@ -501,6 +647,10 @@ def validate_sync(change_dir: Path, record: dict[str, Any], errors: list[str]) -
         if Path(destination_name) != expected_destination:
             errors.append(f"sync destination must be {expected_destination.as_posix()} for source {source_name}")
             continue
+        if schema_version == 3:
+            expected_snapshot = Path("evidence/pre-sync") / source_relative.parts[1] / "spec.md"
+            if Path(str(target.get("before_snapshot"))) != expected_snapshot:
+                errors.append(f"sync snapshot must be {expected_snapshot.as_posix()} for source {source_name}")
         if not source.is_file() or not destination.is_file():
             errors.append(f"sync source or destination missing: {source_name} -> {destination_name}")
         elif sha256(source) != source_digest or sha256(destination) != destination_digest:
@@ -517,6 +667,86 @@ def validate_sync(change_dir: Path, record: dict[str, Any], errors: list[str]) -
     if synchronized_sources != expected_sources:
         errors.append("sync targets must cover every and only specs/<capability>/spec.md source")
     require_evidence_after(change_dir, evidence, "review-evidence.json", "sync-evidence.json", errors)
+    if schema_version == 3:
+        validate_sync_semantics(change_dir, record, errors)
+
+
+REQUIREMENT_PATTERN = re.compile(r"^### Requirement:\s*(.+?)\s*$", re.MULTILINE)
+DELTA_SECTION_PATTERN = re.compile(r"^## (ADDED|MODIFIED|REMOVED|RENAMED) Requirements\s*$", re.MULTILINE)
+RENAME_FROM_PATTERN = re.compile(r"^\s*-?\s*FROM:\s*`?###\s*Requirement:\s*(.+?)`?\s*$", re.MULTILINE)
+RENAME_TO_PATTERN = re.compile(r"^\s*-?\s*TO:\s*`?###\s*Requirement:\s*(.+?)`?\s*$", re.MULTILINE)
+
+
+def requirement_blocks(content: str) -> dict[str, str]:
+    matches = list(REQUIREMENT_PATTERN.finditer(content))
+    return {
+        match.group(1).strip(): content[match.end(): matches[index + 1].start() if index + 1 < len(matches) else len(content)]
+        for index, match in enumerate(matches)
+    }
+
+
+def semantic_lines(content: str) -> set[str]:
+    return {line.strip() for line in content.splitlines() if line.strip() and not line.lstrip().startswith("<!--")}
+
+
+def validate_sync_semantics(change_dir: Path, record: dict[str, Any], errors: list[str]) -> None:
+    project_root = Path(str(record.get("project_root", ""))).resolve()
+    for delta in sorted((change_dir / "specs").glob("*/spec.md")):
+        snapshot = change_dir / "evidence" / "pre-sync" / delta.parent.name / "spec.md"
+        if not snapshot.is_file():
+            errors.append(f"sync pre-sync snapshot missing: {snapshot.relative_to(change_dir)}")
+            before_blocks: dict[str, str] = {}
+        else:
+            before_blocks = requirement_blocks(snapshot.read_text(encoding="utf-8"))
+        canonical = project_root / "openspec" / "specs" / delta.parent.name / "spec.md"
+        if not canonical.is_file():
+            errors.append(f"sync canonical spec missing: {canonical.relative_to(project_root)}")
+            continue
+        delta_text = delta.read_text(encoding="utf-8")
+        canonical_blocks = requirement_blocks(canonical.read_text(encoding="utf-8"))
+        sections = list(DELTA_SECTION_PATTERN.finditer(delta_text))
+        declared: set[str] = set()
+        for index, section in enumerate(sections):
+            end = sections[index + 1].start() if index + 1 < len(sections) else len(delta_text)
+            body = delta_text[section.end():end]
+            operation = section.group(1)
+            if operation == "RENAMED":
+                old_names = RENAME_FROM_PATTERN.findall(body)
+                new_names = RENAME_TO_PATTERN.findall(body)
+                if len(old_names) != len(new_names):
+                    errors.append("sync rename entries require paired FROM and TO requirements")
+                for old_name, new_name in zip(old_names, new_names):
+                    old_name, new_name = old_name.strip(), new_name.strip()
+                    declared.update((old_name, new_name))
+                    if old_name in canonical_blocks or new_name not in canonical_blocks:
+                        errors.append(f"sync requirement rename not applied: {old_name} -> {new_name}")
+                    elif old_name not in before_blocks:
+                        errors.append(f"sync renamed source requirement missing from pre-sync snapshot: {old_name}")
+                    elif semantic_lines(before_blocks[old_name]) != semantic_lines(canonical_blocks[new_name]):
+                        errors.append(f"sync renamed requirement content changed: {old_name} -> {new_name}")
+                continue
+            for name, block in requirement_blocks(body).items():
+                declared.add(name)
+                if operation == "REMOVED":
+                    if name in canonical_blocks:
+                        errors.append(f"sync removed requirement still exists: {name}")
+                    if before_blocks and name not in before_blocks:
+                        errors.append(f"sync removed requirement missing from pre-sync snapshot: {name}")
+                elif name not in canonical_blocks:
+                    errors.append(f"sync requirement missing from canonical spec: {name}")
+                elif not semantic_lines(block).issubset(semantic_lines(canonical_blocks[name])):
+                    errors.append(f"sync canonical requirement is missing delta content: {name}")
+                elif operation == "ADDED" and name in before_blocks:
+                    errors.append(f"sync added requirement already existed before sync: {name}")
+                elif operation == "MODIFIED" and before_blocks and name not in before_blocks:
+                    errors.append(f"sync modified requirement missing from pre-sync snapshot: {name}")
+        for name in sorted(set(before_blocks) & set(canonical_blocks) - declared):
+            if semantic_lines(before_blocks[name]) != semantic_lines(canonical_blocks[name]):
+                errors.append(f"sync canonical spec contains undeclared semantic change: {name}")
+        for name in sorted((set(canonical_blocks) - set(before_blocks)) - declared):
+            errors.append(f"sync canonical spec contains undeclared added requirement: {name}")
+        for name in sorted((set(before_blocks) - set(canonical_blocks)) - declared):
+            errors.append(f"sync canonical spec contains undeclared removed requirement: {name}")
 
 
 def validate_production_closure(record: dict[str, Any], errors: list[str]) -> None:

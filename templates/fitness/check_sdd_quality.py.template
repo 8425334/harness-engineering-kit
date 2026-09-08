@@ -14,6 +14,7 @@ Copy to: docs/fitness/scripts/check_sdd_quality.py
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -110,15 +111,120 @@ def check_change_structure() -> int:
     return 0
 
 
+REQUIREMENT = re.compile(r"^### Requirement:\s*(.+?)\s*$", re.MULTILINE)
+DELTA_SECTION = re.compile(r"^## (ADDED|MODIFIED|REMOVED|RENAMED) Requirements\s*$", re.MULTILINE)
+RENAME_FROM = re.compile(r"^\s*-?\s*FROM:\s*`?###\s*Requirement:\s*(.+?)`?\s*$", re.MULTILINE)
+RENAME_TO = re.compile(r"^\s*-?\s*TO:\s*`?###\s*Requirement:\s*(.+?)`?\s*$", re.MULTILINE)
+
+
+def requirement_blocks(text: str) -> dict[str, str]:
+    matches = list(REQUIREMENT.finditer(text))
+    return {
+        match.group(1).strip(): text[match.end(): matches[index + 1].start() if index + 1 < len(matches) else len(text)]
+        for index, match in enumerate(matches)
+    }
+
+
+def normalized_lines(text: str) -> set[str]:
+    return {line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("<!--")}
+
+
+def check_sync_semantics(change_id: str | None) -> int:
+    """Check one active delta against its canonical OpenSpec specification."""
+    changes_dir = OPENSPEC_DIR / "changes"
+    issues: list[str] = []
+    if not change_id or "/" in change_id or "\\" in change_id or change_id in {".", "..", "archive"}:
+        print("sync-semantics requires a valid --change id")
+        return 1
+    change = changes_dir / change_id
+    if not change.is_dir():
+        print(f"OpenSpec change not found: {change_id}")
+        return 1
+    deltas = sorted((change / "specs").glob("*/spec.md"))
+    if not deltas:
+        print(f"OpenSpec change has no delta specs: {change_id}")
+        return 1
+    for change in (change,):
+        for delta in deltas:
+            capability = delta.parent.name
+            canonical = OPENSPEC_DIR / "specs" / capability / "spec.md"
+            if not canonical.is_file():
+                issues.append(f"{change.name}/{capability}: canonical spec is missing")
+                continue
+            delta_text = delta.read_text(encoding="utf-8")
+            canonical_blocks = requirement_blocks(canonical.read_text(encoding="utf-8"))
+            snapshot = change / "evidence" / "pre-sync" / capability / "spec.md"
+            if not snapshot.is_file():
+                issues.append(f"{change.name}/{capability}: pre-sync snapshot is missing")
+                before_blocks: dict[str, str] = {}
+            else:
+                before_blocks = requirement_blocks(snapshot.read_text(encoding="utf-8"))
+            sections = list(DELTA_SECTION.finditer(delta_text))
+            declared: set[str] = set()
+            for index, section in enumerate(sections):
+                body = delta_text[section.end(): sections[index + 1].start() if index + 1 < len(sections) else len(delta_text)]
+                delta_blocks = requirement_blocks(body)
+                operation = section.group(1)
+                if operation == "RENAMED":
+                    old_names = RENAME_FROM.findall(body)
+                    new_names = RENAME_TO.findall(body)
+                    if len(old_names) != len(new_names):
+                        issues.append(f"{change.name}/{capability}: rename entries require paired FROM and TO")
+                    for old_name, new_name in zip(old_names, new_names):
+                        old_name, new_name = old_name.strip(), new_name.strip()
+                        declared.update((old_name, new_name))
+                        if old_name in canonical_blocks or new_name not in canonical_blocks:
+                            issues.append(f"{change.name}/{capability}: rename not applied: {old_name} -> {new_name}")
+                        elif old_name not in before_blocks or normalized_lines(before_blocks[old_name]) != normalized_lines(canonical_blocks[new_name]):
+                            issues.append(f"{change.name}/{capability}: renamed requirement content changed: {old_name} -> {new_name}")
+                    continue
+                for name, block in delta_blocks.items():
+                    declared.add(name)
+                    if operation == "REMOVED":
+                        if name in canonical_blocks:
+                            issues.append(f"{change.name}/{capability}: removed requirement still exists: {name}")
+                        if before_blocks and name not in before_blocks:
+                            issues.append(f"{change.name}/{capability}: removed requirement missing before sync: {name}")
+                        continue
+                    if name not in canonical_blocks:
+                        issues.append(f"{change.name}/{capability}: requirement missing from canonical spec: {name}")
+                        continue
+                    expected = normalized_lines(block)
+                    actual = normalized_lines(canonical_blocks[name])
+                    if not expected.issubset(actual):
+                        issues.append(f"{change.name}/{capability}: canonical requirement is missing delta content: {name}")
+                    elif operation == "ADDED" and name in before_blocks:
+                        issues.append(f"{change.name}/{capability}: added requirement already existed before sync: {name}")
+                    elif operation == "MODIFIED" and before_blocks and name not in before_blocks:
+                        issues.append(f"{change.name}/{capability}: modified requirement missing before sync: {name}")
+            for name in sorted(set(before_blocks) & set(canonical_blocks) - declared):
+                if normalized_lines(before_blocks[name]) != normalized_lines(canonical_blocks[name]):
+                    issues.append(f"{change.name}/{capability}: undeclared canonical semantic change: {name}")
+            for name in sorted((set(canonical_blocks) - set(before_blocks)) - declared):
+                issues.append(f"{change.name}/{capability}: undeclared added requirement: {name}")
+            for name in sorted((set(before_blocks) - set(canonical_blocks)) - declared):
+                issues.append(f"{change.name}/{capability}: undeclared removed requirement: {name}")
+    if issues:
+        print("OpenSpec sync semantic issues:")
+        for issue in issues:
+            print(f"  {issue}")
+        return 1
+    print("OpenSpec sync semantics ok")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="SDD quality checks")
-    parser.add_argument("--check", choices=["config-populated", "change-structure"], required=True)
+    parser.add_argument("--check", choices=["config-populated", "change-structure", "sync-semantics"], required=True)
+    parser.add_argument("--change", help="OpenSpec change id for sync-semantics")
     args = parser.parse_args()
 
     if args.check == "config-populated":
         return check_config_populated()
     elif args.check == "change-structure":
         return check_change_structure()
+    elif args.check == "sync-semantics":
+        return check_sync_semantics(args.change)
     return 1
 
 

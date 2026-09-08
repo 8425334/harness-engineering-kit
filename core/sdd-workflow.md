@@ -8,7 +8,8 @@ verification without changing OpenSpec ownership.
 - Propose creates `proposal.md`, delta specs, `design.md`, and `tasks.md`.
 - Engineering reviews context impact and records external approval before Apply.
 - Apply executes OpenSpec tasks and records governance execution evidence.
-- Verify runs strict artifact validation, `openspec-verify-change`, and Engineering governance gates before Sync or Archive.
+- Verify runs strict artifact validation, `openspec-verify-change`, and `fitness.py --stage review --change <id>` with a digest-bound JSON report before the Engineering REVIEW gate.
+- Sync snapshots each canonical spec first (an empty snapshot represents a capability that did not yet exist), runs `openspec-sync-specs`, `openspec validate --specs`, and `fitness.py --stage sync --change <id>` before the Engineering SYNC gate.
 
 Use `openspec-update-change` when planning artifacts need reconciliation; never
 restore a duplicate lifecycle or task-plan compatibility layer.

@@ -91,7 +91,7 @@ Agent 在收到确认后应：
 
 ### 2. Agent 处理规则
 
-这里的 Tier 是“本次执行后的目标安装范围”，不是增量升级的前置条件，也不能据此推断旧版本已经完整安装了 Tier 1。任何低版本到高版本升级，即使项目已有部分 Tier 1 文件，Agent 仍必须比较并同步目标版本的全部 Tier 1 核心资源（方法论文档、控制脚本、workflow 模板、版本文件、Engineering Skill，以及缺失的生产控制脚手架）。`--tier 1` 只表示暂不补装 Fitness 和经验记忆等 Tier 2 可选资源；它不表示跳过 Tier 1 更新。版本关系、降级阻断和特殊发布迁移由 [版本化管理](versioning.md) 统一处理，不在对话文案中硬编码某一对版本号。
+这里的 Tier 是“本次执行后的目标安装范围”，不是增量升级的前置条件，也不能据此推断旧版本已经完整安装了 Tier 1。任何低版本到高版本升级，即使项目已有部分 Tier 1 文件，Agent 仍必须比较并同步目标版本的全部 Tier 1 核心资源（方法论文档、控制脚本、workflow 模板、版本文件、Engineering Skill，以及缺失的生产控制脚手架）。`--tier 1` 只表示暂不补装完整 Fitness 规则和经验记忆等 Tier 2 可选资源；生命周期门禁所需的最小 Fitness 执行器与 SDD 同步规则仍会安装。版本关系、降级阻断和特殊发布迁移由 [版本化管理](versioning.md) 统一处理，不在对话文案中硬编码某一对版本号。
 
 如果项目存在旧入口但没有合法的 `docs/methodology/VERSION`，状态应报告为 `unversioned` 或 `invalid` 并停止自动写入；Agent 必须根据仓库证据确认实际基线后再补版本，不能臆造版本号。
 
@@ -127,7 +127,7 @@ python3 <kit>/scripts/onboard.py \
 
 只有同时满足以下条件，Agent 才能说“接入完成”：
 
-- 所选 Agent 的原生入口（Claude Code 为 `CLAUDE.md`，Codex/OpenCode 及兼容 Agent 为 `AGENTS.md`）保持原生指令权威，且能路由到 Engineering Skill。
+- 所选 Agent 的原生入口（Claude Code 为 `CLAUDE.md`，Gemini CLI 为 `GEMINI.md`，Codex/OpenCode 及兼容 Agent 为 `AGENTS.md`）保持原生指令权威，且能自动路由到 Engineering Skill，无需用户输入 `/engineering`。
 - `ai.json`、`AI.md`、策略、Profile 和 OpenSpec 配置没有未填写占位符。
 - `docs/methodology/VERSION`、方法论脚本、workflow 模板和所选 Agent 对应目录下的 Engineering Skill 已同步。
 - `ai.json`/`AI.md` 引用路径存在，`resolve_context.py` 能解析根路径。
@@ -148,7 +148,7 @@ python3 <kit>/scripts/onboard.py \
 
 **问：我只想要最小接入？**
 
-在第一条消息中明确“使用 Tier 1，只安装核心控制面（含 agent-policy.yaml 引用的生产策略脚手架）；暂不安装 Fitness/经验记忆模板”。其余确认和校验流程不变。
+在第一条消息中明确“使用 Tier 1，只安装核心控制面和生命周期门禁所需的最小 Fitness 执行器、SDD 同步规则（含 agent-policy.yaml 引用的生产策略脚手架）；暂不安装完整 Fitness 规则/经验记忆模板”。其余确认和校验流程不变。
 
 **问：旧文件什么时候删？**
 

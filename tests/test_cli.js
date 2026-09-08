@@ -169,7 +169,8 @@ test('json mode warns instead of failing when --agent/--open is supplied', () =>
   const result = run(['init', '--project-root', directory, '--source-root', root, '--json', '--yes', '--no-check', '--agent', 'gemini', '--open'], { cwd: directory });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stderr, /仅忽略 --open/);
-  assert.equal(fs.existsSync(path.join(directory, 'AGENTS.md')), true);
+  assert.equal(fs.existsSync(path.join(directory, 'GEMINI.md')), true);
+  assert.equal(fs.existsSync(path.join(directory, 'AGENTS.md')), false);
   assert.equal(fs.existsSync(path.join(directory, 'CLAUDE.md')), false);
   assert.equal(fs.existsSync(path.join(directory, '.claude')), false);
   const receipt = JSON.parse(result.stdout);
@@ -182,6 +183,9 @@ test('init only installs the selected native context and skill', () => {
     ['claude', 'CLAUDE.md', 'AGENTS.md', '.claude/skills/engineering'],
     ['codex', 'AGENTS.md', 'CLAUDE.md', '.agents/skills/engineering'],
     ['opencode', 'AGENTS.md', 'CLAUDE.md', '.opencode/skills/engineering'],
+    ['cursor', 'AGENTS.md', 'CLAUDE.md', '.cursor/skills/engineering'],
+    ['gemini', 'GEMINI.md', 'AGENTS.md', '.gemini/skills/engineering'],
+    ['trae-work', 'AGENTS.md', 'CLAUDE.md', '.trae/skills/engineering'],
   ]) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-agent-target-'));
     spawnSync('git', ['init', '-q'], { cwd: directory });

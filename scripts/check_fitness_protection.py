@@ -111,7 +111,7 @@ def canonical_bootstrap_receipt(project_root: Path, changes: Mapping[str, str]) 
         return False
     if Path(str(payload.get("project_root", ""))).resolve() != project_root.resolve():
         return False
-    if payload.get("read_only") is not False or payload.get("tier") != 2:
+    if payload.get("read_only") is not False or payload.get("tier") not in {1, 2}:
         return False
     if not isinstance(payload.get("confirmed_at"), str) or not payload["confirmed_at"].strip():
         return False

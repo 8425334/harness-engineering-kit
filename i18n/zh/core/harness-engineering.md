@@ -20,4 +20,4 @@ OpenSpec 是生命周期所有者。它的原生 Skills 与 CLI 创建 change、
 
 ## 平台边界
 
-Claude 使用 `.claude/skills/engineering`，Codex 使用 `.agents/skills/engineering`，OpenCode 使用 `.opencode/skills/engineering`。OpenSpec 1.12.0 会在相同的 Agent 目录生成七个原生工作流 Skill（包含 Verify）。
+Claude 使用 `.claude/skills/engineering`，Codex 使用 `.agents/skills/engineering`，OpenCode 使用 `.opencode/skills/engineering`，Cursor 使用 `.cursor/skills/engineering`，Gemini 使用 `.gemini/skills/engineering`，Trae 使用 `.trae/skills/engineering`。Skill frontmatter 与原生根入口同时要求对非平凡代码变更进行隐式选择，用户无需输入 `/engineering`。OpenSpec 1.12.0 会在相同的 Agent 目录生成七个原生工作流 Skill（包含 Verify）。

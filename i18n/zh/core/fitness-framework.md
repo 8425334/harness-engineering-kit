@@ -86,3 +86,7 @@ docs/fitness/
 - **单文件**：一个 `.py` 文件即可运行
 - **可审计**：`--dry-run` 模式展示将执行什么
 - **可分层**：`--tier fast|normal|deep` 按需选择深度
+- **按阶段**：`--stage review|sync` 选择生命周期阶段指标；未标注阶段的旧指标默认属于 Review
+- **可回执**：`--report <path>` 生成由 Engineering 门禁消费的机器可读报告
+
+Review 必须使用 `--stage review` 执行 Fitness；REVIEW 门禁会拒绝缺失或失败的回执。Sync 使用 `--stage sync`，其中硬门禁指标验证 delta spec 与 `openspec/specs/**` 主规格内容一致。`--tier` 与 `--stage` 独立控制。

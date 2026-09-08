@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-09-08
+
+### Changed
+- Expanded automatic Engineering Skill routing and deterministic discovery across Claude, Codex, OpenCode, Cursor, Gemini, and Trae.
+
 ## [0.5.0] — 2026-09-07
 
 ### Added
@@ -14,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added a single `npm run verify` release-facing command for unit tests, package validation, Skill contract checks, and full lifecycle smoke coverage.
 
 ### Fixed
+- Engineering implicit routing is now a cross-platform installation contract rather than a Codex-only convention: root adapters and Skill discovery cover Claude, Codex, OpenCode, Cursor, Gemini, and Trae, and onboarding checks reject explicit-only `/engineering` guidance.
 - Sync now preserves approval-bound delta specs and records separate source and merged canonical digests in schema-version-2 evidence; byte-identical schema-version-1 evidence remains supported.
 - Spec gates now accept both bare `WHEN`/`THEN` lines and OpenSpec-style `- **WHEN**`/`- **THEN**` lines.
 - The approval template now includes `requirement-reflection.json`, matching the contract digests produced and validated by the approval scripts.

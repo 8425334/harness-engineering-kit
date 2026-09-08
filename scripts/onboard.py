@@ -30,6 +30,7 @@ except ImportError:
 ROOT_FILES = {
     "templates/AGENTS.md.template": "AGENTS.md",
     "templates/CLAUDE.md.template": "CLAUDE.md",
+    "templates/GEMINI.md.template": "GEMINI.md",
     "templates/agent-policy.yaml.template": "docs/methodology/agent-policy.yaml",
     "templates/methodology-profile.yaml.template": "docs/methodology/profile.yaml",
     "templates/ai.json.template": "ai.json",
@@ -41,22 +42,26 @@ ROOT_FILES = {
 NATIVE_ROOT_FILES = {
     "templates/AGENTS.md.template": "AGENTS.md",
     "templates/CLAUDE.md.template": "CLAUDE.md",
+    "templates/GEMINI.md.template": "GEMINI.md",
 }
 
 AGENT_TARGETS = {
     "claude": {"root_file": "CLAUDE.md", "skill_platform": "claude"},
     "codex": {"root_file": "AGENTS.md", "skill_platform": "codex"},
     "opencode": {"root_file": "AGENTS.md", "skill_platform": "opencode"},
-    "cursor": {"root_file": "AGENTS.md", "skill_platform": None},
-    "gemini": {"root_file": "AGENTS.md", "skill_platform": None},
+    "cursor": {"root_file": "AGENTS.md", "skill_platform": "cursor"},
+    "gemini": {"root_file": "GEMINI.md", "skill_platform": "gemini"},
     "workbuddy": {"root_file": "AGENTS.md", "skill_platform": None},
-    "trae-work": {"root_file": "AGENTS.md", "skill_platform": None},
+    "trae-work": {"root_file": "AGENTS.md", "skill_platform": "trae"},
 }
 
 SKILL_ROOTS = {
     "claude": ".claude/skills",
     "codex": ".agents/skills",
     "opencode": ".opencode/skills",
+    "cursor": ".cursor/skills",
+    "gemini": ".gemini/skills",
+    "trae": ".trae/skills",
 }
 
 OPENSPEC_TOOLS = {
@@ -159,14 +164,14 @@ def root_files_for(agent: str | None) -> dict[str, str]:
 
 def skill_platforms_for(agent: str | None) -> tuple[str, ...]:
     if agent is None:
-        return ("claude", "codex", "opencode")
+        return ("claude", "codex", "opencode", "cursor", "gemini", "trae")
     platform = agent_target(agent)["skill_platform"]
     return (platform,) if platform else ()
 
 
 def openspec_tools_for(agent: str | None) -> tuple[str, ...]:
     if agent is None:
-        return ("claude", "codex", "opencode")
+        return ("claude", "codex", "opencode", "cursor", "gemini", "trae")
     tool = OPENSPEC_TOOLS.get(agent)
     return (tool,) if tool else ()
 
@@ -252,15 +257,23 @@ def source_actions(source: Path, root: Path, tier: int, status: str, agent: str 
         if target:
             actions.append(Action("create", str(relative.relative_to(source)), target, "production control"))
 
-    if tier >= 2:
+    if tier >= 1:
+        minimal_fitness = {"fitness.py.template", "check_sdd_quality.py.template"}
         for relative in sorted((source / "templates/fitness").glob("*.py.template")):
+            if tier < 2 and relative.name not in minimal_fitness:
+                continue
             actions.append(Action("create", str(relative.relative_to(source)), f"docs/fitness/scripts/{relative.stem}", "optional Fitness control"))
+        sdd_rule = source / "templates/fitness/rules/sdd-quality.md.template"
+        actions.append(Action("create", str(sdd_rule.relative_to(source)), "docs/fitness/sdd-quality.md", "required staged Fitness control"))
+    if tier >= 2:
         actions.append(Action("create", JAVA_SCANNER, "docs/fitness/scripts/JavaParameterScanner.java", "Java Fitness scanner"))
         actions.append(Action("create-empty", None, "docs/fitness/verification-ledger.md", "Fitness verification ledger"))
         fitness_readme = source / "templates/fitness/README.md"
         if fitness_readme.is_file():
             actions.append(Action("create", str(fitness_readme.relative_to(source)), "docs/fitness/README.md", "optional Fitness control"))
         for relative in sorted((source / "templates/fitness/rules").glob("*.md.template")):
+            if relative.name == "sdd-quality.md.template":
+                continue
             actions.append(Action("create", str(relative.relative_to(source)), f"docs/fitness/{relative.stem}", "optional Fitness rule"))
         lessons_readme = source / "templates/lessons/README.md.template"
         if lessons_readme.is_file():
@@ -387,7 +400,7 @@ def render_plan(
         "release_migrations": release_migrations(source, installed_version, target_version, version_relation),
         "tier": tier,
         "agent": agent or "all",
-        "native_root_file": agent_target(agent)["root_file"] if agent else "AGENTS.md + CLAUDE.md",
+        "native_root_file": agent_target(agent)["root_file"] if agent else "AGENTS.md + CLAUDE.md + GEMINI.md",
         "read_only": True,
         "legacy_files_preserved": True,
         "legacy_markers": legacy_markers,
@@ -437,8 +450,14 @@ def validate_action_sources(source: Path, actions: list[Action], agent: str | No
     required.extend(path.relative_to(source).as_posix() for path in (source / "templates/openspec-schema").rglob("*") if path.is_file())
     required.extend(path.relative_to(source).as_posix() for path in (source / "templates/compaction").glob("*"))
     required.extend(path.relative_to(source).as_posix() for path in (source / "templates/production").glob("*.template"))
+    if any(action.target.startswith("docs/fitness/") for action in actions):
+        required.extend(
+            path.relative_to(source).as_posix()
+            for path in (source / "templates/fitness").glob("*.py.template")
+            if any(action.target == f"docs/fitness/scripts/{path.stem}" for action in actions)
+        )
+        required.append("templates/fitness/rules/sdd-quality.md.template")
     if any(action.target == "docs/fitness/README.md" for action in actions):
-        required.extend(path.relative_to(source).as_posix() for path in (source / "templates/fitness").glob("*.py.template"))
         required.extend(path.relative_to(source).as_posix() for path in (source / "templates/fitness").glob("*.template"))
         required.extend(path.relative_to(source).as_posix() for path in (source / "templates/fitness/rules").glob("*.md.template"))
         required.append("templates/lessons/README.md.template")
@@ -616,7 +635,7 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
 
 
 def run_check(root: Path, source: Path, agent: str | None = None) -> tuple[int, list[str]]:
-    context_files = ("AGENTS.md", "CLAUDE.md") if agent is None else (str(agent_target(agent)["root_file"]),)
+    context_files = ("AGENTS.md", "CLAUDE.md", "GEMINI.md") if agent is None else (str(agent_target(agent)["root_file"]),)
     failures: list[str] = []
     checks = [
         ("check_root_context.py", ["check_root_context.py", str(root), "--context-file", *context_files]),

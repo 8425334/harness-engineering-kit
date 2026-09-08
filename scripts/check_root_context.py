@@ -11,7 +11,7 @@ REQUIRED_TERMS = ("agent-policy.yaml", "profile.yaml", "ai.json", "AI.md", "reso
 MAX_LINES = 40
 
 
-def validate(root: Path, context_files: tuple[str, ...] = ("AGENTS.md", "CLAUDE.md")) -> list[str]:
+def validate(root: Path, context_files: tuple[str, ...] = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")) -> list[str]:
     errors: list[str] = []
     for name in context_files:
         path = root / name
@@ -30,6 +30,10 @@ def validate(root: Path, context_files: tuple[str, ...] = ("AGENTS.md", "CLAUDE.
         for term in REQUIRED_TERMS:
             if term not in content:
                 errors.append(f"{name} missing required route/reference: {term}")
+        if "Automatically select and load the `engineering` Skill" not in content:
+            errors.append(f"{name} must automatically route non-trivial changes to the engineering Skill")
+        if "Do not require the user to type `/engineering`" not in content:
+            errors.append(f"{name} must not require explicit /engineering invocation")
         if "cannot weaken" not in content or "native" not in content:
             errors.append(f"{name} must preserve native authority over supplemental context")
     return errors
@@ -42,7 +46,7 @@ def main() -> int:
         "--context-file",
         dest="context_files",
         nargs="+",
-        default=("AGENTS.md", "CLAUDE.md"),
+        default=("AGENTS.md", "CLAUDE.md", "GEMINI.md"),
         help="native root adapter(s) to validate",
     )
     args = parser.parse_args()

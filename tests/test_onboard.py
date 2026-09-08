@@ -26,12 +26,12 @@ PLACEHOLDER_VALUES = {
     "{{ENTRY_POINTS}}": "src", "{{RELATED_CONTRACTS}}": "none", "{{RULE_OWNER}}": "team",
     "{{METHODOLOGY_OWNER}}": "team", "{{PROJECT_SPECIFIC_DEFINITION_OR_DEFAULT}}": ">2 files",
     "{{FAST_NORMAL_OR_DEEP}}": "normal", "{{EXCEPTION_RECORD_PATH}}": "docs/methodology/exceptions.md",
-    "{{METHODOLOGY_VERSION}}": "0.5.0", "{{YYYY-MM-DD}}": "2027-01-01",
+    "{{METHODOLOGY_VERSION}}": "0.5.1", "{{YYYY-MM-DD}}": "2027-01-01",
 }
 
 
 def fill_placeholders(root: Path) -> None:
-    for relative in ("AGENTS.md", "CLAUDE.md", "ai.json", "AI.md",
+    for relative in ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "ai.json", "AI.md",
                      "docs/methodology/agent-policy.yaml", "docs/methodology/profile.yaml"):
         target = root / relative
         if not target.is_file():
@@ -48,6 +48,15 @@ def run_onboard(*arguments: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
     )
+
+
+def apply_with_receipt(root: Path, source: Path, actions: list[onboard.Action], tier: int = 1) -> None:
+    plan = onboard.render_plan(root, source, tier, "fresh", actions)
+    plan["read_only"] = False
+    plan["confirmed_at"] = "2026-09-08T00:00:00+00:00"
+    plan["results"] = onboard.apply_actions(root, source, actions)
+    receipt = root / "docs/methodology/onboarding.json"
+    receipt.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 class OnboardTests(unittest.TestCase):
@@ -78,7 +87,7 @@ class OnboardTests(unittest.TestCase):
                 [],
             )
             self.assertEqual(plan["installed_version"], "0.2.0")
-            self.assertEqual(plan["source_version"], "0.5.0")
+            self.assertEqual(plan["source_version"], "0.5.1")
             self.assertEqual(plan["version_relation"], "upgrade")
             self.assertEqual(plan["version_transition"]["from"], "0.2.0")
             self.assertEqual(plan["migration_manifest_errors"], [])
@@ -152,12 +161,18 @@ class OnboardTests(unittest.TestCase):
         self.assertIn("docs/methodology/production/policy.yaml", targets)
         self.assertIn("docs/methodology/production/README.md", targets)
         self.assertIn("docs/methodology/production/change-record.template.json", targets)
-        self.assertNotIn("docs/fitness/scripts/fitness.py", targets)
+        self.assertIn("docs/fitness/scripts/fitness.py", targets)
+        self.assertIn("docs/fitness/scripts/check_sdd_quality.py", targets)
+        self.assertIn("docs/fitness/sdd-quality.md", targets)
+        self.assertNotIn("docs/fitness/scripts/check_security_baseline.py", targets)
 
     def test_install_plan_includes_opencode_skill(self) -> None:
         actions = onboard.source_actions(self.source, self.source / "tests", 1, "fresh")
         targets = {action.target for action in actions}
         self.assertIn(".opencode/skills/engineering", targets)
+        self.assertIn(".cursor/skills/engineering", targets)
+        self.assertIn(".gemini/skills/engineering", targets)
+        self.assertIn(".trae/skills/engineering", targets)
 
     def test_native_workflow_contract_includes_verify(self) -> None:
         self.assertIn("openspec-verify-change", onboard.REQUIRED_OPENSPEC_SKILLS)
@@ -174,9 +189,22 @@ class OnboardTests(unittest.TestCase):
         codex_targets = {action.target for action in onboard.source_actions(self.source, self.source / "tests", 1, "fresh", "codex")}
         self.assertIn("AGENTS.md", codex_targets)
         self.assertNotIn("CLAUDE.md", codex_targets)
+        self.assertNotIn("GEMINI.md", codex_targets)
         self.assertIn(".agents/skills/engineering", codex_targets)
         self.assertNotIn(".claude/skills/engineering", codex_targets)
         self.assertNotIn(".opencode/skills/engineering", codex_targets)
+
+        cursor_targets = {action.target for action in onboard.source_actions(self.source, self.source / "tests", 1, "fresh", "cursor")}
+        self.assertIn(".cursor/skills/engineering", cursor_targets)
+        self.assertNotIn(".agents/skills/engineering", cursor_targets)
+
+        gemini_targets = {action.target for action in onboard.source_actions(self.source, self.source / "tests", 1, "fresh", "gemini")}
+        self.assertIn(".gemini/skills/engineering", gemini_targets)
+        self.assertIn("GEMINI.md", gemini_targets)
+        self.assertNotIn("AGENTS.md", gemini_targets)
+
+        trae_targets = {action.target for action in onboard.source_actions(self.source, self.source / "tests", 1, "fresh", "trae-work")}
+        self.assertIn(".trae/skills/engineering", trae_targets)
 
     def test_install_plan_includes_requirement_reflection_core(self) -> None:
         actions = onboard.source_actions(self.source, self.source / "tests", 1, "fresh")
@@ -199,7 +227,8 @@ class OnboardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / ".git").mkdir()
-            onboard.apply_actions(root, self.source, onboard.source_actions(self.source, root, 1, "fresh"))
+            actions = onboard.source_actions(self.source, root, 1, "fresh")
+            apply_with_receipt(root, self.source, actions)
             policy = root / "docs/methodology/agent-policy.yaml"
             text = policy.read_text(encoding="utf-8")
             for placeholder, value in {
@@ -326,10 +355,10 @@ class OnboardTests(unittest.TestCase):
             actions = onboard.source_actions(self.source, root, 1, "fresh")
             first = onboard.apply_actions(root, self.source, actions)
             verbs = {entry["target"]: entry["result"] for entry in first if entry["target"].endswith("skills/engineering")}
-            self.assertEqual(sorted(verbs.values()), ["created", "created", "created"])
+            self.assertEqual(sorted(verbs.values()), ["created"] * 6)
             second = onboard.apply_actions(root, self.source, actions)
             verbs = {entry["target"]: entry["result"] for entry in second if entry["target"].endswith("skills/engineering")}
-            self.assertEqual(sorted(verbs.values()), ["unchanged", "unchanged", "unchanged"])
+            self.assertEqual(sorted(verbs.values()), ["unchanged"] * 6)
 
     def test_json_apply_failure_still_prints_a_receipt(self) -> None:
         """M2: machine mode emits one JSON receipt even when apply rolls back."""
@@ -353,7 +382,8 @@ class OnboardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             subprocess.run(["git", "init", "-q"], cwd=root, check=True)
-            onboard.apply_actions(root, self.source, onboard.source_actions(self.source, root, 1, "fresh"))
+            actions = onboard.source_actions(self.source, root, 1, "fresh")
+            apply_with_receipt(root, self.source, actions)
             blocked = run_onboard("--project-root", str(root), "--source-root", str(self.source), "--check")
             self.assertEqual(blocked.returncode, 2)
             self.assertIn("ONBOARDING CHECK FAILED", blocked.stdout)
@@ -368,7 +398,8 @@ class OnboardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             subprocess.run(["git", "init", "-q"], cwd=root, check=True)
-            onboard.apply_actions(root, self.source, onboard.source_actions(self.source, root, 1, "fresh", "claude"))
+            actions = onboard.source_actions(self.source, root, 1, "fresh", "claude")
+            apply_with_receipt(root, self.source, actions)
             fill_placeholders(root)
             self.assertFalse((root / "AGENTS.md").exists())
             checked = run_onboard("--project-root", str(root), "--source-root", str(self.source), "--agent", "claude", "--check")

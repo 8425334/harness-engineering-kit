@@ -47,7 +47,14 @@ def smoke() -> None:
         home = root / "home"
         project = root / "project"
         project.mkdir()
-        for platform, directory in (("claude", ".claude/skills"), ("codex", ".agents/skills"), ("opencode", ".opencode/skills")):
+        for platform, directory in (
+            ("claude", ".claude/skills"),
+            ("codex", ".agents/skills"),
+            ("opencode", ".opencode/skills"),
+            ("cursor", ".cursor/skills"),
+            ("gemini", ".gemini/skills"),
+            ("trae", ".trae/skills"),
+        ):
             target = project / directory / "engineering"
             shutil.copytree(repository / "templates/engineering", target)
             result = verify("engineering", project, platform, source_root=repository)

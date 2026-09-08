@@ -1,9 +1,10 @@
 name: engineering
-version: 0.5.0
+version: 0.5.1
 entry: SKILL.md
-platforms: [claude, codex, opencode]
+platforms: [claude, codex, opencode, cursor, gemini, trae]
 routes: [backend, frontend, fullstack, api, database, ui, cross-module]
 modes: [backend, frontend, fullstack]
 required_sections: [Requirement Reflection, Route, Design Confirmation, Lifecycle, Apply Orchestration, Evidence]
 capabilities: [onboarding, context-index, context-impact, context-cache-protocol, requirement-reflection, openspec-native-orchestration, behavior-spec, implementation-ready-design, developer-confirmation, execution-evidence, cross-stack-execution, review-evidence, self-refine-evidence]
+implicit_invocation: required
 fallback: stop-when-openspec-unavailable

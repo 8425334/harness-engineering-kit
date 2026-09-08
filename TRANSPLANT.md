@@ -46,6 +46,9 @@ python3 docs/methodology/scripts/check_profile.py
 python3 docs/methodology/scripts/verify_skill.py engineering --platform claude --source-root /absolute/path/harness-engineering-kit
 python3 docs/methodology/scripts/verify_skill.py engineering --platform codex --source-root /absolute/path/harness-engineering-kit
 python3 docs/methodology/scripts/verify_skill.py engineering --platform opencode --source-root /absolute/path/harness-engineering-kit
+python3 docs/methodology/scripts/verify_skill.py engineering --platform cursor --source-root /absolute/path/harness-engineering-kit
+python3 docs/methodology/scripts/verify_skill.py engineering --platform gemini --source-root /absolute/path/harness-engineering-kit
+python3 docs/methodology/scripts/verify_skill.py engineering --platform trae --source-root /absolute/path/harness-engineering-kit
 ```
 
 ## 4. Operate
@@ -64,4 +67,4 @@ For production scope, create a production record with the same `change_id`, vali
 
 ## 5. Upgrade
 
-The conversational onboarding flow detects `current` and `legacy` states. It synchronizes canonical scripts/docs and all project-local Skill copies (`.claude/skills`, `.agents/skills`, and `.opencode/skills`), preserves project-owned configuration and legacy entries, and records the receipt. Cleanup of old entries is a separate, explicitly approved change.
+The conversational onboarding flow detects `current` and `legacy` states. It synchronizes canonical scripts/docs and all supported project-local Skill copies (`.claude/skills`, `.agents/skills`, `.opencode/skills`, `.cursor/skills`, `.gemini/skills`, and `.trae/skills`), preserves project-owned configuration and legacy entries, and records the receipt. Cleanup of old entries is a separate, explicitly approved change.

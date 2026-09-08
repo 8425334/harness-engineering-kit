@@ -35,5 +35,9 @@ explains. Neither can override native instructions or policy.
 ## Platform boundary
 
 Claude uses `.claude/skills/engineering`; Codex uses `.agents/skills/engineering`;
-OpenCode uses `.opencode/skills/engineering`. OpenSpec 1.12.0 generates its seven
-native workflow Skills in the same agent-specific roots, including Verify.
+OpenCode uses `.opencode/skills/engineering`; Cursor uses `.cursor/skills/engineering`;
+Gemini uses `.gemini/skills/engineering`; Trae uses `.trae/skills/engineering`.
+The Skill frontmatter and native root adapter both require implicit selection for
+non-trivial changes, so users do not need to type `/engineering`. OpenSpec 1.12.0
+generates its seven native workflow Skills in the same agent-specific roots,
+including Verify.

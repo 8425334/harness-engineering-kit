@@ -1,6 +1,6 @@
 ---
 name: engineering
-description: Govern non-trivial code changes while delegating lifecycle actions to native OpenSpec Skills. Use for requested implementation or refactoring; do not use for read-only explanation, diagnosis, or review.
+description: Automatically govern requested feature implementation, bug fixes, refactoring, API/database/UI changes, and other non-trivial code changes by delegating lifecycle actions to native OpenSpec Skills. Also use for Harness onboarding, upgrades, or migration. Do not use for read-only explanation, diagnosis, or review.
 ---
 
 # Engineering
@@ -51,8 +51,8 @@ Engineering wraps that sequence with governance gates:
 
 - Explore/Propose: context resolution, requirement reflection, lessons, context impact, Design Review, and OpenSpec strict artifact validation.
 - Apply: require current `approval.json`; record actual task runs and integration in `execution-evidence.json` while OpenSpec remains the sole owner of `tasks.md` checkbox state.
-- Verify/Review: invoke `openspec-verify-change`, run project tests/build/Fitness, `check_execution.py`, and `check_phase.py <change-dir> REVIEW`; record exact commands, changed-file digests, context updates, exceptions, and uncovered cases.
-- Sync: let `openspec-sync-specs` perform the intelligent merge, then record source/destination digests and run the `SYNC` governance gate.
+- Verify/Review: invoke `openspec-verify-change`, prepare the final `review-evidence.json` file map, run project tests/build and `python3 docs/fitness/scripts/fitness.py --stage review --change <change-id> --tier <policy-tier> --report <change>/evidence/fitness-review.json`, then record the report digest and run `check_execution.py` and `check_phase.py <change-dir> REVIEW`.
+- Sync: snapshot canonical specs, let `openspec-sync-specs` perform the intelligent merge, run `openspec validate --specs` and `python3 docs/fitness/scripts/fitness.py --stage sync --change <change-id> --tier fast --report <change>/evidence/fitness-sync.json`, then record source/destination digests and run the `SYNC` governance gate.
 - Archive: require governance and production closure, then let `openspec-archive-change` perform the archive.
 
 Harness has no second change state machine. Approval and evidence files are facts checked against OpenSpec artifacts, not lifecycle state transitions.

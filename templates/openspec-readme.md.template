@@ -46,6 +46,11 @@ that every checked OpenSpec task has a successful task run and that review file
 digests match. Use `check_phase.py` for governance gates and `openspec validate
 <change-id> --type change --strict --no-interactive` for OpenSpec validation.
 
-Sync is performed by `openspec-sync-specs`; `sync-evidence.json` records unchanged
-delta-spec and merged canonical-spec digests. Archive is performed by
-`openspec-archive-change` after governance and any production closure pass.
+Review must run `fitness.py --stage review --change <id> --report <path>` and bind
+the report digest in `review-evidence.json`. Sync first snapshots every canonical
+spec under `evidence/pre-sync/` (use an empty file when a new capability had no
+canonical spec), then runs `openspec-sync-specs`, `openspec validate --specs`, and
+`fitness.py --stage sync --change <id> --report <path>`. `sync-evidence.json`
+binds the snapshots, delta/canonical digests, validation log, and Fitness report.
+Archive is performed by `openspec-archive-change` after governance and any
+production closure pass.

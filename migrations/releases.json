@@ -33,6 +33,15 @@
         "Run `openspec update --force` for existing projects and verify native Skills under the agent-specific directory (Codex uses `.agents/skills`).",
         "Recreate approvals when the OpenSpec schema or tasks.md contract changes; OpenSpec task checkboxes are now the sole progress source."
       ]
+    },
+    {
+      "version": "0.5.1",
+      "kind": "contract",
+      "summary": "Expand automatic Engineering Skill discovery and root-entry routing across all supported agent platforms.",
+      "manual_review": [
+        "Verify that the target project has the platform-specific Engineering Skill installed for every supported agent and that its root instruction entry declares automatic routing for non-trivial changes.",
+        "Re-run the onboarding check after upgrading so root adapters, platform Skill manifests, and the methodology version are synchronized."
+      ]
     }
   ]
 }

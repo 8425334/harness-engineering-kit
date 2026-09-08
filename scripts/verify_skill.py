@@ -15,6 +15,9 @@ PLATFORMS = {
     "claude": (Path(".claude/skills"), Path.home() / ".claude/skills"),
     "codex": (Path(".agents/skills"), Path.home() / ".codex/skills"),
     "opencode": (Path(".opencode/skills"), Path.home() / ".config/opencode/skills"),
+    "cursor": (Path(".cursor/skills"), Path.home() / ".cursor/skills"),
+    "gemini": (Path(".gemini/skills"), Path.home() / ".gemini/skills"),
+    "trae": (Path(".trae/skills"), Path.home() / ".trae/skills"),
 }
 REQUIRED_MANIFEST_KEYS = ("name", "version", "entry", "platforms", "required_sections", "fallback")
 
@@ -78,8 +81,11 @@ def validate_source(skill: str, source_dir: Path, version: str | None) -> tuple[
         errors.append("manifest name does not match Skill")
     if version and manifest.get("version") != version:
         errors.append("manifest version does not match methodology VERSION")
-    if manifest.get("platforms") != ["claude", "codex", "opencode"]:
-        errors.append("manifest platforms must be [claude, codex, opencode]")
+    expected_platforms = ["claude", "codex", "opencode", "cursor", "gemini", "trae"]
+    if manifest.get("platforms") != expected_platforms:
+        errors.append(f"manifest platforms must be {expected_platforms}")
+    if manifest.get("implicit_invocation") != "required":
+        errors.append("manifest implicit_invocation must be required")
 
     entry = source_dir / str(manifest.get("entry", "SKILL.md"))
     if not entry.is_file():
@@ -90,6 +96,9 @@ def validate_source(skill: str, source_dir: Path, version: str | None) -> tuple[
         errors.extend(frontmatter_errors)
         if fields.get("name") != skill:
             errors.append("frontmatter name does not match Skill")
+        description = fields.get("description", "").lower()
+        if "automatically" not in description or "non-trivial code changes" not in description:
+            errors.append("frontmatter description must advertise automatic non-trivial change routing")
         sections = manifest.get("required_sections", [])
         if not isinstance(sections, list):
             errors.append("required_sections must be a list")

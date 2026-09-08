@@ -11,10 +11,14 @@ Make executable: chmod +x docs/fitness/scripts/fitness.py
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import re
 import shutil
 import subprocess
 import sys
+import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +64,8 @@ def parse_scalar(value: str) -> Any:
         return False
     if value.isdigit():
         return int(value)
+    if value.startswith("[") and value.endswith("]"):
+        return [item.strip().strip("'\"") for item in value[1:-1].split(",") if item.strip()]
     if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
         return value[1:-1]
     return value
@@ -109,7 +115,22 @@ def parse_frontmatter(text: str) -> dict[str, Any] | None:
     return data
 
 
-def should_run(metric: dict[str, Any], default_tier: str, selected_tier: str | None) -> bool:
+def should_run(
+    metric: dict[str, Any],
+    default_tier: str,
+    selected_tier: str | None,
+    selected_stage: str | None,
+) -> bool:
+    stages = metric.get("stages")
+    if selected_stage is None and stages is not None:
+        return False
+    if selected_stage is not None:
+        if stages is None:
+            stages = ["review"]
+        elif isinstance(stages, str):
+            stages = [stages]
+        if selected_stage not in stages:
+            return False
     if selected_tier is None:
         return True
 
@@ -117,7 +138,13 @@ def should_run(metric: dict[str, Any], default_tier: str, selected_tier: str | N
     return TIER_ORDER.get(metric_tier, 1) <= TIER_ORDER[selected_tier]
 
 
-def run_metric(metric: dict[str, Any], default_tier: str, dry_run: bool, verbose: bool) -> tuple[bool, str]:
+def run_metric(
+    metric: dict[str, Any],
+    default_tier: str,
+    dry_run: bool,
+    verbose: bool,
+    change_id: str | None,
+) -> tuple[bool, str]:
     command = str(metric.get("command") or "")
     cwd_value = str(metric.get("cwd") or ".")
     cwd = (PROJECT_ROOT / cwd_value).resolve()
@@ -133,6 +160,7 @@ def run_metric(metric: dict[str, Any], default_tier: str, dry_run: bool, verbose
             capture_output=True,
             text=True,
             timeout=timeout,
+            env={**os.environ, "FITNESS_CHANGE_ID": change_id or ""},
         )
     except subprocess.TimeoutExpired:
         return False, f"TIMEOUT after {timeout}s"
@@ -166,12 +194,59 @@ def iter_rule_files() -> list[Path]:
     ]
 
 
+def digest_entries(entries: list[tuple[str, str]]) -> str:
+    payload = json.dumps(sorted(entries), ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def file_entry(path: Path, label: str) -> tuple[str, str]:
+    try:
+        path.resolve().relative_to(PROJECT_ROOT.resolve())
+    except ValueError:
+        return label, "INVALID"
+    return label, hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else "MISSING"
+
+
+def input_digest(stage: str | None, change_id: str | None) -> str:
+    entries = [file_entry(path, path.relative_to(PROJECT_ROOT).as_posix()) for path in iter_rule_files()]
+    if not change_id:
+        return digest_entries(entries)
+    change_dir = PROJECT_ROOT / "openspec" / "changes" / change_id
+    if stage == "review":
+        try:
+            review = json.loads((change_dir / "review-evidence.json").read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            entries.append(("review-evidence.json:files", "MISSING"))
+        else:
+            files = review.get("files")
+            if not isinstance(files, dict) or not files:
+                entries.append(("review-evidence.json:files", "MISSING"))
+            else:
+                for relative in sorted(files):
+                    entries.append(file_entry(PROJECT_ROOT / str(relative), f"review:{relative}"))
+    elif stage == "sync":
+        for delta in sorted((change_dir / "specs").glob("*/spec.md")):
+            capability = delta.parent.name
+            entries.extend((
+                file_entry(delta, f"delta:{capability}"),
+                file_entry(change_dir / "evidence" / "pre-sync" / capability / "spec.md", f"before:{capability}"),
+                file_entry(PROJECT_ROOT / "openspec" / "specs" / capability / "spec.md", f"canonical:{capability}"),
+            ))
+    return digest_entries(entries)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run repository fitness rules.")
     parser.add_argument("--dry-run", action="store_true", help="Print commands without executing them.")
     parser.add_argument("--verbose", action="store_true", help="Print longer command output.")
     parser.add_argument("--tier", choices=sorted(TIER_ORDER), help="Run metrics up to this tier.")
+    parser.add_argument("--stage", choices=("review", "sync"), help="Run metrics for one lifecycle stage.")
+    parser.add_argument("--report", type=Path, help="Write a machine-readable JSON report.")
+    parser.add_argument("--change", help="Bind stage checks to one OpenSpec change id.")
     args = parser.parse_args()
+    if args.change and ("/" in args.change or "\\" in args.change or args.change in {".", "..", "archive"}):
+        parser.error("--change must be a single active OpenSpec change id")
+    started_at = datetime.now(timezone.utc).isoformat()
 
     print("=" * 72)
     print("FITNESS FUNCTION REPORT")
@@ -184,6 +259,7 @@ def main() -> int:
     total = 0
     passed_count = 0
     hard_gate_failed: list[str] = []
+    metric_results: list[dict[str, Any]] = []
 
     for rule_file in iter_rule_files():
         frontmatter = parse_frontmatter(rule_file.read_text(encoding="utf-8"))
@@ -194,7 +270,7 @@ def main() -> int:
         default_tier = str(frontmatter.get("tier") or "normal")
         metrics = [
             metric for metric in frontmatter["metrics"]
-            if should_run(metric, default_tier, args.tier)
+            if should_run(metric, default_tier, args.tier, args.stage)
         ]
         if not metrics:
             continue
@@ -205,7 +281,7 @@ def main() -> int:
             name = str(metric.get("name") or "unknown")
             tier = str(metric.get("tier") or default_tier)
             hard_gate = bool(metric.get("hard_gate"))
-            passed, output = run_metric(metric, default_tier, args.dry_run, args.verbose)
+            passed, output = run_metric(metric, default_tier, args.dry_run, args.verbose, args.change)
             passed_count += 1 if passed else 0
             status = "PASS" if passed else "FAIL"
             gate_label = " HARD_GATE" if hard_gate else ""
@@ -215,17 +291,44 @@ def main() -> int:
                     print(f"  {line}")
             if not passed and hard_gate:
                 hard_gate_failed.append(name)
+            metric_results.append({
+                "name": name,
+                "tier": tier,
+                "hard_gate": hard_gate,
+                "status": "passed" if passed else "failed",
+                "output": output,
+            })
 
     print("\n" + "=" * 72)
     print(f"RESULT: {passed_count}/{total} metrics passed")
+    status = "failed" if hard_gate_failed or total == 0 else "passed"
     if hard_gate_failed:
         print(f"HARD GATES FAILED: {', '.join(hard_gate_failed)}")
-        return 2
     if total == 0:
         print("No metrics selected.")
-        return 1
-    print("FITNESS PASS")
-    return 0
+    elif status == "passed":
+        print("FITNESS PASS")
+
+    if args.report:
+        report = {
+            "schema_version": 1,
+            "stage": args.stage or "all",
+            "tier": args.tier or "all",
+            "status": status,
+            "total": total,
+            "passed": passed_count,
+            "hard_gate_failures": hard_gate_failed,
+            "metrics": metric_results,
+            "started_at": started_at,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "change_id": args.change,
+            "dry_run": args.dry_run,
+        }
+        report["input_digest"] = input_digest(args.stage, args.change)
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    return 2 if hard_gate_failed else (1 if total == 0 else 0)
 
 
 if __name__ == "__main__":
