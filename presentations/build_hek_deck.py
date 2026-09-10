@@ -116,7 +116,8 @@ def para(tf, first=False):
 
 def new_slide(bg=BG):
     s = prs.slides.add_slide(BLANK)
-    add_box(s, 0, 0, prs.slide_width, prs.slide_height, fill=bg)
+    s.background.fill.solid()
+    s.background.fill.fore_color.rgb = bg
     return s
 
 def deco(slide):
@@ -150,19 +151,53 @@ def bolt(slide, x, y, w, h, color=CYAN, alpha=None, glow=True):
 def header(slide, kicker, title, color=CYAN, title_size=25):
     deco(slide)
     add_box(slide, Inches(0.55), Inches(0.42), Inches(0.16), Inches(0.46), fill=color, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.5)
+    seg = _sec_index(kicker)
+    kk = f"{seg + 1:02d} · " + kicker if seg is not None else kicker
     tf = txbox(slide, Inches(0.82), Inches(0.40), Inches(11.0), Inches(0.35))
-    p = para(tf, True); _run(p, kicker, size=11.5, bold=True, color=color)
+    p = para(tf, True); _run(p, kk, size=11.5, bold=True, color=color)
     tf = txbox(slide, Inches(0.82), Inches(0.70), Inches(11.9), Inches(0.62))
     p = para(tf, True); _run(p, title, size=title_size, bold=True, color=WHITE)
     add_box(slide, Inches(0.82), Inches(1.34), Inches(0.62), Inches(0.05), fill=color)
     add_box(slide, Inches(1.46), Inches(1.34), Inches(0.28), Inches(0.05), fill=PURPLE if color != PURPLE else CYAN)
     add_box(slide, Inches(1.76), Inches(1.362), Inches(2.0), Inches(0.014), fill=BORDER_D)
 
+SECS = [
+    ("WHY",  GREEN,  "开篇·为什么"),
+    ("WHAT", CYAN,   "是什么·放什么"),
+    ("HOW",  PURPLE, "怎么转·受控变更"),
+    ("GROW", PINK,   "怎么长·反哺"),
+    ("USE",  ORANGE, "怎么用·落地"),
+]
+SEC_SYN = {"why": 0, "what": 1, "how": 2, "grow": 3, "use": 4}
+def _sec_index(section):
+    key = (section or "").lower()
+    for k, i in SEC_SYN.items():
+        if k in key:
+            return i
+    return None
+
+def secbar(slide, section):
+    """五段章节进度条：告诉受众『现在讲到第几段』，强化结构层次感"""
+    idx = _sec_index(section)
+    if idx is None:
+        return
+    n = len(SECS)
+    x0, x1, y, gap = Inches(0.55), Inches(12.78), Inches(7.40), Inches(0.06)
+    seg = (x1 - x0 - gap * (n - 1)) / n
+    for i, (lab, c, name) in enumerate(SECS):
+        sh = add_box(slide, int(x0 + int(seg + gap) * i), int(y), int(seg), Inches(0.08),
+                     fill=(c if i == idx else BORDER_D), shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.5)
+        _alpha(sh, 100 if i == idx else 45)
+    label = f"{idx + 1:02d} · {SECS[idx][2]}"
+    tf = txbox(slide, Inches(0.80), Inches(7.32), Inches(5.5), Inches(0.16))
+    p = para(tf, True); _run(p, label, size=8.5, bold=True, color=SECS[idx][1])
+
 def footer(slide, section, page=None):
     PAGENO[0] += 1
-    tf = txbox(slide, Inches(0.55), Inches(7.12), Inches(8.5), Inches(0.3))
+    secbar(slide, section)
+    tf = txbox(slide, Inches(0.55), Inches(7.08), Inches(8.5), Inches(0.3))
     p = para(tf, True); _run(p, "Harness Engineering Kit · 全局技术导览", size=9, color=DIM)
-    tf = txbox(slide, Inches(9.2), Inches(7.12), Inches(3.58), Inches(0.3))
+    tf = txbox(slide, Inches(9.2), Inches(7.08), Inches(3.58), Inches(0.3))
     p = para(tf, True); p.alignment = PP_ALIGN.RIGHT
     _run(p, f"{section}   |   {page or PAGENO[0]}", size=9, color=DIM)
 
@@ -212,6 +247,16 @@ def pic_card(slide, path, x, y, max_w, max_h, caption=None):
         _run(p, caption, size=9.5, color=MUTED, italic=True)
     return left, top, w, h
 
+def tagline(slide, text, color=CYAN, y=1.44, h=0.44):
+    """页首一句话核心：不全面但一击即中的锚点（置于 header 之下、正文之上）"""
+    add_box(slide, Inches(0.62), Inches(y), Inches(12.1), Inches(h), fill=PANEL2, line=color, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.14, line_w=1.0)
+    add_box(slide, Inches(0.62), Inches(y), Inches(0.07), Inches(h), fill=color, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.5)
+    tf = txbox(slide, Inches(0.86), Inches(y), Inches(11.7), Inches(h), anchor=MSO_ANCHOR.MIDDLE)
+    p = para(tf, True); p.line_spacing = 1.05
+    _run(p, "▍ ", size=11, bold=True, color=color)
+    _run(p, text, size=11.5, bold=True, color=WHITE)
+    return tf
+
 def notes(slide, text):
     slide.notes_slide.notes_text_frame.text = text
 
@@ -228,6 +273,36 @@ def num_steps_v(slide, x, y, w, steps, box_h=0.46, gap=0.075, color=CYAN, tsize=
         _run(p, t, size=tsize, bold=True, color=WHITE)
         if d:
             _run(p, "   " + d, size=dsize, color=MUTED)
+
+def real_case_slide(kicker, title, tagline_text, color, problem, flow, actions, source, note):
+    s = new_slide()
+    header(s, kicker, title, color=color, title_size=24)
+    tagline(s, tagline_text, color=color)
+    add_box(s, Inches(0.62), Inches(2.02), Inches(5.95), Inches(4.72), fill=PANEL, line=BORDER_D,
+            shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=0.75)
+    tf = txbox(s, Inches(0.9), Inches(2.18), Inches(5.4), Inches(0.3))
+    p = para(tf, True); _run(p, "发生了什么", size=13, bold=True, color=color)
+    for item in problem:
+        p = para(tf); p.space_before = Pt(10); p.line_spacing = 1.15
+        _run(p, "▸ " + item, size=12.2, color=TEXT)
+    add_box(s, Inches(0.9), Inches(4.28), Inches(5.35), Inches(1.8), fill=(CYAN_P if color != ORANGE else AMBER_P),
+            line=color, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=1.0)
+    tf = txbox(s, Inches(1.1), Inches(4.46), Inches(4.95), Inches(1.42), anchor=MSO_ANCHOR.MIDDLE)
+    p = para(tf, True); p.alignment = PP_ALIGN.CENTER
+    _run(p, flow[0], size=13, bold=True, color=WHITE)
+    p = para(tf); p.alignment = PP_ALIGN.CENTER; p.space_before = Pt(9)
+    _run(p, flow[1], size=11.5, color=color)
+    add_box(s, Inches(6.9), Inches(2.02), Inches(5.8), Inches(4.72), fill=GREEN_P, line=GREEN,
+            shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=1.0)
+    tf = txbox(s, Inches(7.18), Inches(2.18), Inches(5.25), Inches(0.3))
+    p = para(tf, True); _run(p, "项目怎么做  ·  可复用做法", size=13, bold=True, color=GREEN)
+    for item in actions:
+        p = para(tf); p.space_before = Pt(9); p.line_spacing = 1.1
+        _run(p, "▸ " + item, size=11.4, color=TEXT)
+    tf = txbox(s, Inches(0.86), Inches(6.85), Inches(11.8), Inches(0.18))
+    p = para(tf, True); _run(p, "来源：" + source, size=8.5, color=DIM, name=FONT_M)
+    footer(s, "Use·案例")
+    notes(s, note)
 
 def table(slide, x, y, w, col_ratios, rows, header_fill=PURPLE, row_h=0.34, header_h=0.36,
           fsize=11, header_fsize=11):
@@ -258,46 +333,45 @@ def table(slide, x, y, w, col_ratios, rows, header_fill=PURPLE, row_h=0.34, head
     return gt
 
 # ================================================================ SLIDES
+
 # ---------------- 1 cover ----------------
 s = new_slide()
-top = add_box(s, 0, 0, prs.slide_width, Inches(0.05), fill=CYAN); _alpha(top, 55)
-bands(s, [(-1.6, 2.95, 17.6, 1.05, CYAN, 6, -14),
-          (-1.6, 4.20, 17.6, 0.50, PURPLE, 6, -14),
-          (-1.6, 1.80, 17.6, 0.28, GREEN, 5, -14)])
+top = add_box(s, Inches(0.02), Inches(0.02), prs.slide_width - Inches(0.04), Inches(0.05), fill=CYAN); _alpha(top, 55)
 for i, (w_, a) in enumerate([(2.5, 28), (1.7, 16), (1.0, 9)]):
     ln = add_box(s, Inches(1.0), Inches(1.02 + 0.14 * i), Inches(w_), Inches(0.045), fill=CYAN)
     _alpha(ln, a)
-bolt(s, int(Inches(10.45)), int(Inches(1.10)), int(Inches(1.35)), int(Inches(3.55)), color=CYAN)
-bolt(s, int(Inches(11.85)), int(Inches(2.75)), int(Inches(0.75)), int(Inches(1.95)), color=PURPLE, alpha=60, glow=False)
+add_box(s, Inches(10.72), Inches(1.35), Inches(0.48), Inches(3.0), fill=CYAN, shape=MSO_SHAPE.PARALLELOGRAM, adj=0.2)
+add_box(s, Inches(11.92), Inches(2.95), Inches(0.28), Inches(1.45), fill=PURPLE, shape=MSO_SHAPE.PARALLELOGRAM, adj=0.2)
 tf = txbox(s, Inches(1.0), Inches(1.52), Inches(9.2), Inches(0.5))
-p = para(tf, True); _run(p, "HARNESS ENGINEERING KIT  ·  REPOSITORY-NATIVE CONTROLS", size=13, bold=True, color=CYAN)
+p = para(tf, True); _run(p, "HARNESS ENGINEERING KIT  ·  AEGIS AGENT 实战样本", size=13, bold=True, color=CYAN)
 tf = txbox(s, Inches(1.0), Inches(1.98), Inches(9.4), Inches(1.85))
-p = para(tf, True); _run(p, "把 AI 写码，变成", size=42, bold=True, color=WHITE)
+p = para(tf, True); _run(p, "把 AI Agent，变成", size=42, bold=True, color=WHITE)
 p = para(tf); p.space_before = Pt(4)
 _run(p, "可控、可批、可验、可审计的工程", size=42, bold=True, color=CYAN)
 p = para(tf); p.space_before = Pt(8)
-_run(p, "打通 LLM → Coding Agent → Project 的最后一公里", size=16, bold=True, color=CYAN)
-tf = txbox(s, Inches(1.0), Inches(5.28), Inches(9.4), Inches(0.6))
+_run(p, "以 aegis Agent 为例 · 从模型调用到仓库规则，走通一次真实工程闭环", size=16, bold=True, color=CYAN)
+add_box(s, Inches(1.0), Inches(4.9), Inches(10.2), Inches(0.6), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.14)
+tf = txbox(s, Inches(1.24), Inches(4.9), Inches(9.8), Inches(0.6), anchor=MSO_ANCHOR.MIDDLE)
 p = para(tf, True)
-_run(p, "AI 辅助软件变更的仓库内控制系统：", size=14, bold=True, color=WHITE)
-_run(p, "面向工程师的全栈工程方法论 + 可落地工具链", size=14, color=MUTED)
-chips(s, Inches(1.0), Inches(6.02), 0, ["v0.5.1", "MIT · OpenSpec 1.12", "多 Agent 适配", "上下文中英双语"],
+_run(p, "今天不讲抽象架构，围绕 aegis Agent 走一遍：怎么接入、怎么改动、怎么把失败变成护栏", size=13, bold=True, color=WHITE)
+p = para(tf); _run(p, "  （开箱即用，细节在仓库里）", size=11, color=MUTED)
+chips(s, Inches(1.0), Inches(6.08), 0, ["v0.5.1", "MIT · OpenSpec", "多 Agent 适配", "上下文中英双语"],
       fill=BG2, color=CYAN, size=12, line=CYAN)
-add_box(s, 0, Inches(7.16), prs.slide_width, Inches(0.34), fill=BG2)
-tf = txbox(s, Inches(1.0), Inches(6.62), Inches(11.6), Inches(0.4))
+add_box(s, Inches(0.02), Inches(7.16), prs.slide_width - Inches(0.04), Inches(0.30), fill=BG2)
+tf = txbox(s, Inches(1.0), Inches(6.66), Inches(11.6), Inches(0.4))
 p = para(tf, True); _run(p, "分享人：沈学海   ·   ", size=11, bold=True, color=WHITE)
-_run(p, "仓库地址：github.com/8425334/harness-engineering-kit   ·   技术团队内部知识分享", size=11, color=DIM)
-notes(s, "开场：一句话定位。Harness Engineering Kit 不是 Prompt 技巧集，而是一套把权威、规则、文档、门禁与证据沉淀进仓库的控制系统，让每次 AI 会话都站在可靠基础上。今天 32 页讲清楚：为什么、是什么（含 OpenSpec 规格驱动）、怎么运转、怎么反哺、怎么接入、落地成品与演进。")
+_run(p, "github.com/8425334/harness-engineering-kit   ·   技术团队内部知识分享", size=11, color=DIM)
+notes(s, "开场重新定位：本场不穷尽方法论，聚焦三件事——①看清框架结构；②解释 aegis 实际用到的概念；③形成可执行的使用路径。细节留在仓库。")
 
 # ---------------- 2 agenda ----------------
 s = new_slide()
-header(s, "AGENDA", "今天我们按“为什么 → 是什么 → 怎么转 → 怎么长 → 怎么用”五段展开", color=GREEN)
+header(s, "AGENDA", "五段结构：框架 → aegis 实现 → 可执行落地", color=GREEN)
 parts = [
-    ("01  Why", "为什么 AI 能写码，却不能可靠交付", "上下文 / 契约 / 验证 三缺失；LLM 智能 vs 工程确定性的分工", GREEN),
-    ("02  What", "Harness 是什么、仓库里放了什么", "8 层职责 · OpenSpec 角色 · 确定性上下文 + Token 成本", CYAN),
-    ("03  How", "一次受控变更如何运转", "OpenSpec 生命周期 + Delta Specs + 治理外壳 + 全栈并行", PURPLE),
-    ("04  Grow", "错误如何反哺成门禁与经验", "需求反思 · Self-Refine · 经验记忆 · Fitness 四层反馈", PINK),
-    ("05  Use", "如何接入与工程化落地成品", "hek init / Tier / 多 Agent / aegis 真实项目落地展示", ORANGE),
+    ("01  Why", "为什么 AI 能写码，却不能可靠交付", "三缺失；LLM 智能 vs 工程确定性的分工", GREEN),
+    ("02  What", "先看一张框架图", "HEK 五件事，一件事一页，不用每件都展开", CYAN),
+    ("03  How", "只讲三条底层原则", "规格先行 · 上下文按需 · 门禁留证据", PURPLE),
+    ("04  Grow", "错误怎么反哺成门禁", "Self-Refine · 经验记忆 · Fitness，合并成一页讲", PINK),
+    ("05  Use", "重点：落地使用", "怎么接入 · 一次改动怎么走 · 文件速查 · aegis 实例", ORANGE),
 ]
 y = Inches(1.72)
 for tag, t, d, c in parts:
@@ -311,1377 +385,714 @@ for tag, t, d, c in parts:
     p = para(tf, True); p.alignment = PP_ALIGN.RIGHT
     _run(p, d, size=9.5, color=MUTED)
     y += Inches(0.92) + Inches(0.13)
-footer(s, "为什么 · 是什么 · 怎么转 · 怎么长 · 怎么用")
-notes(s, "五段式导览。第 3 页从工程现场的真实痛点切入；What 段会专门讲清 OpenSpec 规格驱动的定位；最后用优惠分摊引擎案例把整条链路走一遍。")
+add_box(s, Inches(0.9), Inches(6.62), Inches(11.5), Inches(0.42), fill=PANEL2, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.14, line_w=1.0)
+tf = txbox(s, Inches(1.12), Inches(6.62), Inches(11.1), Inches(0.42), anchor=MSO_ANCHOR.MIDDLE)
+p = para(tf, True)
+_run(p, "▍ 本场主线：", size=11, bold=True, color=GREEN)
+_run(p, "把 HEK 当『给 AI 装刹车和方向盘』——大多数人需要的不是全部细节，而是知道框架在哪、怎么用起来。", size=11.5, bold=True, color=WHITE)
+footer(s, "Agenda")
+notes(s, "五段导览，重心后移：What 用一张框架图立骨架，How 只讲 aegis 实际用到的概念，Grow 合并成一页，重点落在 Use 的可执行路径。")
 
 # ---------------- 3 pain ----------------
 s = new_slide()
-header(s, "WHY · 现场痛点", "一句话让 AI 写代码很容易，让它“可靠交付”很难")
-bullets(s, Inches(0.9), Inches(1.62), Inches(11.6), Inches(0.5),
-        [(0, [("模型不缺能力，缺的是它周围的工程环境。", {"bold": True, "color": TEXT})])], size=14)
+header(s, "WHY", "问题：让 AI 写代码很容易，让它“可靠交付”很难", color=GREEN)
+tagline(s, "核心判断：无需先学完整套理论；先让 AI 读规则，再按 change 执行。", color=GREEN, y=1.5, h=0.42)
 cards = [
-    ("上下文缺失", "不知道模块边界 / 依赖方向 / 允许的命令 / 领域规则", "只能靠临时搜索“猜”", CYAN),
-    ("契约缺失", "需求直接进实现，边写边改", "职责漂移、边界模糊、测试无从写起", PURPLE),
-    ("验证缺失", "“编译通过”≠“行为正确”", "没有门禁与证据，“代码生成了”被当成“做完了”", RED),
+    ("上下文缺失", "AI 不知道模块边界 / 依赖方向 / 允许的命令", CYAN, "只能靠临时搜索“猜”"),
+    ("契约缺失", "需求直接进实现，边写边改，职责漂移", PURPLE, "没有规格对对齐，测试无从写起"),
+    ("验证缺失", "“编译通过”≠“行为正确”", RED, "没有门禁与证据，生成了=做完了"),
 ]
 x = Inches(0.9)
-for t, d, e, c in cards:
-    add_box(s, x, Inches(2.35), Inches(3.7), Inches(2.2), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.07)
-    add_box(s, x, Inches(2.35), Inches(3.7), Inches(0.5), fill=c, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.5)
-    tf = txbox(s, x, Inches(2.40), Inches(3.7), Inches(0.4), anchor=MSO_ANCHOR.MIDDLE)
-    p = para(tf, True); p.alignment = PP_ALIGN.CENTER
-    _run(p, t, size=15.5, bold=True, color=DARKTXT)
-    tf = txbox(s, x + Inches(0.2), Inches(3.0), Inches(3.3), Inches(1.5))
-    for i, (tx_, col) in enumerate([(d, TEXT), (e, RED)]):
-        p = para(tf, i == 0)
-        p.space_after = Pt(5); p.line_spacing = 1.12
-        _run(p, ("⚠ " if i == 1 else "· ") + tx_, size=12, bold=(i == 1), color=col)
-    x += Inches(3.7) + Inches(0.25)
-tf = txbox(s, Inches(0.9), Inches(4.85), Inches(11.6), Inches(1.1))
-p = para(tf, True); p.line_spacing = 1.2
-_run(p, "结果：", size=14, bold=True, color=CYAN)
-_run(p, "一次提问 = 一次一次性回答；速度越快，未经约束的产出与返工越多。", size=14, color=TEXT)
-p = para(tf); p.space_before = Pt(4); p.line_spacing = 1.2
-_run(p, "▍ 核心理念（贯穿全篇）：", size=14, bold=True, color=GREEN)
-_run(p, "LLM 提供“智能 / 生成”，Harness 提供“组织、约束、验证与证据”——两者几乎不重叠，缺一不可。", size=14, bold=True, color=TEXT)
+for title, d1, c, d2 in cards:
+    add_box(s, x, Inches(2.1), Inches(3.66), Inches(2.1), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.08)
+    add_box(s, x, Inches(2.1), Inches(3.66), Inches(0.6), fill=c, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.9)
+    tf = txbox(s, x + Inches(0.24), Inches(2.2), Inches(3.2), Inches(0.5))
+    p = para(tf, True); _run(p, title, size=15, bold=True, color=DARKTXT)
+    tf = txbox(s, x + Inches(0.24), Inches(2.95), Inches(3.2), Inches(1.1))
+    p = para(tf, True); _run(p, d1, size=12, color=TEXT)
+    p = para(tf); p.space_before = Pt(6); _run(p, "→ " + d2, size=11.5, bold=True, color=c)
+    x += Inches(3.66) + Inches(0.26)
+add_box(s, Inches(0.9), Inches(4.8), Inches(11.5), Inches(1.4), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.08, line_w=1.0)
+tf = txbox(s, Inches(1.15), Inches(4.95), Inches(11.0), Inches(1.15))
+p = para(tf, True); _run(p, "aegis 的工程回答：", size=12.5, bold=True, color=GREEN)
+p = para(tf); p.space_before = Pt(5); p.line_spacing = 1.2
+_run(p, "「LLM 负责理解，仓库负责约束。」先把边界、规格和完成标准放进仓库，", size=12, color=TEXT)
+_run(p, "再让 Agent 按步骤执行并留下证据。", size=12, bold=True, color=WHITE)
 footer(s, "Why")
-notes(s, "对照实验：同样需求，模型能力相同，为什么在真实项目里时好时坏？差距不在模型，在于三种缺失。这决定了后面的所有设计：上下文要确定性加载、需求要先进规格与契约、完成必须有门禁和证据。")
+notes(s, "Why 只做定位：不是讲模型原理，而是告诉听众为什么项目里要多几份文件和几道门。")
 
 # ---------------- 4 division ----------------
 s = new_slide()
-header(s, "WHY · 第一性分工", "LLM 擅长生成，Harness 擅长确定——这是一条天然分工线", color=GREEN)
-table(s, Inches(0.9), Inches(1.7), Inches(11.55), [1.1, 1.6, 1.9],
+header(s, "WHY", "核心分工：AI 负责生成，人和仓库负责放行", color=GREEN)
+table(s, Inches(0.9), Inches(1.72), Inches(11.55), [1.1, 1.6, 1.9],
       [
-          ["", "LLM 擅长（认知）", "Harness 擅长（工程）"],
-          ["内容", "理解自然语言 · 归纳推理 · 生成代码 · 发现模式", "保持上下文一致 · 强制流程 · 控制权限边界"],
-          ["状态", "单次调用无状态（不“记住”上次）", "管理生命周期状态 · 复用阶段产物"],
-          ["验证", "只能自述“应该没问题”", "用门禁 / 测试 / 证据自动验证 · 记录审计轨迹"],
-          ["流程", "不会自动按多步流程执行", "用 Explore→Apply→Archive 推进每个非平凡变更"],
+          ["", "AI 可以做", "项目必须管"],
+          ["理解", "读需求、提方案、写草稿", "边界、职责、依赖方向"],
+          ["执行", "按任务生成实现", "审批、门禁、回滚条件"],
+          ["完成", "给出“应该可以”", "测试、证据、归档结果"],
       ], header_fill=CYAN, row_h=0.5)
-bullets(s, Inches(0.9), Inches(4.75), Inches(11.6), Inches(1.8),
-        [(0, [("关键判断：", {"bold": True, "color": WHITE}),
-              ("LLM 回答“它能做”，Harness 决定“允许它怎么做、做完怎么证明”。", {"color": TEXT})]),
-         (0, [("LLM 天然特点 → 设计推论：", {"bold": True, "color": WHITE}),
-              ("上下文决定质量与上限 → 最小化而稳定的上下文、缓存复用；输出概率性 → 外部确定性门禁；调用无状态 → 把状态放进仓库工作区。", {"color": TEXT})])],
-        size=12.5, marker=GREEN)
-footer(s, "Why")
-notes(s, "引用项目里一句高度浓缩的话：“LLM 回答它能做，Harness 决定允许它怎么做、做完怎么证明。”状态、流程、验证都不该寄希望于模型的自觉，而是仓库里可执行的机制。")
-
-# ---------------- 4b harness concept ----------------
-s = new_slide()
-header(s, "WHAT · 概念", "Harness 是什么：Agent 工程的三级演进", color=CYAN)
-ILLUS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "harness-metaphor-bw.jpg")
-ladder = [
-    (Inches(0.62), Inches(3.42), Inches(2.18), Inches(1.70), PANEL, BORDER_D, CYAN, 0.75,
-     "① Prompt Engineering", "提示词工程 · 把话说清楚",
-     "怎么问，决定单次产出的好坏；规则只活在提示词里，换会话即丢。",
-     "控制：一次调用", None),
-    (Inches(3.02), Inches(2.52), Inches(2.18), Inches(2.60), CYAN_P, BORDER_D, CYAN, 0.75,
-     "② Context Engineering", "上下文工程 · 喂对料",
-     "确定性加载最小而稳定的项目上下文，Token 即成本；模型知道该知道的，但做完没证据、没门禁。",
-     "控制：一次会话", None),
-    (Inches(5.42), Inches(1.62), Inches(2.18), Inches(3.50), GREEN_P, GREEN, GREEN, 1.25,
-     "③ Harness Engineering", "缰绳工程 · 装系统",
-     "给模型外围装上工程系统：工具循环 + 规格 / 审批 / 门禁 / 证据的治理——不仅会做，还被允许做、可证明做完。",
-     "控制：整个变更生命周期", "内部分两层 ▶ 见右图"),
-]
-for lx, ly, cw, ch, fillc, linec, acc, lwt, t_en, t_zh, desc, scope, extra in ladder:
-    add_box(s, lx, ly, cw, ch, fill=fillc, line=linec, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.07, line_w=lwt)
-    tf = txbox(s, lx + Inches(0.16), ly + Inches(0.14), cw - Inches(0.3), ch - Inches(0.24))
-    p = para(tf, True); _run(p, t_en, size=10.5, bold=True, color=acc)
-    p = para(tf); p.space_before = Pt(2); _run(p, t_zh, size=9.5, bold=True, color=WHITE)
-    p = para(tf); p.space_before = Pt(4); p.line_spacing = 1.1
-    _run(p, desc, size=9, color=TEXT)
-    p = para(tf); p.space_before = Pt(5)
-    _run(p, scope, size=9.5, bold=True, color=acc)
-    if extra:
-        p = para(tf); p.space_before = Pt(3)
-        _run(p, extra, size=9, bold=True, color=WHITE)
-add_box(s, Inches(2.84), Inches(2.62), Inches(0.14), Inches(0.72), fill=CYAN, shape=MSO_SHAPE.UP_ARROW)
-add_box(s, Inches(5.24), Inches(1.72), Inches(0.14), Inches(0.72), fill=GREEN, shape=MSO_SHAPE.UP_ARROW)
-add_box(s, Inches(0.62), Inches(5.32), Inches(6.98), Inches(0.82), fill=PANEL2, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.12)
-tf = txbox(s, Inches(0.86), Inches(5.32), Inches(6.5), Inches(0.82), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); p.line_spacing = 1.18
-_run(p, "叠加，不是替代：", size=10.5, bold=True, color=CYAN)
-_run(p, "①② 仍然生效，③ 把它们连同治理装进一个系统。模型越强，瓶颈越从「怎么问」→「喂什么」→「怎么管」。", size=10.5, color=TEXT)
-pic_card(s, ILLUS, Inches(7.9), Inches(1.55), Inches(4.8), Inches(2.45),
-         caption="比喻：LLM 是马 · 缰绳引方向 · 皮鞭立规矩（作用标注在图中）")
-add_box(s, Inches(7.9), Inches(4.42), Inches(4.8), Inches(2.0), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.09, line_w=1.25)
-tf = txbox(s, Inches(8.14), Inches(4.56), Inches(4.35), Inches(1.75))
-p = para(tf, True); _run(p, "阶段③ 的两层（对应左图）", size=11.5, bold=True, color=GREEN)
-p = para(tf); p.space_before = Pt(6); p.line_spacing = 1.15
-_run(p, "缰绳 ", size=10, color=TEXT)
-_run(p, "Agent Harness", size=10, bold=True, color=CYAN)
-_run(p, " 会话层——随工具走：换工具、换会话即失效", size=10, color=TEXT)
-p = para(tf); p.space_before = Pt(4); p.line_spacing = 1.15
-_run(p, "皮鞭 ", size=10, color=TEXT)
-_run(p, "Project Harness", size=10, bold=True, color=GREEN)
-_run(p, " 仓库层——随仓库走：对每个 Agent 同时生效", size=10, color=TEXT)
-p = para(tf); p.space_before = Pt(6)
-_run(p, "本讲主角 HEK，就是那把皮鞭。", size=10.5, bold=True, color=WHITE)
-footer(s, "What · Harness 概念")
-notes(s, "这页先讲演进、再落到比喻。三级阶梯：Prompt Engineering 控制一次调用——怎么问决定单次产出，但规则只活在提示词里，换会话即丢；Context Engineering 控制一次会话——确定性加载最小而稳定的上下文（本仓库的 resolve_context、ai.json/AI.md、prompt cache 都属于这一层）；Harness Engineering 控制整个变更生命周期——把工具循环与治理（规格、审批、门禁、证据）装进模型外围，让 AI 不仅会做，还被允许做、可证明做完。三级叠加不替代：模型越强，瓶颈从怎么问移到喂什么、再移到怎么管。阶段③内部又分两层：缰绳 Agent Harness 随工具走（会话层）、皮鞭 Project Harness 随仓库走（对每个 Agent 生效）——HEK 就是那把皮鞭，本讲重点。")
-
-# ---------------- 5 what is ----------------
-s = new_slide()
-header(s, "WHAT · 定位", "Harness Engineering Kit：仓库内控制系统")
-bullets(s, Inches(0.9), Inches(1.66), Inches(6.6), Inches(4.0),
-        [(0, [("解决的问题", {"bold": True, "color": CYAN}),
-              ("把 AI 软件变更中的上下文、决策、审批、验证、同步、生产控制与审计证据，从“人脑规则 + 超长根 Prompt”变成仓库里可执行、可门禁、可复用的契约。", {"color": TEXT})]),
-         (0, [("它不是", {"bold": True, "color": RED}),
-              ("Prompt 技巧集、编码规范文档、或替代 OpenSpec 的第二套生命周期。", {"color": TEXT})]),
-         (0, [("它是", {"bold": True, "color": GREEN}),
-              ("一套“默认对 AI 生效”的项目级工程运行时：装好后，非平凡变更自动被引导走完整生命周期。", {"color": TEXT})])],
-        size=12.5, gap=10)
-add_box(s, Inches(7.9), Inches(1.72), Inches(4.5), Inches(1.15), fill=PANEL2, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.12)
-tf = txbox(s, Inches(8.1), Inches(1.80), Inches(4.1), Inches(1.0))
-p = para(tf, True); _run(p, "没有 Harness（一次性）", size=11, bold=True, color=MUTED)
-p = para(tf); p.space_before = Pt(3); _run(p, "用户问题 → LLM → 一次性答案", size=12.5, color=TEXT)
-ar = add_box(s, Inches(10.0), Inches(2.92), Inches(0.42), Inches(0.42), fill=CYAN, shape=MSO_SHAPE.DOWN_ARROW)
-tf = txbox(s, Inches(7.9), Inches(3.42), Inches(4.5), Inches(0.42))
-p = para(tf, True); p.alignment = PP_ALIGN.CENTER
-_run(p, "↓  沉淀成可执行工程闭环", size=10.5, bold=True, color=MUTED)
-add_box(s, Inches(7.9), Inches(3.95), Inches(4.5), Inches(2.4), fill=CYAN_P, line=CYAN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.1, line_w=1.0)
-tf = txbox(s, Inches(8.1), Inches(4.08), Inches(4.1), Inches(2.2))
-p = para(tf, True); _run(p, "有 Harness（工程闭环）", size=11, bold=True, color=GREEN)
-flow = ["需求 → 加载上下文", "规格 / 建模（契约）", "审批（绑定契约摘要）", "受控执行 + 逐任务证据", "门禁验证 → 交付 / 修正"]
-for i, f in enumerate(flow):
-    p = para(tf); p.space_before = Pt(4 if i == 0 else 2.5)
-    _run(p, f"▸ {f}", size=12, color=TEXT)
-footer(s, "What")
-notes(s, "一句话：给 LLM 加一个仓库内的“工程运行时”。装好后对用户透明——非平凡需求不再被直接丢给实现，而是先进规格与生命周期。")
-
-# ---------------- 6 architecture files ----------------
-s = new_slide()
-header(s, "WHAT · 仓库结构", "每个概念对应仓库里的真实文件——每一层只干一件事")
-rows = [
-    ["概念", "落地文件", "负责", "不负责"],
-    ["入口", "根 CLAUDE.md / AGENTS.md", "权威 · 安全 · 必读 · Skill 路由", "命令 / 完整方法论"],
-    ["策略（唯一事实）", "docs/methodology/agent-policy.yaml", "命令 · 路径 · 权限 · 交付引用", "任务级设计"],
-    ["方法论档位", "profile.yaml", "档位 · Self-Refine 策略 · 审批要求", "命令与权限"],
-    ["上下文索引", "根 ai.json（≤4096 B）", "机器可读项目地图", "命令 / 详细规则"],
-    ["路径上下文", "AI.md（≤400 行）", "局部职责 · 边界 · 导航", "覆盖上层指令"],
-    ["编排", "engineering Skill", "路由 · 编排生命周期 · 记录证据", "重复项目约定"],
-    ["变更工作区", "openspec/changes/<id>/（OpenSpec）", "proposal · spec · design · tasks 四件套", "治理证据（侧车附加）"],
-    ["治理侧车", "change 内 governance.json + evidence/", "审批 · 执行 / Review / Fitness / 生产证据", "状态机与任务定义"],
-    ["质量门禁", "docs/fitness/**（受保护）", "定义“真正完成”", "被 Agent 修改"],
-]
-table(s, Inches(0.55), Inches(1.55), Inches(12.25), [1.0, 2.7, 2.6, 1.6], rows, row_h=0.30, fsize=9.5, header_fsize=10.5)
-tf = txbox(s, Inches(0.9), Inches(5.25), Inches(11.7), Inches(1.5))
-p = para(tf, True); p.line_spacing = 1.15
-_run(p, "权威顺序（固定、不可覆盖）：", size=11.5, bold=True, color=WHITE)
-p = para(tf); p.space_before = Pt(3)
-_run(p, "原生指令层级 → agent-policy.yaml → 根 ai.json → 命中的 AI.md（父到子） → Profile 默认值；仓库文本一律视为不可信输入。", size=11.5, color=TEXT)
-p = para(tf); p.space_before = Pt(5)
-_run(p, "工作区与侧车同居一个目录、归属不同：OpenSpec 拥有生命周期四件套，Engineering 只附加治理证据。", size=11, color=MUTED, italic=True)
-footer(s, "What")
-notes(s, "设计原则：拒绝超长根 Prompt。每层只声明自己的权威边界，缺哪层补哪层。注意最后三行的归属切分：OpenSpec 管产物，Harness 管证据，Fitness 是受保护控制面。")
-
-# ---------------- 7 openspec concept ----------------
-s = new_slide()
-header(s, "WHAT · OPENSPEC", "先写规格、再写代码：规格驱动开发（SDD）与 change 工作区")
-bullets(s, Inches(0.9), Inches(1.62), Inches(6.15), Inches(3.2),
-        [(0, [("OpenSpec 是什么：", {"bold": True, "color": CYAN}),
-              ("开源的规格驱动开发框架，为“需求 → 规格 → 实现”提供标准化产物、状态机与校验（本仓库基于 v1.12）。", {"color": TEXT})]),
-         (0, [("规格先行：", {"bold": True, "color": GREEN}),
-              ("用 WHEN/THEN 描述系统的可观测行为，先对齐“要什么”，再讨论“怎么做”。", {"color": TEXT})]),
-         (0, [("规格即权威：", {"bold": True, "color": GREEN}),
-              ("代码实现规格、验证对照规格——文档从事后注释，变成可执行的事实源。", {"color": TEXT})]),
-         (0, [("一个变更 = 一个 change 工作区：", {"bold": True, "color": CYAN}),
-              ("四件套产物分别回答：为什么做（proposal）· 要什么行为（spec）· 怎么做（design）· 分几步（tasks）。", {"color": TEXT})])],
-        size=12, gap=9)
-
-def art_panel(x, y, w, h, title, items, accent):
-    add_box(s, x, y, w, h, fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06)
-    add_box(s, x, y, Inches(0.1), h, fill=accent, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.5)
-    tf = txbox(s, x + Inches(0.28), y + Inches(0.13), w - Inches(0.4), Inches(0.32))
-    p = para(tf, True); _run(p, title, size=11.5, bold=True, color=WHITE)
-    tf = txbox(s, x + Inches(0.28), y + Inches(0.52), w - Inches(0.45), h - Inches(0.62))
-    first = True
-    for name, desc in items:
-        p = para(tf, first); first = False
-        p.space_after = Pt(4.5); p.line_spacing = 1.05
-        _run(p, name, size=9.5, bold=True, color=accent, name=FONT_M)
-        _run(p, "  " + desc, size=9.5, color=TEXT)
-
-art_panel(Inches(7.3), Inches(1.58), Inches(5.1), Inches(2.52), "OpenSpec 原生产物（生命周期所有者）", [
-    ("proposal.md", "为什么做 · 范围与影响"),
-    ("specs/<能力>/spec.md", "WHEN/THEN 行为规格（增量）"),
-    ("design.md", "技术方案 · 取舍 · 决策"),
-    ("tasks.md", "任务分解与勾选 · 唯一进度源"),
-], CYAN)
-art_panel(Inches(7.3), Inches(4.26), Inches(5.1), Inches(2.52), "Harness 治理侧车（governance.json 总账）", [
-    ("approval.json", "外部审批 · 绑定契约摘要"),
-    ("execution-evidence.json", "逐任务成功执行的证据"),
-    ("review / sync / archive", "各阶段证据与合并摘要"),
-    ("evidence/*.jsonl", "事件流与失败记录"),
-], GREEN)
-add_box(s, Inches(0.9), Inches(5.05), Inches(6.15), Inches(1.73), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.09, line_w=1.0)
-tf = txbox(s, Inches(1.12), Inches(5.2), Inches(5.75), Inches(1.5))
-p = para(tf, True); _run(p, "本仓库的角色：自定义 harness-engineering schema", size=12, bold=True, color=GREEN)
-for t in ["保留 OpenSpec 原生产物与任务格式，不另起炉灶",
-          "把 design 强化成“可实施方案包”，供人审批",
-          "要求逐任务证据，把“勾选”变成“可验证完成”"]:
-    p = para(tf); p.space_before = Pt(4.5); p.line_spacing = 1.1
-    _run(p, "▸ " + t, size=11, color=TEXT)
-footer(s, "What · OpenSpec")
-notes(s, "OpenSpec 是外部开源框架（v1.12），负责规格驱动的生命周期；HEK 不重复造轮子，而是用它的自定义 schema 机制把工程治理挂进去。强调右侧两组文件的归属差异：上面一组属于 OpenSpec，下面一组是 Harness 附加的治理证据。")
-
-# ---------------- 8 context loading ----------------
-s = new_slide()
-header(s, "WHAT · 上下文", "确定性上下文加载：改代码前，先知道自己“站在哪”")
-tf = txbox(s, Inches(0.9), Inches(1.58), Inches(11.7), Inches(0.45))
+add_box(s, Inches(0.9), Inches(4.85), Inches(11.5), Inches(1.15), fill=PANEL2, line=CYAN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.09, line_w=1.0)
+tf = txbox(s, Inches(1.15), Inches(4.95), Inches(11.0), Inches(0.95))
 p = para(tf, True)
-_run(p, "同一路径，永远得到同一套事实：", size=13, bold=True, color=WHITE)
-_run(p, "resolve_context.py 按固定顺序解析加载链——顺序不可变、逐层只补充、失败即停。", size=13, color=TEXT)
-chain = [
-    ("agent-policy.yaml", "命令 · 权限 · 禁区（唯一事实源）", PURPLE),
-    ("profile.yaml", "方法论档位与审批要求", CYAN),
-    ("ai.json", "机器可读项目地图（≤4096 字节）", GREEN),
-    ("AI.md（父 → 子）", "命中路径的职责 · 边界 · 验证", ORANGE),
+_run(p, "一句判断：", size=13, bold=True, color=CYAN)
+_run(p, "LLM 回答“它能做”，Harness 决定“允许它怎么做、做完怎么证明”。", size=13.5, bold=True, color=WHITE)
+p = para(tf); p.space_before = Pt(4)
+_run(p, "所以 HEK 的用法很简单：让 AI 先读 → 先批 → 再做 → 做完留证据。", size=11.5, color=MUTED)
+footer(s, "Why")
+notes(s, "把分工讲成一条天然分割线，收敛到一句可带走的话。不做细节展开，只建立『模型自述 vs 外部证明』的心智模型。")
+
+# ---------------- 5 framework overview ----------------
+s = new_slide()
+header(s, "WHAT · 框架总览", "HEK = Harness Engineering Kit，一次受控变更 → 五件事：想法→可靠代码", color=CYAN)
+tagline(s, "关键规则：原则管住智能 · 流程管住节奏 · 产物管住对账 · 治理管住放行 · 反哺管住长进", color=CYAN)
+frame_rows = [
+    ("① 原则", "LLM 只做理解，确定的部分交给管线", "根 CLAUDE.md · agent-policy.yaml · AI.md", CYAN),
+    ("② 流程", "一条受控生命周期：探 → 提 → 做 → 验 → 并 → 存", "openspec/changes/* 生命周期", GREEN),
+    ("③ 产物", "proposal / spec / design / tasks 四件套 + 权威规格", "openspec/changes/ · openspec/specs/", PURPLE),
+    ("④ 治理", "审批绑定 + 门禁 + 证据，放行才写码", "docs/fitness/ · execution-evidence", ORANGE),
+    ("⑤ 反哺", "失败先记录，重复问题再固化为规则", "docs/fitness/ · docs/methodology/lessons/", PINK),
 ]
-cy = Inches(2.25)
-for i, (name, desc, c) in enumerate(chain):
-    add_box(s, Inches(0.9), cy, Inches(5.9), Inches(0.72), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.14)
-    add_box(s, Inches(0.9), cy, Inches(0.62), Inches(0.72), fill=c, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.14)
-    tfn = txbox(s, Inches(0.9), cy, Inches(0.62), Inches(0.72), anchor=MSO_ANCHOR.MIDDLE)
-    p = para(tfn, True); p.alignment = PP_ALIGN.CENTER
-    _run(p, str(i + 1), size=15, bold=True, color=DARKTXT)
-    tf = txbox(s, Inches(1.68), cy, Inches(5.0), Inches(0.72), anchor=MSO_ANCHOR.MIDDLE)
-    p = para(tf, True)
-    _run(p, name + "   ", size=11.5, bold=True, color=WHITE, name=FONT_M)
-    _run(p, desc, size=10, color=MUTED)
-    if i < 3:
-        tfa = txbox(s, Inches(3.55), cy + Inches(0.72), Inches(0.5), Inches(0.20), anchor=MSO_ANCHOR.MIDDLE)
-        p = para(tfa, True); p.alignment = PP_ALIGN.CENTER
-        _run(p, "↓", size=11, bold=True, color=CYAN)
-    cy += Inches(0.72) + Inches(0.20)
-add_box(s, Inches(0.9), Inches(5.95), Inches(5.9), Inches(0.72), fill=AMBER_P, line=ORANGE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.16, line_w=1.0)
-tf = txbox(s, Inches(1.12), Inches(5.95), Inches(5.5), Inches(0.72), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); p.line_spacing = 1.1
-_run(p, "Fail-closed：", size=11.5, bold=True, color=ORANGE)
-_run(p, "解析失败或缺任一层 → 拒绝开工，而不是带残缺上下文继续。", size=11.5, color=TEXT)
-add_box(s, Inches(7.1), Inches(2.25), Inches(5.35), Inches(2.95), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.08, line_w=1.0)
-tf = txbox(s, Inches(7.32), Inches(2.42), Inches(4.95), Inches(2.7))
-p = para(tf, True); _run(p, "为什么路径级，而不是全量上下文？", size=12.5, bold=True, color=GREEN)
-for t in ["Token = 成本：同前缀缓存命中只需约 0.1×",
-          "太长稀释注意力：无关细节拉低生成质量",
-          "权威分级：该知道什么，才加载什么",
-          "可复用前缀：稳定规则前置，任务细节后置"]:
-    p = para(tf); p.space_before = Pt(7); p.line_spacing = 1.12
-    _run(p, "▸ " + t, size=11.5, color=TEXT)
-add_box(s, Inches(7.1), Inches(5.95), Inches(5.35), Inches(0.72), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.16)
-tf = txbox(s, Inches(7.32), Inches(5.95), Inches(4.95), Inches(0.72), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); p.line_spacing = 1.1
-_run(p, "索引负责路由，Markdown 负责解释；", size=11, color=MUTED)
-_run(p, "两层都不能覆盖策略与原生指令。", size=11, color=MUTED)
+y = Inches(2.02)
+rh, rg = 0.78, 0.09
+for name, what, where, c in frame_rows:
+    add_box(s, Inches(0.62), y, Inches(2.0), Inches(rh), fill=c, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.12)
+    tf = txbox(s, Inches(0.62), y, Inches(2.0), Inches(rh), anchor=MSO_ANCHOR.MIDDLE)
+    p = para(tf, True); p.alignment = PP_ALIGN.CENTER
+    _run(p, name, size=15, bold=True, color=DARKTXT); p.alignment = PP_ALIGN.CENTER
+    tf = txbox(s, Inches(2.8), y, Inches(6.1), Inches(rh), anchor=MSO_ANCHOR.MIDDLE)
+    p = para(tf, True); p.line_spacing = 1.0
+    _run(p, what, size=12, bold=True, color=WHITE)
+    tf = txbox(s, Inches(9.05), y, Inches(3.9), Inches(rh), anchor=MSO_ANCHOR.MIDDLE)
+    p = para(tf, True); p.alignment = PP_ALIGN.RIGHT
+    _run(p, where, size=10, color=c, name=FONT_M)
+    y += Inches(rh + rg)
+add_box(s, Inches(0.62), Inches(6.5), Inches(12.1), Inches(0.52), fill=PANEL2, line=CYAN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.14, line_w=1.0)
+tf = txbox(s, Inches(0.86), Inches(6.5), Inches(11.7), Inches(0.52), anchor=MSO_ANCHOR.MIDDLE)
+p = para(tf, True)
+_run(p, "接下来 How 只解释 aegis 实际用到的概念，Use 给出五件事的落地路径。", size=12, bold=True, color=CYAN)
 footer(s, "What")
-notes(s, "上下文是决定质量的第一变量。确定性加载保证同一路径永远得到同一套事实，且不会把整个代码库塞进 prompt。左侧四级加载链的顺序固定，避免 AI.md 覆盖策略。")
+notes(s, "这张是全场的骨架。五件事各占一行，不展开，先让听众建立整体地图：原则/流程/产物/治理/反哺各落在仓库哪些路径。后面所有页都回指这五个框。")
 
-# ---------------- 9 token cache ----------------
+# ---------------- 6 harness concept ----------------
 s = new_slide()
-header(s, "WHAT · 成本工程", "Token 是成本与延迟：稳定前缀，只算一次")
-bullets(s, Inches(0.9), Inches(1.58), Inches(5.6), Inches(2.0),
-        [(0, [("问题：", {"bold": True, "color": RED}),
-              ("每次请求都重复发送相同项目上下文（规范/架构/工具），占大量 Token 却几乎不变。", {"color": TEXT})]),
-         (0, [("思路：", {"bold": True, "color": GREEN}),
-              ("固定前缀只算一次（Prompt Cache）；变化的只有本次任务增量。", {"color": TEXT})]),
-         (0, [("收益：", {"bold": True, "color": CYAN}),
-              ("降成本 · 降首字延迟 · 提高多轮一致性。", {"color": TEXT})])],
-        size=11.5, gap=6)
-add_box(s, Inches(0.9), Inches(3.72), Inches(5.6), Inches(0.5), fill=CYAN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.3)
-tf = txbox(s, Inches(1.0), Inches(3.77), Inches(5.4), Inches(0.4), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); _run(p, "仓库侧协议 context_cache.py", size=12, bold=True, color=DARKTXT)
-bullets(s, Inches(0.9), Inches(4.35), Inches(5.6), Inches(2.2),
-        [(0, [("对精确加载顺序做原始字节稳定指纹 → prefix_digest 唯一缓存身份。", {"color": TEXT})]),
-         (0, [("每次请求记录 hit / miss / bypass；只 hit+miss 计入命中率。", {"color": TEXT})]),
-         (0, [("无供应商遥测必须报 bypass，绝不冒充命中。", {"color": TEXT})]),
-         (0, [("长程任务基准目标：命中率 ≥ 99.5%。", {"color": CYAN, "bold": True})]),
-         (0, [("缓存失败是优化失败，不是正确性失败（解析仍 fail-closed）。", {"color": MUTED, "italic": True})])],
-        size=11.5, gap=5)
-pic_card(s, os.path.join(ASSETS, "10-context-cache-prefix.png"), Inches(6.85), Inches(1.7), Inches(5.85), Inches(4.6),
-         caption="▲ 稳定前缀命中缓存：prefix_digest → hit / miss / bypass（仓库白板图）")
+header(s, "WHAT · Harness 是什么", "HEK 是项目里的 AI 使用说明书", color=CYAN)
+tagline(s, "三层分工：Prompt 说清问题，Context 带对文件，Harness 管住变更。", color=CYAN)
+ILLUS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "harness-metaphor-bw.jpg")
+pic_card(s, ILLUS, Inches(0.35), Inches(2.0), Inches(4.4), Inches(4.7))
+tf = txbox(s, Inches(5.1), Inches(2.0), Inches(7.5), Inches(4.8))
+for title, tx in [
+    ("Prompt Engineering", "把问题说清：这次要解决什么。"),
+    ("↓  Context Engineering", "把文件带对：只加载命中的模块规则。"),
+    ("↓  Harness Engineering", "把变更管住：规格、审批、任务、验证和证据都放回仓库。"),
+]:
+    p = para(tf, True); p.space_after = Pt(7)
+    _run(p, "▍ ", size=12, bold=True, color=CYAN)
+    _run(p, title, size=14, bold=True, color=WHITE)
+    p = para(tf); p.line_spacing = 1.2
+    _run(p, tx, size=11.5, color=MUTED)
 footer(s, "What")
-notes(s, "四种缓存勿混淆：Prompt Cache(重复前缀)、KV Cache(生成中)、Embedding Cache(文档向量)、业务结果缓存。Harness 管的是仓库侧那份——保证前缀稳定并测量命中率。")
+notes(s, "用缰绳隐喻 + 三级演进：Prompt → Context → Harness。两张缰绳（Agent 级+Project 级）中，本次只展开 Project Harness。配图为黑白线稿（harness-metaphor-bw.jpg）。")
 
-# ---------------- 10 lifecycle ----------------
+# ---------------- 7 openspec concept+case ----------------
 s = new_slide()
-header(s, "HOW · 生命周期", "一次受控变更的主线：OpenSpec 是所有者，Engineering 是治理外壳", color=PURPLE)
+header(s, "HOW · 规格驱动 OpenSpec", "先写规格，再写代码：需求 → 规格 → 实现", color=PURPLE)
+tagline(s, "关键规则：一个 change＝四件套（proposal/spec/design/tasks），起点是规格，不是代码。", color=PURPLE)
+add_box(s, Inches(0.62), Inches(1.98), Inches(6.1), Inches(4.55), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.04, line_w=0.75)
+tf = txbox(s, Inches(0.86), Inches(2.1), Inches(5.7), Inches(0.3))
+p = para(tf, True); _run(p, "四件套各自干什么", size=11, bold=True, color=PURPLE)
+four = [
+    ("proposal.md", "一句话立界：为什么做、范围与影响"),
+    ("spec.md（能力）", "WHEN/THEN 描述可观测行为，先对齐‘要什么’"),
+    ("design.md", "给开发者确认的方案包：架构·职责·时序·接口·风险"),
+    ("tasks.md", "唯一任务源，勾选必须对应一次成功执行 + 证据"),
+]
+tf = txbox(s, Inches(0.86), Inches(2.48), Inches(5.7), Inches(3.9))
+first = True
+for t, d in four:
+    p = para(tf, first); first = False
+    p.space_after = Pt(6); p.line_spacing = 1.1
+    _run(p, "▸ " + t, size=11, bold=True, color=CYAN, name=FONT_M)
+    _run(p, "  " + d, size=10.5, color=TEXT)
+add_box(s, Inches(0.62), Inches(6.6), Inches(6.1), Inches(0.5), fill=CYAN_P, line=CYAN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.14, line_w=1.0)
+tf = txbox(s, Inches(0.84), Inches(6.6), Inches(5.7), Inches(0.5), anchor=MSO_ANCHOR.MIDDLE)
+p = para(tf, True); _run(p, "规格即权威：代码实现规格、验证对照规格", size=10.5, bold=True, color=CYAN)
+add_box(s, Inches(6.98), Inches(1.98), Inches(6.0), Inches(5.12), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.05, line_w=1.0)
+tf = txbox(s, Inches(7.2), Inches(2.1), Inches(5.6), Inches(0.3))
+p = para(tf, True); _run(p, "aegis 真实 change：capability-driven-ai-platform", size=10.5, bold=True, color=GREEN)
+tree = [
+    "openspec/changes/",
+    "  └ archive/2026-09-02-capability-driven-ai-platform/",
+    "      ├ proposal.md              为什么要做",
+    "      ├ specs/capability-planner/spec.md      WHEN/THEN",
+    "      ├ specs/capability-metadata/spec.md     能力元数据",
+    "      ├ specs/capability-routing/spec.md      路由",
+    "      ├ design.md                6 模块技术方案",
+    "      └ tasks.md                 任务分解与勾选",
+]
+tf = txbox(s, Inches(7.2), Inches(2.48), Inches(5.6), Inches(3.6))
+first = True
+for ln in tree:
+    p = para(tf, first); first = False
+    p.space_after = Pt(2.4); p.line_spacing = 1.0
+    c = MUTED if ln.startswith("  └") else (GREEN if "spec.md" in ln else TEXT)
+    _run(p, ln, size=8.6, color=c, name=FONT_M)
+add_box(s, Inches(6.98), Inches(6.4), Inches(6.0), Inches(0.7), fill=GREEN, line=None, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.14)
+tf = txbox(s, Inches(7.2), Inches(6.4), Inches(5.6), Inches(0.7), anchor=MSO_ANCHOR.MIDDLE)
+p = para(tf, True); p.line_spacing = 1.05
+_run(p, "同一次变更：规格分多份、设计一件、任务一件——四件各司其职。", size=10, bold=True, color=DARKTXT)
+footer(s, "How · OpenSpec")
+notes(s, "保留一页 OpenSpec 概念即可；重点让听众知道真实 change 在哪里、四类产物分别去哪看。")
+
+# ---------------- 8 lifecycle ----------------
+s = new_slide()
+header(s, "HOW · 受控变更生命周期", "一次变更走一条主线，OpenSpec 是所有者，HEK 是治理外壳", color=PURPLE)
 labels = ["Explore", "Propose", "Apply", "Verify", "Sync", "Archive"]
 lcolors = [GREEN, CYAN, PURPLE, PINK, ORANGE, RED]
 x = Inches(0.62)
 for i, l in enumerate(labels):
     add_box(s, x, Inches(1.62), Inches(1.98), Inches(0.62), fill=lcolors[i], shape=MSO_SHAPE.CHEVRON, adj=0.30)
     tf = txbox(s, x + Inches(0.18), Inches(1.67), Inches(1.62), Inches(0.5), anchor=MSO_ANCHOR.MIDDLE)
-    p = para(tf, True); p.alignment = PP_ALIGN.CENTER
-    _run(p, l, size=13, bold=True, color=DARKTXT)
-    x += Inches(2.06)
-add_box(s, Inches(0.62), Inches(2.42), Inches(12.1), Inches(0.55), fill=PANEL2, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.3)
-tf = txbox(s, Inches(0.85), Inches(2.47), Inches(11.7), Inches(0.45), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True)
-_run(p, "OpenSpec 拥有状态机与产物；Engineering 只附加治理证据，绝无第二套 dispatcher / 状态机 / 任务图。", size=12, color=TEXT)
-table(s, Inches(0.62), Inches(3.2), Inches(12.1), [1.2, 2.1, 2.4],
-      [
-          ["阶段", "OpenSpec 负责", "Engineering 治理证据"],
-          ["Explore", "调研 / 澄清", "上下文 · 需求反思 · 经验预检"],
-          ["Propose", "proposal/specs/design/tasks", "Design Review · 审批绑定契约摘要"],
-          ["Apply", "执行并勾选 tasks.md", "逐任务 execution-evidence · Fitness"],
-          ["Verify", "openspec-verify + validate --strict", "Review 摘要 · 漂移 · 生产门禁"],
-          ["Sync", "合并 delta specs", "sync-evidence + 权威摘要"],
-          ["Archive", "归档 change", "经验闭环 · 生产 CLOSED"],
-      ], header_fill=PURPLE, row_h=0.36)
-footer(s, "How · 生命周期")
-notes(s, "整条链路的顺序要讲清楚：Explore→Propose→Apply→Verify→Sync→Archive。OpenSpec 负责“是否合法/是否完成”，Engineering 负责“是否被授权、是否有证据”。下一页展开规格增量如何合回权威库。")
-
-# ---------------- 11 delta specs ----------------
-s = new_slide()
-header(s, "HOW · 规格演进", "Delta Specs：变更带着“规格增量”走流程，最后合回权威库", color=PURPLE)
-tf = txbox(s, Inches(0.9), Inches(1.56), Inches(11.7), Inches(0.45))
-p = para(tf, True)
-_run(p, "权威规格库 ", size=12.5, color=TEXT)
-_run(p, "openspec/specs/", size=12.5, bold=True, color=CYAN, name=FONT_M)
-_run(p, " 只能通过“走完生命周期的变更”来更新——进行中的想法永远不污染它。", size=12.5, color=TEXT)
-cards = [
-    ("Propose · 写增量", CYAN, [
-        "change 内 specs/ 只记录差异：",
-        "ADDED / MODIFIED / REMOVED 需求条目",
-        "权威规格库在此阶段保持不动"]),
-    ("Verify · 验一致", PURPLE, [
-        "结构校验：产物完整、格式合法",
-        "一致性校验：实现与规格相符",
-        "两道都过，才允许进入 Sync"]),
-    ("Sync · 授权威", GREEN, [
-        "增量合并回 openspec/specs/",
-        "代码与规格重新对齐",
-        "合并摘要写入 sync 证据"]),
+    p = para(tf, True); _run(p, l, size=12.5, bold=True, color=DARKTXT)
+    x += Inches(2.05)
+desc = [
+    ("Explore 探", "读上下文 · RAM/D 先想清 · 提议 change", CYAN),
+    ("Propose 提", "写 proposal + spec + design，交给人批", GREEN),
+    ("Apply 做", "按 tasks.md 逐任务实现，边做边留证据", PURPLE),
+    ("Verify 验", "对照规格跑校验 / Fitness 门禁", PINK),
+    ("Sync 并", "delta 验证通过 → 合回权威规格库", ORANGE),
+    ("Archive 存", "变更归档，结论沉淀为规则", RED),
 ]
-x = Inches(0.9)
-for title_, c, lines in cards:
-    add_box(s, x, Inches(2.15), Inches(3.55), Inches(1.85), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.08)
-    add_box(s, x, Inches(2.15), Inches(3.55), Inches(0.5), fill=c, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.5)
-    tf = txbox(s, x, Inches(2.15), Inches(3.55), Inches(0.5), anchor=MSO_ANCHOR.MIDDLE)
-    p = para(tf, True); p.alignment = PP_ALIGN.CENTER
-    _run(p, title_, size=12.5, bold=True, color=DARKTXT)
-    tf = txbox(s, x + Inches(0.22), Inches(2.8), Inches(3.15), Inches(1.1))
-    first = True
-    for ln in lines:
-        p = para(tf, first); first = False
-        p.space_after = Pt(3.5); p.line_spacing = 1.05
-        _run(p, "· " + ln, size=10.5, color=TEXT)
-    if x < Inches(8):
-        tfa = txbox(s, x + Inches(3.55), Inches(2.8), Inches(0.5), Inches(0.5), anchor=MSO_ANCHOR.MIDDLE)
-        p = para(tfa, True); p.alignment = PP_ALIGN.CENTER
-        _run(p, "→", size=18, bold=True, color=CYAN)
-    x += Inches(3.55) + Inches(0.5)
-add_box(s, Inches(0.9), Inches(4.35), Inches(5.7), Inches(2.3), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.07)
-tf = txbox(s, Inches(1.15), Inches(4.5), Inches(5.2), Inches(2.0))
-p = para(tf, True); _run(p, "为什么用增量，而不是直接改？", size=12.5, bold=True, color=WHITE)
-for t in ["权威规格永远描述“当前系统”，而不是“某个进行中的想法”",
-          "评审规格增量 = 评审行为变更本身，天然可 diff、可追溯",
-          "活跃 change 列表 = 清晰的“进行中”清单，仓库不存在半成品状态"]:
-    p = para(tf); p.space_before = Pt(6); p.line_spacing = 1.12
-    _run(p, "▸ " + t, size=11.5, color=TEXT)
-add_box(s, Inches(6.85), Inches(4.35), Inches(5.6), Inches(2.3), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.07, line_w=1.0)
-tf = txbox(s, Inches(7.1), Inches(4.5), Inches(5.1), Inches(2.0))
-p = para(tf, True); _run(p, "防漂移的三道闸", size=12.5, bold=True, color=GREEN)
-for t in ["实现与规格不符 → Verify 阶段直接阻断",
-          "仓库漂移（DRIFT_DETECTED）→ 停线，先恢复一致性",
-          "Sync 记录合并摘要 → 归档时全程可审计"]:
-    p = para(tf); p.space_before = Pt(6); p.line_spacing = 1.12
-    _run(p, "▸ " + t, size=11.5, color=TEXT)
-footer(s, "How · 规格演进")
-notes(s, "这一页解释 spec-driven 的核心机制：规格不是一份静态文档，而是随变更演进的活事实。delta 只在 change 内部存在，验证通过才合并回权威库——这就是“规格与代码不漂移”的来源。")
-
-# ---------------- 12 governance loop ----------------
-s = new_slide()
-header(s, "HOW · 治理闭环", "门禁不靠自述：治理总账 + 审批绑定 + 三条异常轨道", color=PURPLE)
-bullets(s, Inches(0.9), Inches(1.6), Inches(11.7), Inches(1.4),
-        [(0, [("governance.json ", {"bold": True, "color": CYAN}),
-              ("（治理侧车总账）记录归属 / Profile / 风险 / 上下文 / 审批 / 执行 / Review / Fitness / 生产证据。", {"color": TEXT})]),
-         (0, [("门禁：", {"bold": True, "color": CYAN}),
-              ("每个阶段都要有对应证据才允许推进；结构校验与一致性校验是权威关卡。", {"color": TEXT})])],
-        size=12, gap=6, marker=PURPLE)
-num_steps_v(s, Inches(0.9), Inches(3.2), Inches(5.9), [
-    ("创建 change", "OpenSpec 原生命令 + 本仓 schema"),
-    ("附加治理", "生成 governance.json 治理总账"),
-    ("方案确认", "Design 评审 + 开发者确认清单"),
-    ("审批绑定", "记录审批者 · 来源 · 契约摘要"),
-    ("阶段门禁", "证据齐备才放行推进"),
-], box_h=0.46, gap=0.07, color=PURPLE)
-add_box(s, Inches(7.1), Inches(3.15), Inches(5.3), Inches(2.6), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.07)
-tf = txbox(s, Inches(7.35), Inches(3.3), Inches(4.85), Inches(2.35))
-p = para(tf, True); _run(p, "审批 = 绑定契约摘要；三条异常轨道", size=12, bold=True, color=WHITE)
-for t, d in [
-    ("CONTRACT_CHANGED", "Spec/Design/任务图任一变化 → 原授权失效，回 CONTRACT_READY 重新审批"),
-    ("DRIFT_DETECTED", "仓库漂移 → 停下，先处理一致性"),
-    ("REMEDIATING", "验证失败 → 回到修复，不得带病归档"),
-]:
-    p = para(tf); p.space_before = Pt(6); p.line_spacing = 1.1
-    _run(p, f"● {t}  ", size=11.5, bold=True, color=RED if t != "CONTRACT_CHANGED" else ORANGE)
-    _run(p, d, size=10.5, color=TEXT)
-p = para(tf); p.space_before = Pt(7); p.line_spacing = 1.1
-_run(p, "核心：契约一变，授权即失效——这是“审批”与“历史批准”的区别。", size=11, bold=True, color=CYAN)
-footer(s, "How · 治理")
-notes(s, "治理的关键不是“多几道检查”，而是授权绑定契约摘要：approval 是审批当时的契约快照。所以契约变更必须重新走审批，防止“批过=永远有效”。左侧五步是每个 change 的标准治理链。")
-
-# ---------------- 13 design review ----------------
-s = new_slide()
-header(s, "HOW · Design 门禁", "可实施的设计评审：一份给开发者确认的方案包，而不是内心独白", color=PURPLE)
-bullets(s, Inches(0.9), Inches(1.6), Inches(7.2), Inches(3.6),
-        [(0, [("产出 design.md，必须覆盖：", {"bold": True, "color": CYAN})]),
-         (1, [("目标架构 / 关系拓扑 / 依赖方向（含 Mermaid 图）", {})]),
-         (1, [("职责表：每个组件拥有 / 依赖 / 不得拥有什么", {})]),
-         (1, [("主路径 + 失败/异步路径的运行时序 / 数据流", {})]),
-         (1, [("接口数据：字段 · 类型 · 可空 · 校验 · 错误 · 版本", {})]),
-         (1, [("横切：安全 · 权限 · 并发 · 可观测 · 无障碍", {})]),
-         (1, [("交付顺序 · 迁移 · 回滚 · 显式停止条件", {})]),
-         (1, [("编号决策 + 备选方案与取舍；风险→验证映射", {})]),
-         (1, [("开放问题 + 编号开发者确认清单 C1…Cn", {})]),
-         (0, [("不可静默省略条件性关切：不适用也要写 “Not applicable — 理由”。", {"color": MUTED, "italic": True})])],
-        size=11.5, gap=5, marker=PURPLE)
-add_box(s, Inches(8.35), Inches(1.6), Inches(4.1), Inches(2.05), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.09, line_w=1.0)
-tf = txbox(s, Inches(8.55), Inches(1.75), Inches(3.7), Inches(1.8))
-p = para(tf, True); _run(p, "为什么“先设计后审批”", size=12, bold=True, color=GREEN)
-for i, t in enumerate(["让评审者在写码前能挑战关键取舍", "把“架构/契约/写范围/风险”一次说清", "Apply 只消费已审批模型，不做静默重设计"]):
-    p = para(tf); p.space_before = Pt(5); p.line_spacing = 1.1
-    _run(p, f"▸ {t}", size=11, color=TEXT)
-add_box(s, Inches(8.35), Inches(3.8), Inches(4.1), Inches(1.95), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.09)
-tf = txbox(s, Inches(8.55), Inches(3.95), Inches(3.7), Inches(1.7))
-p = para(tf, True); _run(p, "审批前必须向开发者明确呈现", size=12, bold=True, color=WHITE)
-for i, t in enumerate(["推荐方案与理由 / 范围 / 非目标", "拓扑图与职责边界 · 关键运行时流", "实现波次与验证策略 · 残留风险", "然后停下来请求明确确认（不得用文件链接代替）"]):
-    p = para(tf); p.space_before = Pt(4.5); p.line_spacing = 1.08
-    _run(p, f"▸ {t}", size=10.8, color=TEXT)
-steps13 = [("① 结构校验", "方案包要素齐备"), ("② 开发者确认", "呈现推荐与取舍"), ("③ 审批绑定", "确认后才记录授权")]
-x = Inches(0.9)
-for t, d in steps13:
-    add_box(s, x, Inches(5.5), Inches(2.0), Inches(0.95), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.1)
-    tf = txbox(s, x + Inches(0.14), Inches(5.62), Inches(1.74), Inches(0.8))
-    p = para(tf, True); _run(p, t, size=11.5, bold=True, color=WHITE)
-    p = para(tf); p.space_before = Pt(2.5)
-    _run(p, d, size=9.5, color=MUTED)
-    if x < Inches(5):
-        tfa = txbox(s, x + Inches(2.0), Inches(5.5), Inches(0.28), Inches(0.95), anchor=MSO_ANCHOR.MIDDLE)
-        p = para(tfa, True); p.alignment = PP_ALIGN.CENTER
-        _run(p, "→", size=13, bold=True, color=CYAN)
-    x += Inches(2.28)
-tf = txbox(s, Inches(0.9), Inches(6.55), Inches(6.3), Inches(0.4))
-p = para(tf, True)
-_run(p, "先结构、后人为、再授权：脚本保证包完整，人只确认关键取舍。", size=10.5, color=MUTED, italic=True)
-footer(s, "How · Design")
-notes(s, "Design 是 developer-facing 的批准包。交给开发者之前要能回答“推荐什么、边界在哪、怎么验证、风险是什么”。底部三步是 Design 阶段的推进顺序：结构校验 → 人确认 → 才绑定审批。")
-
-# ---------------- 14 apply evidence ----------------
-s = new_slide()
-header(s, "HOW · 执行与证据", "Apply：tasks.md 唯一任务源 + 逐任务成功证据", color=PURPLE)
-bullets(s, Inches(0.9), Inches(1.6), Inches(11.7), Inches(2.1),
-        [(0, [("OpenSpec tasks.md 是任务定义与勾选进度的唯一来源；Engineering 不维护第二套 DAG / 任务投影 / 复写勾选。", {"color": TEXT})]),
-         (0, [("每个已勾选任务必须有 1 次成功执行记录，写入 execution-evidence.json。", {"color": TEXT})]),
-         (0, [("并行是可选机制，不是默认：", {"bold": True, "color": WHITE}),
-              ("有安全隔离（分支/工作树 / 不重叠写范围）才并行；否则同图串行并记录 fallback 原因。", {"color": TEXT})])],
-        size=12, gap=6, marker=PURPLE)
-num_steps_v(s, Inches(0.9), Inches(3.95), Inches(6.4), [
-    ("OpenSpec tasks.md 勾选", "唯一任务源与进度来源"),
-    ("任务成功执行一次", "命令退出码 0 · 不逃逸项目根"),
-    ("写入执行证据", "任务 · 执行者 · 文件 · 时间 · 集成顺序"),
-    ("校验通过才推进", "勾选与证据精确一致"),
-], box_h=0.44, gap=0.075, color=PURPLE)
-tf = txbox(s, Inches(0.9), Inches(6.0), Inches(6.4), Inches(0.3))
-p = para(tf, True)
-_run(p, "中断恢复：先查 change 状态再继续——不重放、不跳步。", size=10.5, color=MUTED, italic=True)
-add_box(s, Inches(7.6), Inches(3.9), Inches(4.85), Inches(2.1), fill=AMBER_P, line=ORANGE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.08, line_w=1.0)
-tf = txbox(s, Inches(7.8), Inches(4.02), Inches(4.5), Inches(1.9))
-p = para(tf, True); _run(p, "执行证据校验 fail-closed 拦截", size=12, bold=True, color=ORANGE)
-for i, t in enumerate(["证据缺失 / 引用未知任务", "声称已勾选但未执行", "命令非零退出 / 逃逸项目根", "与 Review 文件摘要不一致"]):
-    p = para(tf); p.space_before = Pt(4.5); p.line_spacing = 1.08
-    _run(p, f"✕ {t}", size=11, color=TEXT)
-tf = txbox(s, Inches(0.9), Inches(6.38), Inches(11.6), Inches(0.6))
-p = para(tf, True); _run(p, "Review 强制：变更文件摘要 = 计划文件完全一致；勾选 id = 成功执行精确一致；动了职责/契约则 ai.json/AI.md 更新必须在改动集内。", size=11, bold=True, color=CYAN)
-footer(s, "How · Apply")
-notes(s, "“代码生成了≠完成”。完成 = 状态推进 + 门禁 + 证据。左侧四步是勾选与证据的闭环；Apply 阶段是唯一协调者调度，Workers 把证据交回，集成与最终验证只在协调者做。")
-
-# ---------------- 15 why ramd ----------------
-s = new_slide()
-header(s, "HOW · 为什么需要 RAM/D", "AI 写码最大的风险：代码能跑，但悄悄打破系统边界", color=PURPLE)
-# Left: without RAM/D
-add_box(s, Inches(0.62), Inches(1.5), Inches(5.9), Inches(4.7), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.08, line_w=0.75)
-add_box(s, Inches(0.62), Inches(1.5), Inches(5.9), Inches(0.55), fill=RGBColor(0x33, 0x12, 0x16), shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.08)
-tf = txbox(s, Inches(0.86), Inches(1.5), Inches(5.5), Inches(0.55), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); _run(p, "没有 RAM/D · 直接生成", size=12, bold=True, color=RED)
-bad_items = [
-    ("口头需求 → 代码", "跳过建模，语义漂移一路累积"),
-    ("接口反向塑造", "实现写完才「抽」接口，耦合 + 泄漏抽象"),
-    ("深继承 + 多层分支", "AI 天然爱写 if/else 和 BaseXxx——过测但难扩展"),
-    ("领域层依赖框架", "Entity 直接当出入参，Service 塞满转换逻辑"),
-    ("测试跟着实现写", "测的是「写了什么」，不是「该做什么」"),
-]
-by = Inches(2.15)
-for t, d in bad_items:
-    add_box(s, Inches(0.82), by, Inches(0.08), Inches(0.72), fill=RED)
-    tf = txbox(s, Inches(1.0), by - Inches(0.02), Inches(5.35), Inches(0.72))
-    p = para(tf, True); _run(p, t, size=10.5, bold=True, color=WHITE)
-    p = para(tf); p.space_before = Pt(1); p.line_spacing = 1.05
-    _run(p, d, size=9, color=MUTED)
-    by += Inches(0.8)
-# VS divider
-add_box(s, Inches(6.52), Inches(1.5), Inches(0.16), Inches(4.7), fill=PURPLE, shape=MSO_SHAPE.OVAL)
-tf = txbox(s, Inches(6.1), Inches(3.575), Inches(1.0), Inches(0.55), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); p.alignment = PP_ALIGN.CENTER
-_run(p, "VS", size=16, bold=True, color=PURPLE)
-# Right: with RAM/D
-add_box(s, Inches(6.98), Inches(1.5), Inches(5.9), Inches(4.7), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.08, line_w=1.0)
-add_box(s, Inches(6.98), Inches(1.5), Inches(5.9), Inches(0.55), fill=RGBColor(0x0F, 0x2E, 0x24), shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.08)
-tf = txbox(s, Inches(7.22), Inches(1.5), Inches(5.5), Inches(0.55), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); _run(p, "有 RAM/D · 契约先行", size=12, bold=True, color=GREEN)
-good_items = [
-    ("ACL 三层翻译", "口头需求 → 抽象 → 契约 → 逻辑，每步有产物"),
-    ("接口先定义再确认", "抽象驱动接口，接口驱动实现，方向不反"),
-    ("组合 + 多态优先", "继承 ≤ 1 层，分支 ≥ 3 抽 Strategy / Handler"),
-    ("领域层纯 OO 契约", "infrastructure 实现 domain 端口，依赖方向正确"),
-    ("测试测契约", "规格即断言，实现怎么改都不影响验收标准"),
-]
-by = Inches(2.15)
-for t, d in good_items:
-    add_box(s, Inches(7.18), by, Inches(0.08), Inches(0.72), fill=GREEN)
-    tf = txbox(s, Inches(7.36), by - Inches(0.02), Inches(5.35), Inches(0.72))
-    p = para(tf, True); _run(p, t, size=10.5, bold=True, color=WHITE)
-    p = para(tf); p.space_before = Pt(1); p.line_spacing = 1.05
-    _run(p, d, size=9, color=TEXT)
-    by += Inches(0.8)
-# Bottom takeaway
-add_box(s, Inches(0.62), Inches(6.35), Inches(12.26), Inches(0.8), fill=PURPLE_P, line=PURPLE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.12, line_w=1.0)
-tf = txbox(s, Inches(0.9), Inches(6.35), Inches(11.7), Inches(0.8), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); p.line_spacing = 1.15
-_run(p, "核心命题：", size=11, bold=True, color=PURPLE)
-_run(p, "AI 生成代码的成本几乎为零，但", size=11, color=TEXT)
-_run(p, "破坏架构边界的成本不会因此降低", size=11, bold=True, color=WHITE)
-_run(p, "——RAM/D 不是「慢下来」，是不让生成的速度变成技术债的速度。", size=11, color=TEXT)
-footer(s, "How · 为什么需要 RAM/D")
-notes(s, "这页讲清为什么必须有建模步骤，不能让 AI 直接从需求跳到实现。核心洞察来自 abstraction-first.md：AI 写码最大的风险不是代码跑不起来，而是代码「看起来能跑但打破系统边界」。左右对比五条：跳过建模时接口被实现反向塑造、AI 天然写深继承和多层分支、领域层依赖框架、测试跟着实现走；有 RAM/D 时 ACL 三层翻译把关、契约先行、组合多态优先、依赖方向正确、测试测的是契约不是实现。底部一句收束：生成成本几乎为零，但破坏架构边界的成本不会因此降低。")
-
-# ---------------- 15b llm abstraction ----------------
-s = new_slide()
-header(s, "HOW · LLM 与抽象", "大模型天生不会抽象：RAM 让 LLM 设计出符合 OOP 哲学的框架", color=PURPLE)
-# 现象：直接生成缺抽象
-add_box(s, Inches(0.62), Inches(1.6), Inches(6.1), Inches(4.1), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=0.75)
-add_box(s, Inches(0.62), Inches(1.6), Inches(6.1), Inches(0.5), fill=RGBColor(0x33, 0x12, 0x16), shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06)
-tf = txbox(s, Inches(0.86), Inches(1.6), Inches(5.6), Inches(0.5), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); _run(p, "直接生成：没有抽象的产物", size=12, bold=True, color=RED)
-weak = [
-    ("面向“这次能跑”写代码", "接口被实现反向塑造，抽象从实现里事后抽"),
-    ("上帝对象 / 超长方法", "职责全堆进一个类，改一处牵动一片"),
-    ("复用 = 复制粘贴", "相似逻辑散落多处，改漏一处就是 bug"),
-    ("深继承 + 多层 if/else", "训练语料里的天然偏好：短期好写、长期难扩"),
-]
-wy = Inches(2.3)
-for t, d in weak:
-    add_box(s, Inches(0.82), wy, Inches(0.08), Inches(0.72), fill=RED)
-    tf = txbox(s, Inches(1.0), wy - Inches(0.02), Inches(5.55), Inches(0.74))
-    p = para(tf, True); _run(p, t, size=10.5, bold=True, color=WHITE)
-    p = para(tf); p.space_before = Pt(1); p.line_spacing = 1.05
-    _run(p, d, size=9, color=MUTED)
-    wy += Inches(0.88)
-# RAM 之后
-add_box(s, Inches(6.92), Inches(1.6), Inches(5.9), Inches(4.1), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=1.0)
-add_box(s, Inches(6.92), Inches(1.6), Inches(5.9), Inches(0.5), fill=RGBColor(0x0F, 0x2E, 0x24), shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06)
-tf = txbox(s, Inches(7.16), Inches(1.6), Inches(5.5), Inches(0.5), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); _run(p, "RAM 之后：符合 OOP 的设计", size=12, bold=True, color=GREEN)
-good = [
-    ("Read→Analyze→Model 先行抽象", "先提炼稳定概念，再定接口/DTO（Contract-first）"),
-    ("单一职责", "每个类/模块只做一件事，边界写进设计"),
-    ("开闭 + 组合多态", "扩展新行为不改既有：继承≤1、分支抽 Strategy/Handler"),
-    ("复用来自契约而非复制", "接口被多处实现与消费，改动受边界约束"),
-]
-wy = Inches(2.3)
-for t, d in good:
-    add_box(s, Inches(7.12), wy, Inches(0.08), Inches(0.72), fill=GREEN)
-    tf = txbox(s, Inches(7.3), wy - Inches(0.02), Inches(5.35), Inches(0.74))
-    p = para(tf, True); _run(p, t, size=10.5, bold=True, color=WHITE)
-    p = para(tf); p.space_before = Pt(1); p.line_spacing = 1.05
-    _run(p, d, size=9, color=TEXT)
-    wy += Inches(0.88)
-# bottom takeaway
-add_box(s, Inches(0.62), Inches(5.95), Inches(12.2), Inches(0.95), fill=PURPLE_P, line=PURPLE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.1, line_w=1.0)
-tf = txbox(s, Inches(0.9), Inches(5.95), Inches(11.7), Inches(0.95), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); p.line_spacing = 1.18
-_run(p, "核心命题： ", size=11, bold=True, color=PURPLE)
-_run(p, "LLM 不缺“生成”的能力，缺“抽象”的步骤。", size=11, bold=True, color=WHITE)
-p = para(tf); p.space_before = Pt(3)
-_run(p, "RAM 在实现前逼出结构——复用性与单一职责是 Model 阶段“设计”出来的，不是提示词祈祷出来的。", size=11, color=TEXT)
-footer(s, "How · LLM 抽象")
-notes(s, "这页补上“为什么 RAM”里最贴近 OOP 的一层：LLM 天生按“这次能跑”组织代码，抽象、复用、职责单一都不是它的默认优化目标。RAM 的 Read→Analyze→Model 把“先抽象后实现”变成被强制执行的步骤，产出的是可扩展、可替换、可测试的结构，而不是一坨能跑但不长久的实现。要点与 abstraction-first（契约先行、继承≤1、分支抽 Strategy/Handler、复用来自契约）呼应：好的 OOP 品质要在设计阶段确立，并由门禁守住。")
-
-# ---------------- 15c llm abstraction example ----------------
-s = new_slide()
-header(s, "HOW · RAM · 实例", "例子：风控策略决策 —— 直接生成 vs RAM 先抽象", color=PURPLE)
-# requirement bar
-add_box(s, Inches(0.62), Inches(1.5), Inches(12.2), Inches(0.82), fill=PANEL2, line=CYAN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.12, line_w=1.0)
-tf = txbox(s, Inches(0.9), Inches(1.5), Inches(11.7), Inches(0.82), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); p.line_spacing = 1.08
-_run(p, "需求：", size=10, bold=True, color=CYAN)
-_run(p, "对一笔贷款申请做「策略决策」——按命中规则返回 拒绝 / 放行 / 人工复核 / 降额；结果要带原因码、可解释、可留痕；规则经常新增、调序，并能灰度/回滚上线。典型规则：黑名单、负债收入比>0.6、新设备首贷、评分<阈值、反欺诈设备聚集…", size=10, color=TEXT)
-# left: 直接生成
-add_box(s, Inches(0.62), Inches(2.46), Inches(6.0), Inches(3.82), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.055, line_w=0.75)
-add_box(s, Inches(0.62), Inches(2.46), Inches(6.0), Inches(0.5), fill=RGBColor(0x33, 0x12, 0x16), shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.055)
-tf = txbox(s, Inches(0.86), Inches(2.46), Inches(5.5), Inches(0.5), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); _run(p, "直接生成（没有 RAM）", size=12, bold=True, color=RED)
-mono_bad = [
-    "def evaluate(app):               # 一个方法全包",
-    "    if blacklist(app):       return REJECT",
-    "    if debt_ratio(app) > 0.6: return REJECT",
-    "    if new_user(app) and new_device(app):",
-    "        return REVIEW       # 人工复核",
-    "    if score(app) < 600:     return REDUCE_LIMIT",
-    "    # …… 十几条策略再叠进这堆 if",
-]
-tf = txbox(s, Inches(0.92), Inches(3.08), Inches(5.4), Inches(1.86), anchor=MSO_ANCHOR.TOP)
-first = True
-for ln in mono_bad:
-    p = para(tf, first); first = False
-    p.space_after = Pt(2); p.line_spacing = 1.0
-    _run(p, ln, size=8.2, color=TEXT, name=FONT_M)
-tf = txbox(s, Inches(0.92), Inches(5.06), Inches(5.4), Inches(1.12))
-p = para(tf, True); p.line_spacing = 1.12
-_run(p, "后果：", size=10, bold=True, color=RED)
-_run(p, "加一条规则/调命中顺序 = 回来改 evaluate：线上规则=改代码、无灰度无回滚；动作散在 if 里、没有统一原因码——规则互相牵动，越叠越不敢动。", size=9.5, color=TEXT)
-# right: RAM 之后
-add_box(s, Inches(6.82), Inches(2.46), Inches(5.95), Inches(3.82), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.055, line_w=1.0)
-add_box(s, Inches(6.82), Inches(2.46), Inches(5.95), Inches(0.5), fill=RGBColor(0x0F, 0x2E, 0x24), shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.055)
-tf = txbox(s, Inches(7.06), Inches(2.46), Inches(5.5), Inches(0.5), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); _run(p, "RAM · 先把“规则/决策”抽成模型", size=12, bold=True, color=GREEN)
-mono_good = [
-    "Analyze：决策 = 按序命中一组规则",
-    "        变化轴：规则可新增/可排序/可解释",
-    "Model → 契约先行：",
-    "    interface RiskRule { Decision decide(Ctx) }",
-    "    一个实现 = 一条规则（单一职责）：",
-    "    BlacklistRule · DebtRatioRule · DeviceRisk",
-    "    ScoreRule · QuotaRule · 反欺诈聚集 …",
-    "    RiskEngine 有序注册 · 命中即短路",
-    "    Decision{action, reasonCode, hit} → 留痕",
-]
-tf = txbox(s, Inches(7.12), Inches(3.08), Inches(5.4), Inches(1.86), anchor=MSO_ANCHOR.TOP)
-first = True
-for ln in mono_good:
-    p = para(tf, first); first = False
-    p.space_after = Pt(2); p.line_spacing = 1.0
-    _run(p, ln, size=8.2, color=TEXT, name=FONT_M)
-tf = txbox(s, Inches(7.12), Inches(5.06), Inches(5.4), Inches(1.12))
-p = para(tf, True); p.line_spacing = 1.12
-_run(p, "后果：", size=10, bold=True, color=GREEN)
-_run(p, "加一条规则 = 新增一个 RiskRule 实现 + 在策略清单注册；上线=调清单即可灰度/回滚，每条规则可单测、原因码贯穿，可解释、可留痕。", size=9.5, color=TEXT)
-# bottom takeaway
-add_box(s, Inches(0.62), Inches(6.42), Inches(12.2), Inches(0.6), fill=PURPLE_P, line=PURPLE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.16, line_w=1.0)
-tf = txbox(s, Inches(0.9), Inches(6.42), Inches(11.7), Inches(0.6), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); p.line_spacing = 1.0
-_run(p, "风控的难点不在某条规则“怎么写”，而在“规则多、常变、要可解释、能灰度回滚”——RAM 先把『规则/决策/结果』抽成模型，引擎只做有序编排。", size=10.5, bold=True, color=WHITE)
-footer(s, "How · RAM 实例")
-notes(s, "换成一个更真实、也更复杂的例子：风控授信策略。同一笔申请，“直接生成”把黑名单、负债比、新设备首贷、评分、反欺诈等十几条规则全塞进 evaluate() 的 if 堆里——动作（拒绝/人工/降额）散落在代码里，没有统一原因码，加规则或调顺序只能改代码，无灰度无回滚。RAM 先做 Read/Analyze：把“决策 = 按序命中一组规则”识别出来，Model 阶段用契约先行产出 RiskRule 接口、Decision 结果对象与 RiskEngine 有序编排——一个实现一条规则，各单一职责；加规则=新增实现+注册，上线=调策略清单可灰度/回滚，原因码贯穿实现可解释可留痕。这正是把“策略”当作一等模型、把 if/else 换成“规则引擎”抽象的过程。")
-
-# ---------------- 16 backend ----------------
-s = new_slide()
-header(s, "HOW · 后端 Profile · RAM", "Read → Analyze → Model：先产出契约，审批后才放行实现", color=PURPLE)
-# Three step cards
-steps = [
-    ("Read", "在 Explore · 读什么",
-     "确定性加载：agent-policy 命令/权限 → 命中路径 AI.md → 相关代码 · 测试 · 契约 · 历史（顺序固定，不是瞎搜）",
-     CYAN),
-    ("Analyze", "在 Explore/Spec · 分析什么",
-     "不变量与所有权 · 信任边界与调用方 · 兼容性 · 数据迁移 · 失败模式 · 运维风险 —— 列出会改变设计的事实",
-     CYAN),
-    ("Model", "在 Design · 产出什么",
-     "领域边界 · 接口契约 · 持久化 · 幂等/事务/并发 · 可观测 · 实现顺序 —— 三视图写进 design.md，确认后才放行",
-     GREEN),
-]
-sx = Inches(0.62)
-for idx, (t, sub, desc, col) in enumerate(steps):
-    bx = sx + idx * Inches(4.1)
-    add_box(s, bx, Inches(1.5), Inches(3.9), Inches(2.8), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.09, line_w=0.75)
-    badge = add_box(s, bx + Inches(0.25), Inches(1.7), Inches(0.7), Inches(0.7), fill=col, shape=MSO_SHAPE.OVAL)
-    tfb = badge.text_frame; tfb.margin_left = tfb.margin_right = 0; tfb.margin_top = tfb.margin_bottom = 0
-    tfb.vertical_anchor = MSO_ANCHOR.MIDDLE
-    p = tfb.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
-    _run(p, str(idx+1), size=18, bold=True, color=DARKTXT)
-    tf = txbox(s, bx + Inches(1.1), Inches(1.75), Inches(2.65), Inches(2.45))
-    p = para(tf, True); _run(p, t, size=18, bold=True, color=col)
-    p = para(tf); p.space_before = Pt(2); _run(p, sub, size=10, bold=True, color=WHITE)
-    p = para(tf); p.space_before = Pt(6); p.line_spacing = 1.15
-    _run(p, desc, size=9.5, color=TEXT)
-    if idx < 2:
-        tfa = txbox(s, bx + Inches(3.9), Inches(2.55), Inches(0.2), Inches(0.8), anchor=MSO_ANCHOR.MIDDLE)
-        p = para(tfa, True); p.alignment = PP_ALIGN.CENTER
-        _run(p, "→", size=18, bold=True, color=PURPLE)
-# RAM 定位图（原生矢量，替代 aegis 架构截图）：每个字母都落在 OpenSpec 生命线上
-add_box(s, Inches(0.62), Inches(4.42), Inches(7.8), Inches(2.66), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.055, line_w=0.75)
-tf = txbox(s, Inches(0.86), Inches(4.50), Inches(7.3), Inches(0.3))
-p = para(tf, True)
-_run(p, "RAM 是统一 engineering Skill 的「设计」特化 —— 不是独立命令/生命周期", size=10.5, bold=True, color=GREEN)
-cols = [
-    ("R · Read", CYAN, [
-        ("agent-policy + AI.md 路径", MUTED),
-        ("代码 · 测试 · 契约 · 历史", TEXT),
-        ("顺序固定 · 不瞎搜", TEXT)]),
-    ("A · Analyze", CYAN, [
-        ("不变量 · 所有权 · 信任", MUTED),
-        ("调用方 · 兼容 · 数据迁移", TEXT),
-        ("失败模式 · 运维风险", TEXT)]),
-    ("M · Model", GREEN, [
-        ("领域边界 · 接口契约", MUTED),
-        ("持久化 · 幂等/事务/并发", TEXT),
-        ("三视图 → design.md", TEXT)]),
-]
-cx = Inches(0.90)
-for i, (hdr, cc, items) in enumerate(cols):
-    bx = cx + i * Inches(2.46)
-    add_box(s, bx, Inches(4.94), Inches(2.16), Inches(0.46), fill=cc, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.28)
-    tfh = txbox(s, bx, Inches(4.94), Inches(2.16), Inches(0.46), anchor=MSO_ANCHOR.MIDDLE)
-    p = para(tfh, True); p.alignment = PP_ALIGN.CENTER
-    _run(p, hdr, size=11.5, bold=True, color=DARKTXT, name=FONT_M)
-    tfc = txbox(s, bx + Inches(0.10), Inches(5.48), Inches(1.96), Inches(1.04))
-    first = True
-    for it, c in items:
-        p = para(tfc, first); first = False
-        p.space_after = Pt(4); p.line_spacing = 1.06
-        _run(p, it, size=9, color=c)
-add_box(s, Inches(0.86), Inches(6.60), Inches(7.3), Inches(0.44), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.16, line_w=1.0)
-tf = txbox(s, Inches(1.06), Inches(6.60), Inches(7.0), Inches(0.44), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); p.line_spacing = 1.05
-_run(p, "门禁：结构校验 + 开发者确认 C1…Cn → 审批绑定契约摘要", size=8.6, color=TEXT)
-p = para(tf); p.line_spacing = 1.05
-_run(p, "放行：Apply 只消费已批模型 · Verify 聚焦验证 + 架构/契约 Fitness", size=8.6, color=TEXT)
-# Iron rules
-add_box(s, Inches(8.65), Inches(4.42), Inches(4.25), Inches(2.66), fill=PURPLE_P, line=PURPLE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.08, line_w=1.0)
-tf = txbox(s, Inches(8.88), Inches(4.55), Inches(3.8), Inches(2.46))
-p = para(tf, True); _run(p, "铁律 · abstraction-first + 架构边界", size=11.5, bold=True, color=PURPLE)
-rules = [
-    "领域层纯 OO 契约：零框架、依赖被倒置",
-    "契约先行：接口/抽象先写，确认后再实现",
-    "依赖方向单向：渠道/表现 → 应用 → 领域",
-    "继承 ≤ 1 层；分支 ≥ 3 抽 Strategy/Handler",
-    "改了契约/职责 → ai.json·AI.md 需在改动集内",
-    "Apply 只消费已审批的 design.md",
-]
-for r in rules:
-    p = para(tf); p.space_before = Pt(4); p.line_spacing = 1.1
-    _run(p, "▸ ", size=9.5, bold=True, color=PURPLE)
-    _run(p, r, size=9.5, color=TEXT)
-footer(s, "How · Backend RAM")
-notes(s, "后端 RAM 解释如何在不越过架构边界的前提下建模。Read 阶段是确定性加载：按 resolve_context 固定顺序读 agent-policy（命令/权限）、命中路径 AI.md、相关代码/测试/契约/历史——不是瞎搜。Analyze 阶段把会改变设计的事实列全：不变量、所有权与信任边界、调用方与兼容性、数据迁移、失败模式、运维风险。Model 阶段产出可批准的模型：领域边界、接口契约、持久化、幂等/事务/并发、可观测、实现顺序，并用拓扑/时序/职责三视图写进 design.md。RAM 是统一 engineering Skill 在 Explore/Propose 阶段的设计特化，不是独立命令或第二套生命周期；底图强调产出要先过结构校验与开发者确认、绑定审批摘要，Apply 只消费已批模型，Verify 用聚焦验证与架构/契约 Fitness 收口。右侧铁律全部来自 abstraction-first 与架构边界约束，而非某个项目的专属规则。")
-
-# ---------------- 17 frontend ----------------
-s = new_slide()
-header(s, "HOW · 前端 Profile · RAD", "Read → Analyze → Decompose：先产出类型与结构，再放行实现", color=PURPLE)
-steps_fe = [
-    ("Read", "在 Explore · 读什么",
-     "产品行为 · 设计系统/组件库 · 路由与现有组件 · API 类型 · 状态归属 · 测试与无障碍约束",
-     CYAN),
-    ("Analyze", "在 Explore/Spec · 分析什么",
-     "用户态（loading/empty/error）· 权限边界 · 响应式与兼容 · 交互语义与无障碍 · API 契约风险",
-     CYAN),
-    ("Decompose", "在 Design · 产出什么",
-     "组件与容器职责 · 数据/状态流 · 类型化 API 边界 · 校验/交互态/无障碍 · 实现顺序 —— 与后端同入一份 design.md",
-     GREEN),
-]
-sx = Inches(0.62)
-for idx, (t, sub, desc, col) in enumerate(steps_fe):
-    bx = sx + idx * Inches(4.1)
-    add_box(s, bx, Inches(1.5), Inches(3.9), Inches(2.8), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.09, line_w=0.75)
-    badge = add_box(s, bx + Inches(0.25), Inches(1.7), Inches(0.7), Inches(0.7), fill=col, shape=MSO_SHAPE.OVAL)
-    tfb = badge.text_frame; tfb.margin_left = tfb.margin_right = 0; tfb.margin_top = tfb.margin_bottom = 0
-    tfb.vertical_anchor = MSO_ANCHOR.MIDDLE
-    p = tfb.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
-    _run(p, str(idx+1), size=18, bold=True, color=DARKTXT)
-    tf = txbox(s, bx + Inches(1.1), Inches(1.75), Inches(2.65), Inches(2.45))
-    p = para(tf, True); _run(p, t, size=18, bold=True, color=col)
-    p = para(tf); p.space_before = Pt(2); _run(p, sub, size=10, bold=True, color=WHITE)
-    p = para(tf); p.space_before = Pt(6); p.line_spacing = 1.15
-    _run(p, desc, size=9.5, color=TEXT)
-    if idx < 2:
-        tfa = txbox(s, bx + Inches(3.9), Inches(2.55), Inches(0.2), Inches(0.8), anchor=MSO_ANCHOR.MIDDLE)
-        p = para(tfa, True); p.alignment = PP_ALIGN.CENTER
-        _run(p, "→", size=18, bold=True, color=PURPLE)
-# RAD 定位图（原生矢量，替代 aegis 消息流截图）：与后端共享同一门禁链
-add_box(s, Inches(0.62), Inches(4.42), Inches(7.8), Inches(2.66), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.055, line_w=0.75)
-tf = txbox(s, Inches(0.86), Inches(4.50), Inches(7.3), Inches(0.3))
-p = para(tf, True)
-_run(p, "RAD 是统一 engineering Skill 的「设计」特化 —— 先产类型/结构，再放行实现", size=10.5, bold=True, color=CYAN)
-cols = [
-    ("R · Read", CYAN, [
-        ("产品行为 · 设计系统", MUTED),
-        ("路由 · 组件 · API 类型", TEXT),
-        ("状态归属 · 测试/无障碍", TEXT)]),
-    ("A · Analyze", CYAN, [
-        ("用户态 loading/empty/error", MUTED),
-        ("权限边界 · 响应式/兼容", TEXT),
-        ("交互语义 · 契约风险", TEXT)]),
-    ("D · Decompose", GREEN, [
-        ("组件/容器职责树", MUTED),
-        ("数据/状态流 · typed API", TEXT),
-        ("三态/无障碍 → design.md", TEXT)]),
-]
-cx = Inches(0.90)
-for i, (hdr, cc, items) in enumerate(cols):
-    bx = cx + i * Inches(2.46)
-    add_box(s, bx, Inches(4.94), Inches(2.16), Inches(0.46), fill=cc, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.28)
-    tfh = txbox(s, bx, Inches(4.94), Inches(2.16), Inches(0.46), anchor=MSO_ANCHOR.MIDDLE)
-    p = para(tfh, True); p.alignment = PP_ALIGN.CENTER
-    _run(p, hdr, size=11.5, bold=True, color=DARKTXT, name=FONT_M)
-    tfc = txbox(s, bx + Inches(0.10), Inches(5.48), Inches(1.96), Inches(1.04))
-    first = True
-    for it, c in items:
-        p = para(tfc, first); first = False
-        p.space_after = Pt(4); p.line_spacing = 1.06
-        _run(p, it, size=9, color=c)
-add_box(s, Inches(0.86), Inches(6.60), Inches(7.3), Inches(0.44), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.16, line_w=1.0)
-tf = txbox(s, Inches(1.06), Inches(6.60), Inches(7.0), Inches(0.44), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); p.line_spacing = 1.05
-_run(p, "门禁：结构校验 + 开发者确认 C1…Cn → 审批绑定契约摘要（与后端同一条链）", size=8.6, color=TEXT)
-p = para(tf); p.line_spacing = 1.05
-_run(p, "放行：Apply 按 Decompose 实现 · Verify 类型/行为/无障碍/三态 + 契约对齐", size=8.6, color=TEXT)
-# Iron rules
-add_box(s, Inches(8.65), Inches(4.42), Inches(4.25), Inches(2.66), fill=PURPLE_P, line=PURPLE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.08, line_w=1.0)
-tf = txbox(s, Inches(8.88), Inches(4.55), Inches(3.8), Inches(2.46))
-p = para(tf, True); _run(p, "铁律 · 前端架构边界", size=11.5, bold=True, color=PURPLE)
-rules_fe = [
-    "类型即契约：types/DTO/状态 schema 先产出",
-    "UI 不直连 fetch / localStorage：数据经 props/接口",
-    "视图 · 状态 · 数据流三层不混、职责单向",
-    "先 hooks/controller 编排，再生成 UI 组件",
-    "loading/empty/error 三态与无障碍必须显式",
-]
-for r in rules_fe:
-    p = para(tf); p.space_before = Pt(4); p.line_spacing = 1.1
-    _run(p, "▸ ", size=9.5, bold=True, color=PURPLE)
-    _run(p, r, size=9.5, color=TEXT)
-footer(s, "How · Frontend RAD")
-notes(s, "前端 RAD 与后端 RAM 是同一方法的镜像。Read 阶段加载产品行为、设计系统/组件库、路由、API 类型、状态归属、现有测试与无障碍约束；Analyze 阶段识别用户态（loading/empty/error）、权限边界、响应式与兼容、交互语义与无障碍、API 契约风险；Decompose 阶段产出组件与容器职责树、数据/状态流、类型化 API 边界、校验/交互态/无障碍与实现顺序，并和后端 Model 一起写进同一份 design.md。RAD 不是独立命令，而是前端 Profile 的设计特化，只依赖同一生命周期与门禁；图注强调门禁与放行与后端是同一条链。右侧铁律来自前端架构边界：类型即契约、UI 不直连基础设施、视图/状态/数据流三层不混。")
-
-# ---------------- 17b frontend RAD example ----------------
-s = new_slide()
-header(s, "HOW · RAD · 实例", "例子：订单管理页 —— 直接生成 vs RAD 先分解", color=PURPLE)
-# requirement bar
-add_box(s, Inches(0.62), Inches(1.5), Inches(12.2), Inches(0.82), fill=PANEL2, line=CYAN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.12, line_w=1.0)
-tf = txbox(s, Inches(0.9), Inches(1.5), Inches(11.7), Inches(0.82), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); p.line_spacing = 1.08
-_run(p, "需求：", size=10, bold=True, color=CYAN)
-_run(p, "做一个“订单管理页”——列表 + 关键词搜索/状态筛选 + 分页 + 批量操作（批量关闭/导出）+ 行内改状态；仅本部门可见（权限）；接口与字段来自后端契约。", size=10, color=TEXT)
-# left: 直接生成（无 RAD）
-add_box(s, Inches(0.62), Inches(2.46), Inches(6.0), Inches(3.82), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.055, line_w=0.75)
-add_box(s, Inches(0.62), Inches(2.46), Inches(6.0), Inches(0.5), fill=RGBColor(0x33, 0x12, 0x16), shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.055)
-tf = txbox(s, Inches(0.86), Inches(2.46), Inches(5.5), Inches(0.5), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); _run(p, "直接生成（没有 RAD）", size=12, bold=True, color=RED)
-mono_bad = [
-    "function OrderPage() {          // 巨型组件",
-    "   const [list] = useState([])",
-    "   useEffect(()=>fetch('/api/orders'))  // 组件直连接口",
-    "   // 筛选/分页/批量/行内更新全堆进组件",
-    "   // loading/empty/error 散在每处 if",
-    "   // 权限：if(!canSee) return null 也在这",
-    "   return <Page>… 上百行 JSX …</Page>",
-]
-tf = txbox(s, Inches(0.92), Inches(3.08), Inches(5.4), Inches(1.86), anchor=MSO_ANCHOR.TOP)
-first = True
-for ln in mono_bad:
-    p = para(tf, first); first = False
-    p.space_after = Pt(2); p.line_spacing = 1.0
-    _run(p, ln, size=8.2, color=TEXT, name=FONT_M)
-tf = txbox(s, Inches(0.92), Inches(5.06), Inches(5.4), Inches(1.12))
-p = para(tf, True); p.line_spacing = 1.12
-_run(p, "后果：", size=10, bold=True, color=RED)
-_run(p, "页面越写越长：接口与 UI 耦合、筛选加一列动整个组件；同样的列表/批量到别的页面只能复制一份——状态无归位、三态/权限无归位、几乎没法单测。", size=9.5, color=TEXT)
-# right: RAD 之后
-add_box(s, Inches(6.82), Inches(2.46), Inches(5.95), Inches(3.82), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.055, line_w=1.0)
-add_box(s, Inches(6.82), Inches(2.46), Inches(5.95), Inches(0.5), fill=RGBColor(0x0F, 0x2E, 0x24), shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.055)
-tf = txbox(s, Inches(7.06), Inches(2.46), Inches(5.5), Inches(0.5), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); _run(p, "RAD · 先把“视图/状态/数据流”分好层", size=12, bold=True, color=GREEN)
-mono_good = [
-    "Read/Analyze → 先分工三层，找变化轴",
-    "Decompose（结构先于 UI，契约先行）：",
-    "   types.ts：订单 DTO/枚举 = 类型即契约",
-    "   useOrderList(搜索·筛选·分页·批量) 状态归位",
-    "   api client 只发请求，返回类型化数据",
-    "   UI 纯展示：<Filter/> <OrderRow/> <Batch/>",
-    "   loading/empty/error → hook 统一提供",
-    "   <OrderPage> 只组装，不写业务判断",
-]
-tf = txbox(s, Inches(7.12), Inches(3.08), Inches(5.4), Inches(1.86), anchor=MSO_ANCHOR.TOP)
-first = True
-for ln in mono_good:
-    p = para(tf, first); first = False
-    p.space_after = Pt(2); p.line_spacing = 1.0
-    _run(p, ln, size=8.2, color=TEXT, name=FONT_M)
-tf = txbox(s, Inches(7.12), Inches(5.06), Inches(5.4), Inches(1.12))
-p = para(tf, True); p.line_spacing = 1.12
-_run(p, "后果：", size=10, bold=True, color=GREEN)
-_run(p, "加一种筛选/批量动作 = 加 hook 状态分支或一个纯展示组件；三态与权限各归其位、可单独单测，别的页面直接复用这些层。", size=9.5, color=TEXT)
-# bottom takeaway
-add_box(s, Inches(0.62), Inches(6.42), Inches(12.2), Inches(0.6), fill=PURPLE_P, line=PURPLE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.16, line_w=1.0)
-tf = txbox(s, Inches(0.9), Inches(6.42), Inches(11.7), Inches(0.6), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); p.line_spacing = 1.0
-_run(p, "RAD 不是“少写页面”，而是先把『类型/状态/数据流/展示』拆开——前端的难点同样是“层不跨越 + 可复用”，而不是写满一屏 JSX。", size=10.5, bold=True, color=WHITE)
-footer(s, "How · RAD 实例")
-notes(s, "给 RAD 配一个与 RAM 例子对称的前端例子。同一张订单管理页，“直接生成”把接口请求、筛选/分页/批量状态、loading/empty/error、部门权限全堆进一个巨型组件，改动牵一发动全身、到别的页面只能复制。RAD 先 Read/Analyze 想清“视图 / 状态 / 数据流”三层与变化轴，Decompose 阶段契约先行：先出 types.ts 类型契约，再用 useOrderList hook 收敛搜索/筛选/分页/批量状态，api client 只发请求返回类型化数据，UI 收敛成 Filter/OrderRow/Batch 等纯展示组件，OrderPage 只负责组装。于是加一种筛选或批量动作=加一个 hook 分支或展示组件，loading/empty/error/权限各归其位、可单测、可跨页复用。对应前端铁律：类型即契约、UI 不直连基础设施、三层不混。")
-
-# ---------------- 18 cross-module ----------------
-s = new_slide()
-header(s, "HOW · 跨模块协作", "多模块共用一条生命周期：契约先行 · 就绪波次 · 逐模块证据", color=PURPLE)
-# Left: key points
-bullets(s, Inches(0.62), Inches(1.5), Inches(6.5), Inches(4.5),
-        [(0, [("不是多模块各开各的 change：仍是 Explore → Propose → Apply → Verify → Sync → Archive 一条主链。", {"color": TEXT})]),
-         (0, [("跨模块先定义契约边界：", {"bold": True, "color": CYAN})]),
-         (1, [("端口/数据结构 · 错误码 · 幂等键 · 权限 · 可观测字段 · 归属模块", {"color": MUTED})]),
-         (0, [("多模块共享同一份 design.md；契约定稿后，各模块按归属推进自己的部分。", {"color": TEXT})]),
-         (0, [("任务执行即出证据：并行须声明隔离与不重叠写范围；串行记 fallback 原因。", {"color": TEXT})]),
-         (0, [("唯一协调者收证据，集成与最终验证只在协调者统一跑。", {"color": TEXT})]),
-         (0, [("Review 逐模块对齐：字段/枚举/错误/权限/路由 + 文件摘要 = 执行记录精确一致。", {"color": TEXT})])],
-        size=11, gap=6, marker=PURPLE)
-# 跨模块编排图（原生矢量，替代 aegis 日志流水线截图）
-add_box(s, Inches(7.35), Inches(1.5), Inches(5.55), Inches(4.55), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=0.75)
-tf = txbox(s, Inches(7.55), Inches(1.62), Inches(5.15), Inches(0.3))
-p = para(tf, True); _run(p, "一个 change 的跨模块编排", size=11.5, bold=True, color=PURPLE)
-steps18 = [
-    ("契约与依赖先行", "契约边界/波次依赖写进 design.md"),
-    ("就绪波次调度", "契约层先合入 → 依赖模块再实现"),
-    ("执行即出证据", "并行=隔离声明；串行记 fallback"),
-    ("协调者收证据", "集成与终验只在协调者跑一次"),
-    ("逐模块对齐", "Review 摘要一致 → Sync → Archive"),
-]
-num_steps_v(s, Inches(7.55), Inches(2.3), Inches(5.15), steps18, box_h=0.62, gap=0.10, color=PURPLE, tsize=10.5, dsize=9)
-# Bottom: change example
-add_box(s, Inches(0.62), Inches(6.2), Inches(12.26), Inches(0.95), fill=PURPLE_P, line=PURPLE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.1, line_w=1.0)
-tf = txbox(s, Inches(0.86), Inches(6.2), Inches(11.8), Inches(0.95), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); p.line_spacing = 1.14
-_run(p, "示例：一次「跨模块」变更 ", size=10.5, bold=True, color=PURPLE)
-_run(p, "＝ 契约边界先行 → 后端 Model 与前端 Decompose 同入 design.md → 就绪波次逐模块执行 → 集成验证统一跑。", size=10.5, color=TEXT)
-p = para(tf); p.line_spacing = 1.14
-_run(p, "一个 OpenSpec change · 一份 design.md · 一次审批 · 一张任务图。", size=10.5, bold=True, color=WHITE)
-footer(s, "How · Cross-Module")
-notes(s, "跨模块协作不是说每个模块各开各的 change，而是同一个 change 里协调多模块。核心：先把跨模块契约边界（端口/数据结构/错误码/幂等键/权限/可观测字段/归属模块）写进 design.md，各模块的 Model/Decompose 都在这一份里；波次依赖由 OpenSpec tasks.md 表达，按就绪波次推进——契约层先合入、依赖它的模块再实现、最后接入与集成验证。任务执行即产生 execution-evidence；并行只是可选机制（需声明隔离与不重叠写范围），串行记录 fallback 原因，都不算降级。所有证据交给唯一协调者，集成与最终验证只跑一次；Review 逐模块校验字段/枚举/错误/权限/路由对齐，且各模块文件摘要与执行记录精确一致。整个过程只有一条生命周期（OpenSpec 是 owner），没有第二套任务图。")
-
-# ---------------- 17 fullstack ----------------
-s = new_slide()
-header(s, "HOW · 全栈 Profile", "前后端一个 change：跨 API 契约先行 · 就绪波次落地", color=PURPLE)
-bullets(s, Inches(0.9), Inches(1.55), Inches(5.8), Inches(4.2),
-        [(0, [("不是前后端两条独立工作流；没有第二套 lifecycle。", {"color": TEXT})]),
-         (0, [("Design 先定义跨 API 的共享契约：", {"bold": True, "color": CYAN})]),
-         (1, [("版本/兼容 · 可空/默认 · 校验 · 错误结构 · 权限 · 幂等 · 重试/超时 · 时区/精度 · 可观测字段 · 生成类型归属", {"color": MUTED})]),
-         (0, [("后端 Model 与前端 Decompose 写进同一份 design.md。", {"color": TEXT})]),
-         (0, [("就绪波次调度：", {"bold": True, "color": WHITE}),
-              ("隔离工作区 → 集成任务合并两侧 → 协调者统一跑最终验证。", {"color": TEXT})]),
-         (0, [("串行不是降级：同一张图、同一契约、同一门禁，只是不并行。", {"bold": True, "color": GREEN})])],
-        size=11.5, gap=7, marker=PURPLE)
-# 全栈契约 + 就绪波次图（原生矢量，替代仓库白板图 09-multi-agent-parallel.png）
-add_box(s, Inches(6.9), Inches(1.5), Inches(5.9), Inches(5.25), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.05, line_w=0.75)
-tf = txbox(s, Inches(7.18), Inches(1.62), Inches(5.34), Inches(0.3))
-p = para(tf, True)
-_run(p, "一个契约，后端 Model + 前端 Decompose，按就绪波次落地", size=10.5, bold=True, color=PURPLE)
-# top: same change
-add_box(s, Inches(7.18), Inches(2.04), Inches(5.34), Inches(0.52), fill=PANEL2, line=PURPLE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.2, line_w=1.0)
-tf = txbox(s, Inches(7.18), Inches(2.04), Inches(5.34), Inches(0.52), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); p.alignment = PP_ALIGN.CENTER
-_run(p, "同一 OpenSpec change · design.md 已审批 · tasks.md 唯一任务源", size=9.5, bold=True, color=WHITE)
-add_box(s, Inches(9.72), Inches(2.64), Inches(0.26), Inches(0.32), fill=PURPLE, shape=MSO_SHAPE.DOWN_ARROW)
-# worker lanes (ready wave)
-def _fs_lane(lx, accent, who, lines):
-    add_box(s, lx, Inches(3.08), Inches(2.42), Inches(1.7), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.09, line_w=0.75)
-    add_box(s, lx, Inches(3.08), Inches(2.42), Inches(0.4), fill=accent, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.5)
-    tf = txbox(s, lx, Inches(3.08), Inches(2.42), Inches(0.4), anchor=MSO_ANCHOR.MIDDLE)
-    p = para(tf, True); p.alignment = PP_ALIGN.CENTER
-    _run(p, who, size=9.5, bold=True, color=DARKTXT)
-    tf = txbox(s, lx + Inches(0.14), Inches(3.58), Inches(2.14), Inches(1.1))
-    first = True
-    for ln in lines:
-        p = para(tf, first); first = False
-        p.space_after = Pt(2); p.line_spacing = 1.02
-        _run(p, ln, size=8.3, color=TEXT)
-_fs_lane(Inches(7.18), CYAN, "① 后端 Worker", ["隔离工作区 · 不重叠写范围", "RAM Model 已批 → 实现 tasks", "完成即回交 execution-evidence"])
-_fs_lane(Inches(10.1), GREEN, "② 前端 Worker", ["隔离工作区 · 不重叠写范围", "RAD Decompose 已批 → 实现 tasks", "完成即回交 execution-evidence"])
-# wave + coordinator
-tf = txbox(s, Inches(7.18), Inches(4.92), Inches(5.34), Inches(0.3))
-p = para(tf, True); p.alignment = PP_ALIGN.CENTER
-_run(p, "就绪波次：都只消费已批契约；并行需隔离/不重叠，证据统一交回协调者", size=8.5, color=MUTED)
-add_box(s, Inches(9.72), Inches(5.3), Inches(0.26), Inches(0.3), fill=PURPLE, shape=MSO_SHAPE.DOWN_ARROW)
-add_box(s, Inches(7.18), Inches(5.66), Inches(5.34), Inches(0.6), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.16, line_w=1.0)
-tf = txbox(s, Inches(7.18), Inches(5.66), Inches(5.34), Inches(0.6), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); p.alignment = PP_ALIGN.CENTER
-_run(p, "协调者：集成任务合并两侧 → 最终验证 / 门禁 只此一处", size=9.5, bold=True, color=GREEN)
-tf = txbox(s, Inches(7.18), Inches(6.34), Inches(5.34), Inches(0.3))
-p = para(tf, True); p.alignment = PP_ALIGN.CENTER
-_run(p, "串行不是降级：同契约同门禁，只是不并行 —— 并行是契约清晰时的加速器", size=8.5, color=MUTED, italic=True)
-footer(s, "How · Fullstack")
-notes(s, "全栈联动以前靠两条平行循环串行浪费、并行对不齐；现在一个 change。Review 强制校验字段/枚举/错误/权限/路由，以及两侧文件摘要与执行记录精确一致。")
-
-# ---------------- 18 requirement reflection ----------------
-s = new_slide()
-header(s, "GROW · 反哺①", "需求反思：发送回答 / 动手之前，先归类任务理解", color=PINK)
-bullets(s, Inches(0.9), Inches(1.55), Inches(11.7), Inches(0.7),
-        [(0, [("回答级质量门：不是暴露思维链，而是检查“我是否理解得足够到能行动”。", {"color": TEXT})])], size=12.5, marker=PINK)
-table(s, Inches(0.9), Inches(2.35), Inches(11.55), [1.0, 2.6, 2.3],
-      [
-          ["结果", "判断条件", "Agent 行动"],
-          ["ready", "目标/范围/完成标准/约束/授权足够明确", "说明重要假设，在授权范围内行动"],
-          ["clarify", "歧义可能改变实现/结果/成本/安全", "停止写入与副作用，聚焦提问 + 推荐方案"],
-          ["correct", "需求与仓库事实/约束/不变量冲突", "展示证据与最小可行修正，等确认"],
-          ["blocked", "缺授权或证据、无法继续", "说明阻塞点与最安全下一步"],
-      ], header_fill=PINK, row_h=0.5)
-add_box(s, Inches(0.9), Inches(5.15), Inches(11.55), Inches(1.35), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.1, line_w=1.0)
-tf = txbox(s, Inches(1.15), Inches(5.3), Inches(11.1), Inches(1.1))
-p = para(tf, True); _run(p, "铁律一条：不要在多个实质不同的解释间静默选择。", size=13, bold=True, color=GREEN)
-p = para(tf); p.space_before = Pt(4); p.line_spacing = 1.18
-_run(p, "澄清响应顺序：当前理解 → 找到问题 → 仓库证据 → 推荐方案与取舍 → 最小确认问题。", size=11.5, color=TEXT)
-p = para(tf); p.space_before = Pt(4)
-_run(p, "它检查 Agent 该不该行动；Self-Refine 检查草稿质量好不好——两者互补，都不替代审批与门禁。", size=11.5, color=MUTED)
-footer(s, "Grow · 需求反思")
-notes(s, "把“误解需求”拦在开工前。注意 clarify 时不应无限追问，只问会改变计划/行为/安全/完成判定的点，一次最多约 3 个阻塞性问题并给出推荐。")
-
-# ---------------- 19 self refine ----------------
-s = new_slide()
-header(s, "GROW · 反哺②", "Self-Refine：有界的内层自检循环", color=PINK)
-# concept definition
-tf = txbox(s, Inches(0.9), Inches(1.46), Inches(11.6), Inches(0.62))
-p = para(tf, True); p.line_spacing = 1.15
-_run(p, "概念 · Self-Refine（Madaan et al., NeurIPS 2023）：", size=11.5, bold=True, color=CYAN)
-_run(p, "同一模型对自身草稿做有界的自反馈迭代——不引入外部工具、不需再训练；它是内层质量循环，在阶段门禁前收敛质量，不创建第二套生命周期。", size=11.5, color=TEXT)
-# closed-loop ring diagram (2x2)
-nodes = [
-    ("生成 Generate", 0.9, 2.15, CYAN),
-    ("自我批判 Self-Critique", 4.3, 2.15, PURPLE),
-    ("优化 Refine", 4.3, 3.95, CYAN),
-    ("再检查 Re-check", 0.9, 3.95, PURPLE),
-]
-for label, nx, ny, c in nodes:
-    add_box(s, Inches(nx), Inches(ny), Inches(2.3), Inches(0.6), fill=c, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.3)
-    tfn = txbox(s, Inches(nx), Inches(ny), Inches(2.3), Inches(0.6), anchor=MSO_ANCHOR.MIDDLE)
-    p = para(tfn, True); p.alignment = PP_ALIGN.CENTER
-    _run(p, label, size=11, bold=True, color=DARKTXT)
-add_box(s, Inches(3.32), Inches(2.23), Inches(0.86), Inches(0.44), fill=CYAN, shape=MSO_SHAPE.RIGHT_ARROW)
-add_box(s, Inches(5.26), Inches(2.80), Inches(0.38), Inches(1.10), fill=CYAN, shape=MSO_SHAPE.DOWN_ARROW)
-add_box(s, Inches(3.32), Inches(4.03), Inches(0.86), Inches(0.44), fill=CYAN, shape=MSO_SHAPE.LEFT_ARROW)
-add_box(s, Inches(1.86), Inches(2.80), Inches(0.38), Inches(1.10), fill=CYAN, shape=MSO_SHAPE.UP_ARROW)
-add_box(s, Inches(3.02), Inches(2.98), Inches(1.46), Inches(0.78), fill=PANEL2, line=CYAN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.12, line_w=1.0)
-tfc = txbox(s, Inches(3.02), Inches(2.98), Inches(1.46), Inches(0.78), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tfc, True); p.alignment = PP_ALIGN.CENTER
-_run(p, "有界闭环", size=10, bold=True, color=WHITE)
-p = para(tfc); p.space_before = Pt(2); p.alignment = PP_ALIGN.CENTER
-_run(p, "≤ max_iterations", size=9, color=CYAN, name=FONT_M)
-tf = txbox(s, Inches(0.9), Inches(4.62), Inches(5.7), Inches(0.34))
-p = para(tf, True)
-_run(p, "完成定义：", size=10, bold=True, color=WHITE)
-_run(p, "未超上限 · 每个选定问题有解决结果或明确未覆盖风险 · 门禁通过", size=10, color=MUTED)
-# right bullets (original + critique contract)
-bullets(s, Inches(6.95), Inches(2.15), Inches(5.5), Inches(2.8),
-        [(0, [("位置：", {"bold": True, "color": WHITE}),
-              ("Explore / Spec / Design / Apply / Verify 内的内层循环，对应阶段门禁前收敛质量。", {"color": TEXT})]),
-         (0, [("profile.yaml 控制策略与迭代上限：", {"bold": True, "color": WHITE})]),
-         (1, [("disabled / recommended / required / required-independent（独立复核）", {"color": MUTED})]),
-         (0, [("max_iterations 1–10；循环内解决不了 → 如实记录未覆盖风险，不得伪装成功。", {"color": TEXT})]),
-         (0, [("批判契约：", {"bold": True, "color": WHITE}),
-              ("每轮对照已批准需求与风险标准，记录具体发现与修改结果，而非笼统结论。", {"color": TEXT})])],
-        size=11.5, gap=6, marker=PINK)
-# trust boundary (original)
-add_box(s, Inches(0.9), Inches(5.02), Inches(11.55), Inches(1.34), fill=AMBER_P, line=ORANGE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.1, line_w=1.0)
-tf = txbox(s, Inches(1.15), Inches(5.13), Inches(11.1), Inches(1.16))
-p = para(tf, True); _run(p, "信任边界：Self-Refine 是有界辅助，不是独立证明", size=12, bold=True, color=ORANGE)
-for i, t in enumerate(["同一模型可能重复同一错误 → 高风险声明仍需测试 / 确定性门禁 / 外部审查",
-                       "不能批准契约 · 不能让失败的门禁通过 · 不能直接写入策略 / Fitness 控制面",
-                       "产出 self-refine-evidence.json（过程证据，不是审批契约的一部分）"]):
-    p = para(tf); p.space_before = Pt(4); p.line_spacing = 1.08
-    _run(p, f"✕ {t}", size=10.8, color=TEXT)
-# outer-loop strip
-add_box(s, Inches(0.9), Inches(6.46), Inches(11.55), Inches(0.46), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.3, line_w=1.0)
-tf = txbox(s, Inches(1.15), Inches(6.46), Inches(11.1), Inches(0.46), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True)
-_run(p, "闭环之外还有闭环：", size=10.5, bold=True, color=GREEN)
-_run(p, "内环 Self-Refine（单次变更内收敛）→ 外环 经验记忆（跨变更沉淀，见下页）→ 制度化 Fitness（硬门禁）", size=10.5, color=TEXT)
-footer(s, "Grow · Self-Refine")
-notes(s, "Self-Refine 收敛草稿质量，但能力边界很明确：它改不了“同一个错误模型再犯一遍”，所以永远替代不了审批、确定性门禁、人工 Review。灵感来自 Madaan et al. NeurIPS 2023。补充讲法：左侧四步首尾相接成环——再检查未收敛就回到自我批判继续迭代，直到达标或到上限；批判有契约，只记录具体发现。内环收敛不了的失败流入下一页的外环（Reflexion 式跨变更经验保留），反复出现再升级为 Fitness 规则。")
-
-# ---------------- 20 lesson memory ----------------
-s = new_slide()
-header(s, "GROW · 反哺③", "经验记忆：把跨变更反复失败，沉淀为可检索的预防", color=PINK)
-bullets(s, Inches(0.9), Inches(1.55), Inches(5.6), Inches(2.2),
-        [(0, [("闭环：", {"bold": True, "color": CYAN}),
-              ("失败 → 采集 → 提炼 →（外部）审批 → 激活 → 检索 → Explore 前预检 → 验证。", {"color": TEXT})]),
-         (0, [("核心纪律：一次观察通常只生成“候选”，不直接生成“规则”。", {"color": TEXT})]),
-         (0, [("相同签名反复出现 → 经外部审核才可升级为强制预检 / 确定性 Fitness 规则。", {"color": TEXT})]),
-         (0, [("Archive 有失败事件却无结论 → 必须给 lesson-decision，写明原因，不能凭空消失。", {"color": MUTED, "italic": True})])],
-        size=11.5, gap=7, marker=PINK)
-# 反馈闭环图（原生矢量，替代仓库白板图 04-feedback-loop.png）
-add_box(s, Inches(6.8), Inches(1.5), Inches(5.8), Inches(4.5), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.05, line_w=0.75)
-tf = txbox(s, Inches(7.0), Inches(1.62), Inches(5.4), Inches(0.26))
-p = para(tf, True)
-_run(p, "失败 → 候选 → 经验 → 预防：跨变更沉淀闭环", size=10.5, bold=True, color=PINK)
-def _lesson_node(x, y, label, file_, tag, col):
-    add_box(s, x, y, Inches(2.24), Inches(0.8), fill=PANEL2, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.12, line_w=0.75)
-    add_box(s, x, y, Inches(0.06), Inches(0.8), fill=col, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.5)
-    tf = txbox(s, x + Inches(0.16), y + Inches(0.05), Inches(2.0), Inches(0.7))
-    p = para(tf, True); _run(p, label, size=10, bold=True, color=WHITE)
-    p = para(tf); p.space_before = Pt(1)
-    _run(p, file_, size=7.6, color=MUTED, name=FONT_M)
-    _run(p, " · ", size=7.6, color=MUTED)
-    _run(p, tag, size=7.6, bold=True, color=col)
-# top row
-_lesson_node(Inches(7.0), Inches(2.06), "失败事件", "failure-events.jsonl", "仅证据", DIM)
-_lesson_node(Inches(10.05), Inches(2.06), "提炼候选", "lesson-candidate.json", "待外部审批", ORANGE)
-# bottom row
-_lesson_node(Inches(10.05), Inches(3.64), "激活经验", "lessons/*.json", "咨询性·可检索", CYAN)
-_lesson_node(Inches(7.0), Inches(3.64), "预检防复发", "preflight_lessons.py", "Explore 前命中", GREEN)
-# loop arrows
-add_box(s, Inches(9.32), Inches(2.35), Inches(0.68), Inches(0.22), fill=PINK, shape=MSO_SHAPE.RIGHT_ARROW)
-add_box(s, Inches(11.02), Inches(2.9), Inches(0.3), Inches(0.62), fill=PINK, shape=MSO_SHAPE.DOWN_ARROW)
-add_box(s, Inches(9.32), Inches(3.93), Inches(0.68), Inches(0.22), fill=PINK, shape=MSO_SHAPE.LEFT_ARROW)
-add_box(s, Inches(7.97), Inches(2.9), Inches(0.3), Inches(0.62), fill=PINK, shape=MSO_SHAPE.UP_ARROW)
-# center promotion note
-add_box(s, Inches(7.0), Inches(4.72), Inches(5.4), Inches(1.12), fill=PANEL2, line=PINK, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.1, line_w=1.0)
-tf = txbox(s, Inches(7.22), Inches(4.78), Inches(4.98), Inches(1.0), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); p.line_spacing = 1.12
-_run(p, "命中即预防：", size=9, bold=True, color=PINK)
-_run(p, "经验在下次变更 Explore 前的预检中被检索，失败不再重复发生。", size=9, color=TEXT)
-p = para(tf); p.space_before = Pt(4); p.line_spacing = 1.12
-_run(p, "升级是克制的：", size=9, bold=True, color=PINK)
-_run(p, "签名反复 → 经外部审批才升为强制预检 / Fitness 规则。", size=9, color=TEXT)
-bullets(s, Inches(0.9), Inches(4.35), Inches(5.6), Inches(2.1),
-        [(0, [("权威分级（按信任分层）：", {"bold": True, "color": WHITE})]),
-         (1, [("failure-events.jsonl → 仅证据", {"color": MUTED})]),
-         (1, [("lesson-candidate.json → 待审核", {"color": MUTED})]),
-         (1, [("lessons/*.json（外部审批激活）→ 辅助预防", {"color": MUTED})]),
-         (1, [("Fitness / 策略规则 → 规范控制", {"color": MUTED})]),
-         (0, [("全链脚本化：记录失败 → 生成候选 → 审批激活 → 预检检索", {"color": TEXT})])],
-        size=11, gap=4, marker=PINK)
-footer(s, "Grow · 经验记忆")
-notes(s, "Self-Refine 只管单次变更；经验记忆跨变更。它把可复用失败变成检索到的预防指导。注意 lessons 是咨询性，未经 reviewer 激活不是权威；禁止存密钥/个人数据/生产数据。")
-
-# ---------------- 21 fitness ----------------
-s = new_slide()
-header(s, "GROW · 质量门禁", "Fitness：把“Agent 不知道什么时候算做完”编码成可执行规则", color=PINK)
-bullets(s, Inches(0.9), Inches(1.55), Inches(11.7), Inches(1.1),
-        [(0, [("受保护控制面：", {"bold": True, "color": RED}),
-              ("Agent 只能读与执行 docs/fitness/**，不能修改；任何改动（无论大小）需绑定变更摘要的外部人工审批，例外仅首次安装与可证明的既有语法修复。", {"color": TEXT})])],
-        size=12, gap=5, marker=PINK)
-table(s, Inches(0.9), Inches(2.85), Inches(11.55), [1.0, 1.3, 2.2, 1.6],
-      [
-          ["Tier", "耗时", "典型检查", "触发"],
-          ["fast", "<30s", "编译 · lint · 入口完整", "每次保存 / 每个 Agent 循环"],
-          ["normal", "<5min", "单元测试 · 架构边界 · 安全扫描", "pre-commit"],
-          ["deep", "不限", "集成测试 · 契约验证 · 性能基准", "CI / pre-push"],
-      ], header_fill=GREEN, row_h=0.42)
-add_box(s, Inches(0.9), Inches(5.02), Inches(11.55), Inches(1.72), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.08)
-tf = txbox(s, Inches(1.15), Inches(5.14), Inches(11.05), Inches(0.35))
-p = para(tf, True)
-_run(p, "每条规则 = 一个 Markdown 文件，四个字段，人可读、机器可执行：", size=11.5, bold=True, color=WHITE)
-_run(p, "Hard Gate 失败即阻断并列出失败项；普通 metric 失败只降分不阻断。", size=11, color=MUTED)
-fields = [
-    ("dimension", "维度", "如 architecture-boundary"),
-    ("tier", "档位", "fast · normal · deep"),
-    ("command", "检查", "任意可执行检查命令"),
-    ("hard_gate", "硬门禁", "true → 失败即阻断"),
-]
-x = Inches(1.15)
-for name, zh, ex in fields:
-    add_box(s, x, Inches(5.55), Inches(2.62), Inches(0.98), fill=PANEL2, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.1)
-    tf = txbox(s, x + Inches(0.15), Inches(5.67), Inches(2.35), Inches(0.85))
+y = Inches(2.6)
+for t, d, c in desc:
+    add_box(s, Inches(0.62), y, Inches(0.14), Inches(0.62), fill=c)
+    tf = txbox(s, Inches(0.95), y, Inches(12.0), Inches(0.62), anchor=MSO_ANCHOR.MIDDLE)
     p = para(tf, True)
-    _run(p, name, size=10.5, bold=True, color=CYAN, name=FONT_M)
-    _run(p, "  " + zh, size=10.5, bold=True, color=WHITE)
-    p = para(tf); p.space_before = Pt(3)
-    _run(p, ex, size=9.5, color=MUTED)
-    x += Inches(2.62) + Inches(0.12)
-footer(s, "Grow · Fitness")
-notes(s, "fitness 脚本零依赖单文件、可 dry-run、按 tier 分层执行。每个 dimension 一个 .md 放在 docs/fitness/。规则必须人可读 + 脚本可执行，Agent 失败时能指出文件/规则/原因/修复入口。")
+    _run(p, t + "   ", size=13, bold=True, color=c)
+    _run(p, d, size=12, color=TEXT)
+    y += Inches(0.62) + Inches(0.10)
+add_box(s, Inches(0.62), Inches(6.5), Inches(12.1), Inches(0.56), fill=PANEL2, line=PURPLE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.14, line_w=1.0)
+tf = txbox(s, Inches(0.86), Inches(6.5), Inches(11.7), Inches(0.56), anchor=MSO_ANCHOR.MIDDLE)
+p = para(tf, True)
+_run(p, "操作骨架：", size=12, bold=True, color=PURPLE)
+_run(p, "这六步是“一次受控变更”的模板；aegis 每条 change 都沿此路径执行：『探→提→做→验→并→存』。", size=12, bold=True, color=WHITE)
+footer(s, "How · 生命周期")
+notes(s, "生命周期压成一页：顶部六步 chevron，下面每步一句话 + 主色。不展开每步细节，只给出模板心智。")
 
-# ---------------- 22 governance methodology ----------------
+# ---------------- 9 context ----------------
 s = new_slide()
-header(s, "GROW · 方法治理", "方法是默认值集合，不是“每件事都做”的清单", color=PINK)
-bullets(s, Inches(0.9), Inches(1.6), Inches(6.4), Inches(3.6),
-        [(0, [("先选档位（profile.yaml）：", {"bold": True, "color": CYAN})]),
-         (1, [("light：文档 / 测试 / 原型（目标上下文 + 测试 + review）", {"color": MUTED})]),
-         (1, [("standard：既有服务新特性（路径上下文 + 契约 + fast gate）", {"color": MUTED})]),
-         (1, [("regulated：敏感数据 / 支付 / 身份（+威胁建模 + 审批 + 审计证据）", {"color": MUTED})]),
-         (1, [("experimental：一次性 spike（显式过期 + 隔离）", {"color": MUTED})]),
-         (0, [("例外是设计出来的，不是被静默忽略的：", {"bold": True, "color": WHITE})]),
-         (1, [("narrow · time-bounded · searchable；过期 / 无主例外不被门禁认可", {"color": MUTED})]),
-         (0, [("证据优先于代理指标：行数 / grep / 覆盖率只是信号，不是正确性证明。", {"color": TEXT})])],
-        size=11.5, gap=6, marker=PINK)
-add_box(s, Inches(7.7), Inches(1.6), Inches(4.7), Inches(1.5), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.09, line_w=1.0)
-tf = txbox(s, Inches(7.9), Inches(1.72), Inches(4.3), Inches(1.3))
-p = para(tf, True); _run(p, "证据随风险分层", size=12, bold=True, color=GREEN)
-for i, t in enumerate(["Public API → schema/契约测试 + 兼容决策", "DB/表结构 → 迁移演练 + 回滚计划 + 幂等", "权限/数据 → 威胁建模 + 负向测试 + 密钥扫描", "UI → typecheck + 无障碍 + 三态证据"]):
-    p = para(tf); p.space_before = Pt(3.5); p.line_spacing = 1.05
-    _run(p, f"· {t}", size=10.2, color=TEXT)
-add_box(s, Inches(7.7), Inches(3.35), Inches(4.7), Inches(3.0), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.07)
-tf = txbox(s, Inches(7.9), Inches(3.48), Inches(4.3), Inches(2.8))
-p = para(tf, True); _run(p, "完整度分两层", size=12, bold=True, color=WHITE)
-for i, t in enumerate(["Technical done：代码 + 测试 + 构建 + 适用门禁", "Operational done：达生产还需部署/可观测/迁移/回滚/UAT", "——由发布 owner 决定哪一层适用", "信任边界：仓库文本一律不可信输入；最小写权限；禁用危险操作需审批", "Skill 可用性是可执行契约：verify_skill + 运行时 hit/fallback 记录", "先用基线衡量，勿无样本宣称提速"]):
-    p = para(tf); p.space_before = Pt(5); p.line_spacing = 1.12
-    _run(p, f"▸ {t}", size=11, color=TEXT)
-footer(s, "Grow · 治理")
-notes(s, "方法论自身的变更与产品变更用同样的档位、证据、回滚纪律。Skill 是替换式适配器；缺失时必须降级到文档化的手工流程，不能静默降低安全边界。衡量：lead time/rework/逃逸缺陷/变更失败率/cache 命中率等。")
-
-# ---------------- 23 install ----------------
-s = new_slide()
-header(s, "USE · 接入", "hek init：Agent 驱动地把方法论装进目标项目", color=ORANGE)
-table(s, Inches(0.9), Inches(1.62), Inches(6.0), [1.15, 1.0, 2.1],
-      [
-          ["安装方式", "适用", "特点"],
-          ["npm 全局安装", "本机日常", "装一次，任意项目目录一键初始化"],
-          ["npx 按次运行", "试用 / 偶尔", "不留全局痕迹，直接运行"],
-          ["CI / 无人值守", "自动化环境", "机器可读输出，不拉起交互"],
-      ], header_fill=ORANGE, row_h=0.52, fsize=10.5)
-add_box(s, Inches(0.9), Inches(3.78), Inches(6.0), Inches(1.55), fill=AMBER_P, line=ORANGE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.09, line_w=1.0)
-tf = txbox(s, Inches(1.12), Inches(3.9), Inches(5.55), Inches(1.35))
-p = para(tf, True); _run(p, "两条安全设计", size=12, bold=True, color=ORANGE)
-for t in ["只读预览：先看将安装什么，确认后才落盘",
-          "无人值守遇全新项目 → 先装脚手架、以失败退出，绝不留半成品"]:
-    p = para(tf); p.space_before = Pt(5); p.line_spacing = 1.12
-    _run(p, "· " + t, size=11, color=TEXT)
-p = para(tf); p.space_before = Pt(5)
-_run(p, "hek agents 随时查看各 Agent 的安装状态。", size=10.5, color=MUTED, italic=True)
-add_box(s, Inches(7.2), Inches(1.62), Inches(5.2), Inches(3.4), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.07)
-tf = txbox(s, Inches(7.45), Inches(1.75), Inches(4.75), Inches(3.2))
-p = para(tf, True); _run(p, "接入流程", size=12.5, bold=True, color=WHITE)
-for i, t in enumerate(["选安装范围：Tier 1 轻量 / Tier 2 完整（默认）",
-                       "选已安装的 Agent（Claude / Codex / OpenCode / Cursor / Gemini / Trae；WorkBuddy / Trae Work 走 handoff）",
-                       "在解析出的项目根打开对应 Agent CLI，传入 Kit 路径与接入契约",
-                       "Agent 读取事实 → 只读计划 → 确认 → 填占位 → 跑 canonical 脚本 → 确定性检查",
-                       "落盘 docs/methodology/onboarding.json（版本 / 摘要 / 校验）"]):
-    p = para(tf); p.space_before = Pt(6); p.line_spacing = 1.14
-    _run(p, f"{i+1}. {t}", size=11, color=TEXT)
-bullets(s, Inches(0.9), Inches(5.2), Inches(11.6), Inches(1.6),
-        [(0, [("Tier 1：", {"bold": True, "color": GREEN}),
-              ("入口 + agent-policy.yaml + ai.json/AI.md + profile.yaml + OpenSpec 配置 + 生产策略脚手架", {"color": TEXT})]),
-         (0, [("Tier 2：", {"bold": True, "color": CYAN}),
-              ("Tier 1 + Fitness 门禁脚本与规则 + 经验记忆（默认，本讲主体）", {"color": TEXT})]),
-         (0, [("版本管理：低→高同步资源 · 同版本仍查漂移 · 高→低（降级）直接阻断并报告迁移事项。", {"color": WHITE})])],
-        size=11.5, gap=6, marker=ORANGE)
-footer(s, "Use · 接入")
-notes(s, "接入即“agent 驱动”：不是脚本把模板复制进去就完事，而是让 Agent 读真实仓库事实、填占位、跑检查，保证链路闭合（fail-closed）。三种安装方式对应不同使用频率与自动化场景。")
-
-# ---------------- 24 showcase ----------------
-s = new_slide()
-header(s, "USE · 工程化落地成品", "aegis · AI Agent 平台 · Spring AI 2.0 + 多模块 Maven 反应堆", color=ORANGE)
-# --- Left: project overview + architecture ---
-add_box(s, Inches(0.62), Inches(1.5), Inches(6.7), Inches(4.55), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.08, line_w=0.75)
-add_box(s, Inches(0.62), Inches(1.5), Inches(6.7), Inches(0.55), fill=AMBER_P, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.08)
-tf = txbox(s, Inches(0.86), Inches(1.5), Inches(6.2), Inches(0.55), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); _run(p, "项目画像", size=12, bold=True, color=ORANGE)
-# Project desc
-tf = txbox(s, Inches(0.86), Inches(2.15), Inches(6.2), Inches(0.6))
-p = para(tf, True); p.line_spacing = 1.18
-_run(p, "基于 Spring AI 2.0 的多模块 AI Agent 平台：飞书事件 → 路由 → 日志分析五阶段流水线 → 格式化回复。", size=10.5, color=TEXT)
-# Architecture diagram
-aegis_arch = "/Users/shenxuehai/Projects/xhproject/aegis/docs/diagrams/01-module-architecture.png"
-pic_card(s, aegis_arch, Inches(0.86), Inches(2.8), Inches(6.2), Inches(2.65),
-         caption="六层架构：内核 → 运行时 → Spring AI 适配 → 业务 Agent → 渠道 → 应用")
-# --- Right top: metrics ---
-metrics = [
-    ("31", "已归档变更", "OpenSpec 全生命周期跑通", CYAN),
-    ("17", "Fitness 规则", "14 维度 · 30+ 指标", GREEN),
-    ("v0.5.1", "HEK 版本", "Tier 2 · 已升级", ORANGE),
-    ("6 层", "架构分层", "契约优先 · 抽象先行", PURPLE),
+header(s, "HOW · 确定性上下文", "改代码前，先让 AI 知道自己“站在哪”", color=PURPLE)
+tagline(s, "关键规则：上下文不靠全塞，而靠『机器索引 + 路径级精读』——只加载命中的那层。", color=PURPLE)
+add_box(s, Inches(0.62), Inches(1.98), Inches(5.5), Inches(4.5), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.05, line_w=0.75)
+tf = txbox(s, Inches(0.86), Inches(2.1), Inches(5.0), Inches(0.3))
+p = para(tf, True); _run(p, "怎么落地：路径级上下文（aegis 8 模块）", size=10.5, bold=True, color=PURPLE)
+mods = ["根 ai.json（≤4096B）先做路径路由", "根 AI.md（全仓规则）", "aegis-core / AI.md（内核纯契约）", "aegis-runtime / AI.md（运行时）", "aegis-ai-spring / AI.md（模型适配）", "aegis-agent / AI.md（supervisor·log）", "aegis-channel / AI.md（渠道）", "aegis-application / AI.md（入口）"]
+tf = txbox(s, Inches(0.86), Inches(2.5), Inches(5.1), Inches(3.9))
+first = True
+for m in mods:
+    p = para(tf, first); first = False
+    p.space_after = Pt(5); p.line_spacing = 1.08
+    _run(p, "▸ ", size=10, bold=True, color=PURPLE)
+    _run(p, m, size=10.3, color=TEXT, name=FONT_M)
+add_box(s, Inches(0.62), Inches(6.5), Inches(5.5), Inches(0.56), fill=AMBER_P, line=ORANGE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.14, line_w=1.0)
+tf = txbox(s, Inches(0.84), Inches(6.5), Inches(5.1), Inches(0.56), anchor=MSO_ANCHOR.MIDDLE)
+p = para(tf, True); _run(p, "Fail-closed：缺任一层 → 拒绝开工", size=10.5, bold=True, color=ORANGE)
+add_box(s, Inches(6.4), Inches(1.98), Inches(6.3), Inches(5.08), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.07, line_w=1.0)
+tf = txbox(s, Inches(6.62), Inches(2.1), Inches(5.9), Inches(0.3))
+p = para(tf, True); _run(p, "每份 AI.md 主要回答五类问题（aegis-core 实样）", size=11, bold=True, color=GREEN)
+ai = [
+    ("Scope", "governs aegis-core —— 平台内核（纯 Java 契约）"),
+    ("Responsibilities", "core/agent 契约 · core/routing 端口 · 单测"),
+    ("Boundaries", "禁止 Spring/web/数据；只依赖 JDK"),
+    ("Verification", "./mvnw -pl aegis-core test"),
+    ("Navigation", "入口点 · 关联契约 · Owner"),
 ]
-mx = Inches(7.6)
-my = Inches(1.5)
-for idx, (num, label, sub, col) in enumerate(metrics):
-    col_i = idx % 2
-    row_i = idx // 2
-    bx = mx + col_i * Inches(2.65)
-    by = my + row_i * Inches(1.18)
-    add_box(s, bx, by, Inches(2.5), Inches(1.05), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.1, line_w=0.75)
-    tf = txbox(s, bx + Inches(0.18), by + Inches(0.08), Inches(2.15), Inches(0.9))
-    p = para(tf, True); _run(p, num, size=20, bold=True, color=col)
-    p = para(tf); _run(p, label, size=10, bold=True, color=WHITE)
-    p = para(tf); p.space_before = Pt(1); _run(p, sub, size=8.5, color=MUTED)
-# --- Right bottom: 落地构成 ---
-add_box(s, Inches(7.6), Inches(4.0), Inches(5.3), Inches(2.05), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.08, line_w=1.0)
-tf = txbox(s, Inches(7.86), Inches(4.12), Inches(4.8), Inches(1.85))
-p = para(tf, True); _run(p, "落地构成 · 装进仓库本身", size=11.5, bold=True, color=GREEN)
-items = [
-    ("方法论核心", "20+ 篇核心文档 · 控制脚本 · 变更模板"),
-    ("Fitness 门禁", "17 条规则 + 校验脚本 · 质量基线硬约束"),
-    ("OpenSpec 生命周期", "harness-engineering schema · 7 个原生 Skill"),
-    ("Engineering Skill", "backend profile · reference · onboarding"),
-]
-for t, d in items:
-    p = para(tf); p.space_before = Pt(3.5); p.line_spacing = 1.1
-    _run(p, "▸ ", size=9.5, bold=True, color=GREEN)
-    _run(p, t + "：", size=9.5, bold=True, color=WHITE)
-    _run(p, d, size=9.5, color=TEXT)
-# --- Bottom: representative changes ---
-add_box(s, Inches(0.62), Inches(6.2), Inches(12.26), Inches(0.95), fill=PANEL2, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.1, line_w=0.75)
-tf = txbox(s, Inches(0.86), Inches(6.2), Inches(11.8), Inches(0.95), anchor=MSO_ANCHOR.MIDDLE)
-p = para(tf, True); p.line_spacing = 1.12
-_run(p, "代表性变更：", size=10, bold=True, color=CYAN)
-_run(p, "能力驱动 AI 平台  ·  日志分析闭环  ·  RCA 证据分析  ·  飞书流式交互  ·  意图识别路由  ·  技能声明式加载", size=10, color=TEXT)
-footer(s, "Use · 落地成品")
-notes(s, "这页用 aegis 这个真实项目证明 HEK 不是纸上谈兵——是已经在生产级 AI Agent 平台上跑起来的工程系统。数字说话：31 个已归档的 OpenSpec 变更，说明生命周期是跑通的；17 条 Fitness 规则，说明质量门禁是实装的；v0.5.1 Tier 2，说明版本与档位机制在真实升级路径上工作。落地构成讲清装进仓库的四件东西：方法论核心、Fitness 门禁、OpenSpec 生命周期、Engineering Skill。底部代表性变更让听众看到方法论覆盖的需求类型：平台架构、分析闭环、证据、流式交互、意图路由、技能系统——都是非平凡的真实变更。")
+tf = txbox(s, Inches(6.62), Inches(2.5), Inches(5.9), Inches(3.6))
+first = True
+for k, v in ai:
+    p = para(tf, first); first = False
+    p.space_after = Pt(6); p.line_spacing = 1.05
+    _run(p, k, size=10.5, bold=True, color=GREEN, name=FONT_M)
+    _run(p, "  " + v, size=10.5, color=TEXT)
+footer(s, "How · 上下文")
+notes(s, "上下文落地到 aegis：根 ai.json 做机器路由，实际加载根 AI.md、命中的模块 AI.md，以及 docs/fitness 等受保护规则。重点是路径命中，不是把所有文件塞进 prompt。")
 
-# ---------------- 25 evolution ----------------
+# ---------------- 10 delta specs ----------------
 s = new_slide()
-header(s, "回顾与演进", "这套系统现在到哪、边界在哪、怎么衡量它", color=GREEN)
-tf = txbox(s, Inches(0.9), Inches(1.6), Inches(5.9), Inches(0.4))
-p = para(tf, True); _run(p, "版本演进（选）", size=13, bold=True, color=WHITE)
-table(s, Inches(0.9), Inches(2.1), Inches(5.9), [0.9, 2.6],
-      [
-          ["版本", "要点"],
-          ["0.3", "对话式接入 · hek CLI · 版本感知升级"],
-          ["0.4", "需求反思 · 任务图 DAG · 执行证据"],
-          ["0.5", "OpenSpec 为生命周期所有者 · 治理侧车"],
-          ["0.5.1", "6 Agent 隐式路由 · 跨平台 CI"],
-      ], header_fill=PURPLE, row_h=0.42, fsize=10.5, header_fsize=10.5)
-add_box(s, Inches(7.15), Inches(1.6), Inches(5.3), Inches(2.5), fill=AMBER_P, line=ORANGE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.09, line_w=1.0)
-tf = txbox(s, Inches(7.4), Inches(1.75), Inches(4.9), Inches(2.3))
-p = para(tf, True); _run(p, "边界：它不做什么", size=12.5, bold=True, color=ORANGE)
-for i, t in enumerate(["不是放之四海皆准的清单——档位可裁剪", "不替代人工 Review / 审批 / 领域判断", "不假装所有平台支持同一 manifest（可用性以运行时观测为准）", "缓存/命中率测的是“前缀稳定”，不是模型质量", "文档与代码要同步保鲜，否则退化为流程形式"]):
-    p = para(tf); p.space_before = Pt(5); p.line_spacing = 1.12
-    _run(p, f"· {t}", size=11, color=TEXT)
-add_box(s, Inches(7.15), Inches(4.35), Inches(5.3), Inches(2.1), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.09, line_w=1.0)
-tf = txbox(s, Inches(7.4), Inches(4.5), Inches(4.9), Inches(1.9))
-p = para(tf, True); _run(p, "落地收益（应设基线再衡量）", size=12.5, bold=True, color=GREEN)
-for i, t in enumerate(["改对（review 迭代↓ · 返工率↓ · 逃逸缺陷↓）", "改稳（变更失败率↓ · 恢复时间↓）", "看得清（完整证据的变更占比↑ · 审计闭环）", "省成本（稳定前缀 → prompt cache 命中 ↑）"]):
-    p = para(tf); p.space_before = Pt(4.5); p.line_spacing = 1.1
-    _run(p, f"▸ {t}", size=11, color=TEXT)
-tf = txbox(s, Inches(0.9), Inches(4.98), Inches(5.9), Inches(1.25))
-p = para(tf, True); _run(p, "什么项目该上 Harness", size=12.5, bold=True, color=CYAN)
-for i, t in enumerate(["需要稳定架构的团队 / 领域工程", "AI 已实质参与日常变更，想从“生成器”变“伙伴”", "关注合规/可审计，想让证据成为资产"]):
-    p = para(tf); p.space_before = Pt(4.5); p.line_spacing = 1.12
-    _run(p, f"▸ {t}", size=11, color=TEXT)
-tf = txbox(s, Inches(0.9), Inches(6.42), Inches(6.0), Inches(0.5))
-p = para(tf, True); p.line_spacing = 1.15
-_run(p, "低风险局部改动可走 light 档——方法论是默认值，不是强制每处套用。", size=10.5, color=MUTED, italic=True)
+header(s, "HOW · 规格演进 Delta Specs", "权威库只被走完生命周期的变更更新", color=PURPLE)
+tagline(s, "关键规则：权威 specs 永远描述『当前系统』；进行中的想法只活在 change 的增量里，合回才算数。", color=PURPLE)
+add_box(s, Inches(0.62), Inches(1.98), Inches(6.0), Inches(4.55), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.04, line_w=0.75)
+tf = txbox(s, Inches(0.86), Inches(2.1), Inches(5.6), Inches(0.3))
+p = para(tf, True); _run(p, "openspec/specs/ · 权威库（真实节选）", size=10.5, bold=True, color=PURPLE)
+specs = [
+    "feishu-card-streaming / feishu-channel / website-channel",
+    "feishu-streaming-interaction / session-management",
+    "agent-runtime / agent-routing / multi-agent",
+    "capability-planner / capability-metadata / capability-routing",
+    "capability-observability / log-analysis / log-analysis-closed-loop",
+    "cls-log-fetch / model-context-window / log-payload-boundary",
+    "model-provider / model-rate-limit / model-context-window",
+    "skill-declarative-loading / skill-runtime / tool-runtime",
+    "intent-classification / code-location / task-orchestration",
+    "",
+    "每一份都对应一次走完生命周期的变更，没有半截规格。",
+]
+tf = txbox(s, Inches(0.86), Inches(2.5), Inches(5.6), Inches(3.9))
+first = True
+for ln in specs:
+    p = para(tf, first); first = False
+    p.space_after = Pt(2.4); p.line_spacing = 1.0
+    _run(p, ln, size=8.7, color=MUTED if (ln.startswith("每") or ln == "") else TEXT, name=FONT_M)
+add_box(s, Inches(6.9), Inches(1.98), Inches(5.8), Inches(4.55), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.07, line_w=1.0)
+tf = txbox(s, Inches(7.12), Inches(2.1), Inches(5.4), Inches(0.3))
+p = para(tf, True); _run(p, "权威库怎么‘长’出来（change → 合回）", size=11, bold=True, color=GREEN)
+maps = [
+    ("log-analysis-closed-loop", "→ log-analysis-closed-loop / spec.md", "闭环从草案变权威"),
+    ("capability-driven-ai-platform", "→ capability-* ×4 / spec.md", "一次变更长出一组"),
+    ("intent-classification-model", "→ intent-classification / spec.md", "分类规则进入权威规格"),
+    ("website-channel", "→ website-channel / spec.md", "新渠道接入即入权威"),
+]
+tf = txbox(s, Inches(7.12), Inches(2.5), Inches(5.4), Inches(3.9))
+first = True
+for ch, sp, note in maps:
+    p = para(tf, first); first = False
+    p.space_after = Pt(2.5); p.line_spacing = 1.06
+    _run(p, ch, size=9.5, bold=True, color=CYAN, name=FONT_M)
+    p = para(tf); p.line_spacing = 1.0
+    _run(p, "   " + sp, size=9, color=GREEN, name=FONT_M)
+    p = para(tf); p.space_after = Pt(9); p.line_spacing = 1.0
+    _run(p, "   " + note, size=9, color=MUTED)
+footer(s, "How · 规格演进")
+notes(s, "规格演进：左权威库 30+ 份，右四条『变更→权威规格』真实增长线。仓库永不描述进行中想法；Verify→Sync 通过才合回。")
+
+# ---------------- 11 governance ----------------
+s = new_slide()
+header(s, "HOW · 治理与门禁", "放行前要人批，批完才授权写码，完成 = 门禁 + 证据", color=PURPLE)
+tagline(s, "关键规则：design.md 是给人确认的方案包——架构·职责·时序·接口·波次·风险，批前一行实现都不写。", color=PURPLE)
+add_box(s, Inches(0.62), Inches(1.98), Inches(6.0), Inches(2.5), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=0.75)
+tf = txbox(s, Inches(0.86), Inches(2.1), Inches(5.6), Inches(0.3))
+p = para(tf, True); _run(p, "Design 门禁三步", size=11, bold=True, color=PURPLE)
+for t in ["① 结构校验：proposal/spec/design/tasks 齐备、schema 合法",
+          "② 开发者确认：把方案 + 边界 + 波次 + 风险呈现出来请求确认",
+          "③ 审批绑定：外部审批记录 + 契约摘要 → Apply 才被授权"]:
+    p = para(tf); p.space_before = Pt(7); p.line_spacing = 1.15
+    _run(p, t, size=11.5, color=TEXT)
+add_box(s, Inches(0.62), Inches(4.66), Inches(6.0), Inches(2.2), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.07, line_w=1.0)
+tf = txbox(s, Inches(0.86), Inches(4.78), Inches(5.6), Inches(2.0))
+p = para(tf, True); _run(p, "Apply 与证据", size=11, bold=True, color=GREEN)
+for t in ["tasks.md 是唯一任务源，勾选必须对应一次成功执行",
+          "证据写回 execution-evidence.json，全文可审计",
+          "『代码生成了』≠『做完了』——门禁通过才算"]:
+    p = para(tf); p.space_before = Pt(6.5); p.line_spacing = 1.15
+    _run(p, "▸ " + t, size=11, color=TEXT)
+add_box(s, Inches(6.9), Inches(1.98), Inches(5.8), Inches(4.88), fill=AMBER_P, line=ORANGE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=1.0)
+tf = txbox(s, Inches(7.12), Inches(2.1), Inches(5.4), Inches(0.3))
+p = para(tf, True); _run(p, "如果跳过门禁直接写码", size=11, bold=True, color=ORANGE)
+for t in ["能力写哪、边界交给谁——边写边拍脑袋",
+          "Spec/Design 一变，原审批悄悄失效无人知",
+          "『批过=永远有效』：架构漂移没被拦，越走越失控",
+          "多模块并行没有统一契约，各写各的不正交",
+          "没有波次与回滚，出问题只能整体回退"]:
+    p = para(tf); p.space_before = Pt(6); p.line_spacing = 1.12
+    _run(p, "✕ " + t, size=11, color=TEXT)
+footer(s, "How · 治理")
+notes(s, "把『Design 门禁 + Apply 证据』合并成一页，右边用反面对照讲清跳过门禁的代价。aegis 的 capability 平台里就是这么走的。")
+
+# ---------------- 12 ramd ----------------
+s = new_slide()
+header(s, "HOW · 先想清再写 RAM/D", "AI 写码最大的风险：代码能跑，但悄悄打破系统边界", color=PURPLE)
+tagline(s, "关键规则：RAM/D 就是四步——Read 读懂边界，Analyze 想清依赖，Model/Decompose 先出契约，再放行写实现。", color=PURPLE)
+num_steps_v(s, Inches(0.9), Inches(2.0), Inches(6.2), [
+    ("Read 读", "读上下文/边界/依赖方向，先知道站在哪"),
+    ("Analyze 析", "把需求拆成职责，想清数据与调用关系"),
+    ("Model 建模（后端）", "产出接口契约/抽象，审批后才放行实现"),
+    ("Decompose 分解（前端）", "产出类型与组件结构，再放行实现"),
+], box_h=0.72, gap=0.14, color=CYAN, tsize=13, dsize=11)
+add_box(s, Inches(7.35), Inches(2.0), Inches(5.35), Inches(4.6), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=0.75)
+tf = txbox(s, Inches(7.6), Inches(2.15), Inches(4.9), Inches(0.3))
+p = para(tf, True); _run(p, "对照：直接生成 vs RAM/D 先想清", size=11.5, bold=True, color=CYAN)
+for t, ok in [
+    ("直接生成：边写边拍脑袋，边界值何时算", True),
+    ("先 RAM/D：契约先行，风险在写码前就暴露", False),
+]:
+    p = para(tf); p.space_before = Pt(9); p.line_spacing = 1.2
+    _run(p, ("✔ " if not ok else "✕ ") + t, size=12, bold=True, color=(GREEN if not ok else RED))
+add_box(s, Inches(7.35), Inches(6.4), Inches(5.35), Inches(0.66), fill=PANEL2, line=CYAN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.14, line_w=1.0)
+tf = txbox(s, Inches(7.58), Inches(6.4), Inches(5.0), Inches(0.66), anchor=MSO_ANCHOR.MIDDLE)
+p = para(tf, True); p.line_spacing = 1.05
+_run(p, "RAM/D 可视为每次动手前 2 分钟的心智检查，无需扩展成流程文档。", size=10, bold=True, color=CYAN)
+footer(s, "How · RAM/D")
+notes(s, "RAM/D 精简成一页：四步 + 反面对照。强调它就是个心智检查，不用上纲上线。不再展开 LLM 抽象/后端前端两个 Profile。可为现场演示简单走一个控制器例子。")
+
+# ---------------- 13 grow ----------------
+s = new_slide()
+header(s, "GROW · 反哺成门禁与经验", "错误不是一次性的，要变成下一次的规则", color=PINK)
+tagline(s, "关键规则：反哺是一条闭环——Self-Refine 先自查，经验记忆累积『反复失败』，Fitness 把教训固化成硬门禁。", color=PINK)
+add_box(s, Inches(0.62), Inches(1.98), Inches(6.0), Inches(2.2), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=0.75)
+tf = txbox(s, Inches(0.86), Inches(2.1), Inches(5.6), Inches(0.3))
+p = para(tf, True); _run(p, "① Self-Refine：有界的内层自检", size=11, bold=True, color=PINK)
+for t in ["生成 → 模型批判 → 优化 → 再检查", "环心有界闭环（≤ max_iterations）", "每轮对照已批需求与风险标准，记录具体修改"]:
+    p = para(tf); p.space_before = Pt(5.5); p.line_spacing = 1.12
+    _run(p, "▸ " + t, size=10.6, color=TEXT)
+add_box(s, Inches(0.62), Inches(4.32), Inches(6.0), Inches(2.55), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=0.75)
+tf = txbox(s, Inches(0.86), Inches(4.44), Inches(5.6), Inches(0.3))
+p = para(tf, True); _run(p, "② 经验记忆 · ③ Fitness 门禁", size=11, bold=True, color=PINK)
+for t in ["经验记忆：把跨变更『反复失败』沉淀为可检索的预防",
+          "Fitness：把『什么时候算做完』编码成可执行规则",
+          "验证通过的经验 → 升级成 Fitness 硬门禁（docs/fitness/）"]:
+    p = para(tf); p.space_before = Pt(5.5); p.line_spacing = 1.12
+    _run(p, "▸ " + t, size=10.6, color=TEXT)
+add_box(s, Inches(6.9), Inches(1.98), Inches(5.8), Inches(4.89), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.07, line_w=1.0)
+tf = txbox(s, Inches(7.12), Inches(2.1), Inches(5.4), Inches(0.3))
+p = para(tf, True); _run(p, "aegis 真实的 失败→修复→预防", size=11, bold=True, color=GREEN)
+lines = [
+    ("token 超预算 / 上下文超窗", "model-token-budget-gate + model-context-window", "限流排队或裁剪，保留降级路径"),
+    ("日志负载太大拖垮分析", "log-payload-boundary-capping", "按规则降采样并保留关键事件"),
+    ("代码查询不问人、误读", "code-query-human-confirmation", "Read 阶段人工确认成护栏"),
+]
+tf = txbox(s, Inches(7.12), Inches(2.5), Inches(5.4), Inches(4.3))
+first = True
+for fail, fix, prev in lines:
+    p = para(tf, first); first = False
+    p.space_after = Pt(2.5); p.line_spacing = 1.05
+    _run(p, "失败事件 → ", size=10, bold=True, color=ORANGE); _run(p, fail, size=10, color=TEXT)
+    p = para(tf); p.line_spacing = 1.05
+    _run(p, "修复变更 → ", size=10, bold=True, color=PINK); _run(p, fix, size=10, color=TEXT, name=FONT_M)
+    p = para(tf); p.space_after = Pt(10); p.line_spacing = 1.05
+    _run(p, "升级预防 → ", size=10, bold=True, color=GREEN); _run(p, prev, size=10, color=TEXT)
+footer(s, "Grow·反哺")
+notes(s, "把 Self-Refine、经验记忆、Fitness 与运行时治理区分开：失败先形成 change 或 lesson，验证后才升级成规则；token/context/payload 主要是 aegis 的运行时规格。")
+
+# ---------------- 14 use setup ----------------
+s = new_slide()
+header(s, "USE · 怎么接入", "四步把 HEK 装进项目，先跑通再加深", color=ORANGE)
+tagline(s, "关键规则：接入的本质，是把上下文路由、变更流程和验收标准写成仓库契约。", color=ORANGE)
+steps = [
+    ("引入", "在目标仓库放好自带的地图与规则（CLAUDE.md / agent-policy.yaml / AI.md）"),
+    ("初始化", "Agent 驱动地生成框架骨架：OpenSpec 区 + 治理区 + 上下文区"),
+    ("定档", "选 Tier / 档位：低风险局部改动走 light，关键路径走完整门禁"),
+    ("验收", "跑一次代表性变更，确认产物、门禁与证据链能闭合"),
+]
+num_steps_v(s, Inches(0.9), Inches(2.0), Inches(6.4), steps, box_h=0.8, gap=0.16, color=ORANGE, tsize=13, dsize=11)
+add_box(s, Inches(7.6), Inches(2.0), Inches(5.1), Inches(4.7), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.07, line_w=0.75)
+tf = txbox(s, Inches(7.85), Inches(2.15), Inches(4.7), Inches(0.3))
+p = para(tf, True); _run(p, "框架生效后可观察到", size=11.5, bold=True, color=ORANGE)
+for t in ["每次改代码前，AI 先读 AI.md / 边界，不再瞎猜",
+          "发起变更，自动产出 proposal·spec·design·tasks",
+          "放行前有人点确认，成功后留证据",
+          "多余的深度可裁减：方法论是默认值，不是强制清单"]:
+    p = para(tf); p.space_before = Pt(9); p.line_spacing = 1.2
+    _run(p, "▸ " + t, size=11.5, color=TEXT)
+add_box(s, Inches(7.6), Inches(6.4), Inches(5.1), Inches(0.66), fill=AMBER_P, line=ORANGE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.14, line_w=1.0)
+tf = txbox(s, Inches(7.84), Inches(6.4), Inches(4.7), Inches(0.66), anchor=MSO_ANCHOR.MIDDLE)
+p = para(tf, True); p.line_spacing = 1.05
+_run(p, "先跑通，再往深里加门禁——别一上来就上满配置。", size=10.5, bold=True, color=ORANGE)
+footer(s, "Use·接入")
+notes(s, "接入讲得实操：四步（引入/初始化/定档/验收）。强调先跑通再加门禁，档位可裁剪。")
+
+# ---------------- 15 use walkthrough ----------------
+s = new_slide()
+header(s, "USE · 一次改动怎么走", "一次任务沿这条线执行，过程不易失序", color=ORANGE)
+tagline(s, "核心判断：大多数改动沿同一条脊柱执行——读→立规格→批→做→验→存。", color=ORANGE)
+wf = [
+    ("① 接任务", "Read + RAM/D：读边界，想清方案再动", CYAN),
+    ("② 开 change", "openspec/changes/<change-id>/ 起草 proposal + spec", GREEN),
+    ("③ 等人批", "design 方案找人确认，批过才被授权写码", PURPLE),
+    ("④ 按任务做", "tasks.md 逐条勾，每条成功执行留证据", PINK),
+    ("⑤ 验证", "Fitness 门禁 + 对照规格，过了才算完成", ORANGE),
+    ("⑥ 存进系统", "delta 合回权威库，变更归档反哺", RED),
+]
+y = Inches(2.0)
+xcol = Inches(0.9)
+for t, d, c in wf:
+    add_box(s, xcol, y, Inches(0.12), Inches(0.6), fill=c)
+    tf = txbox(s, xcol + Inches(0.32), y, Inches(3.1), Inches(0.6), anchor=MSO_ANCHOR.MIDDLE)
+    p = para(tf, True); _run(p, t, size=13, bold=True, color=c)
+    tf = txbox(s, Inches(4.5), y, Inches(8.0), Inches(0.6), anchor=MSO_ANCHOR.MIDDLE)
+    p = para(tf, True); _run(p, d, size=12, color=TEXT)
+    y += Inches(0.66) + Inches(0.06)
+add_box(s, Inches(0.62), Inches(6.3), Inches(12.1), Inches(0.74), fill=PANEL2, line=CYAN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.12, line_w=1.0)
+tf = txbox(s, Inches(0.9), Inches(6.3), Inches(11.6), Inches(0.74), anchor=MSO_ANCHOR.MIDDLE)
+p = para(tf, True); p.line_spacing = 1.1
+_run(p, "变更骨架：", size=12, bold=True, color=CYAN)
+_run(p, "读 → 立规格 → 批 → 做 → 验 → 存。", size=13, bold=True, color=WHITE)
+_run(p, "  需要人工判断的是 ①②③⑤，④⑥ 由 Agent 按规则执行。", size=11.5, color=MUTED)
+footer(s, "Use·走查")
+notes(s, "这是全场最实用的一页：把一次改动缩成六步脊柱，并点明哪些动脑、哪些可交给 Agent。可现场拿一个小需求从头走一遍。")
+
+# ---------------- 16 use cheat ----------------
+s = new_slide()
+header(s, "USE · 需要时去哪儿", "一份速查：按任务类型定位文件", color=ORANGE)
+cheat = [
+    ("给 AI 带上下文 / 边界", "CLAUDE.md · AGENTS.md · AI.md · agent-policy.yaml", CYAN),
+    ("发起一次变更", "openspec / changes / <change-id> /", GREEN),
+    ("看方案 / 审设计", "← / design.md", PURPLE),
+    ("看进度 / 勾任务", "← / tasks.md（唯一任务源）", PINK),
+    ("设定完成的标准", "docs / fitness / **", ORANGE),
+    ("沉淀经验 / 反哺", "变更归档 Archive · docs / methodology / lessons", RED),
+]
+y = Inches(1.9)
+for what, where, c in cheat:
+    add_box(s, Inches(0.9), y, Inches(0.12), Inches(0.62), fill=c)
+    tf = txbox(s, Inches(1.25), y, Inches(5.0), Inches(0.62), anchor=MSO_ANCHOR.MIDDLE)
+    p = para(tf, True); _run(p, what, size=13, bold=True, color=WHITE)
+    tf = txbox(s, Inches(6.4), y, Inches(5.7), Inches(0.62), anchor=MSO_ANCHOR.MIDDLE)
+    p = para(tf, True); p.alignment = PP_ALIGN.RIGHT
+    _run(p, where, size=11.5, color=c, name=FONT_M)
+    y += Inches(0.62) + Inches(0.10)
+add_box(s, Inches(0.62), Inches(6.55), Inches(12.1), Inches(0.5), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.14, line_w=1.0)
+tf = txbox(s, Inches(0.86), Inches(6.55), Inches(11.7), Inches(0.5), anchor=MSO_ANCHOR.MIDDLE)
+p = para(tf, True)
+_run(p, "通用规则：路径即真相——看到哪一层，就只加载那一层的规则，别全塞上下文。", size=11.5, bold=True, color=GREEN)
+footer(s, "Use·速查")
+notes(s, "把『任务类型→文件路径』做成速查表，全部是路径级约定，无终端命令，呼应『路径即真相』。")
+
+# ---------------- 17 use aegis ----------------
+s = new_slide()
+header(s, "USE · 落地成品：aegis", "照着这套结构接入：入口、运行时、适配器各守边界", color=ORANGE)
+add_box(s, Inches(0.62), Inches(1.6), Inches(6.1), Inches(4.1), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.05, line_w=0.75)
+tf = txbox(s, Inches(0.86), Inches(1.72), Inches(5.7), Inches(0.3))
+p = para(tf, True); _run(p, "aegis 的接入地图", size=11.5, bold=True, color=ORANGE)
+for t in ["aegis-application：唯一可运行入口 / 组合根", "aegis-channel：飞书等渠道，只依赖 core 契约",
+          "aegis-agent：Supervisor、log-agent 与领域编排", "aegis-runtime：注册表、规划、执行、guardrail、事件",
+          "aegis-core：纯 Java Agent / Tool / Skill / Gateway 契约"]:
+    p = para(tf); p.space_before = Pt(6); p.line_spacing = 1.15
+    _run(p, "▸ " + t, size=11.5, color=TEXT)
+add_box(s, Inches(0.62), Inches(5.9), Inches(6.1), Inches(1.0), fill=AMBER_P, line=ORANGE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.1, line_w=1.0)
+tf = txbox(s, Inches(0.86), Inches(5.98), Inches(5.7), Inches(0.85))
+p = para(tf, True); _run(p, "接入时先确认", size=11, bold=True, color=ORANGE)
+p = para(tf); p.space_before = Pt(3); _run(p, "根 ai.json / AI.md 路由真实存在；模块边界与本地验证命令可执行。", size=10.5, color=MUTED)
+add_box(s, Inches(6.9), Inches(1.6), Inches(5.8), Inches(4.1), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.05, line_w=1.0)
+tf = txbox(s, Inches(7.12), Inches(1.72), Inches(5.4), Inches(0.3))
+p = para(tf, True); _run(p, "照着做一次代表性变更", size=11.5, bold=True, color=GREEN)
+for t in ["1. 从 aegis/ai.json 解析目标模块上下文", "2. 在 openspec/changes/<change-id>/ 写 proposal / spec / design / tasks",
+          "3. 设计确认后 Apply；每个任务记录 execution-evidence", "4. Verify / Fitness 通过后 Sync，再 Archive",
+          "5. 失败形成 lesson candidate；重复问题再升级为规则"]:
+    p = para(tf); p.space_before = Pt(6); p.line_spacing = 1.15
+    _run(p, "▸ " + t, size=11.5, color=TEXT)
+footer(s, "Use·aegis")
+notes(s, "这页不再讲抽象收益，直接给 aegis 的模块地图和一次变更的操作顺序。")
+
+# ---------------- 18-21 real cases ----------------
+s = new_slide()
+header(s, "USE · 真实案例 01", "网关只转发，决策留在 underwriter", color=CYAN, title_size=24)
+tagline(s, "身份核验接入的关键不是多写一层代码，而是先划清：谁负责决策，谁只负责把契约接进来。", color=CYAN)
+add_box(s, Inches(0.62), Inches(2.02), Inches(5.95), Inches(4.72), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=0.75)
+tf = txbox(s, Inches(0.9), Inches(2.18), Inches(5.4), Inches(0.3))
+p = para(tf, True); _run(p, "发生了什么", size=13, bold=True, color=CYAN)
+for t in ["APP 需要接入用信活体核验，但 appserver 不承载风控决策。", "网关若读取路由配置、做活体判断，职责就会越界。"]:
+    p = para(tf); p.space_before = Pt(10); p.line_spacing = 1.15
+    _run(p, "▸ " + t, size=12.5, color=TEXT)
+add_box(s, Inches(0.9), Inches(4.2), Inches(5.35), Inches(1.85), fill=CYAN_P, line=CYAN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.05, line_w=1.0)
+tf = txbox(s, Inches(1.1), Inches(4.38), Inches(4.95), Inches(1.48), anchor=MSO_ANCHOR.MIDDLE)
+p = para(tf, True); p.alignment = PP_ALIGN.CENTER
+_run(p, "APP  →  appserver  →  LoanVerifyRouteApi  →  underwriter", size=13, bold=True, color=WHITE)
+p = para(tf); p.alignment = PP_ALIGN.CENTER; p.space_before = Pt(10)
+_run(p, "网关：校验 / 转换 / 包装    ·    后端：路由 / 活体规则 / 结果验证", size=11.5, color=CYAN)
+add_box(s, Inches(6.9), Inches(2.02), Inches(5.8), Inches(4.72), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=1.0)
+tf = txbox(s, Inches(7.18), Inches(2.18), Inches(5.25), Inches(0.3))
+p = para(tf, True); _run(p, "项目怎么做  ·  可复用做法", size=13, bold=True, color=GREEN)
+for t in ["新增 Feign Client + Request/Response DTO，Controller 保持薄层。", "underwriter 独占路由策略、活体规则下发与结果验证。", "成功、失败、Feign 异常路径都做验证；verifyId 可选透传，保持兼容。", "复用原则：新增接口先写清『谁决策、谁转发、谁留证据』。"]:
+    p = para(tf); p.space_before = Pt(10); p.line_spacing = 1.15
+    _run(p, "▸ " + t, size=12, color=TEXT)
+tf = txbox(s, Inches(0.86), Inches(6.85), Inches(11.8), Inches(0.18))
+p = para(tf, True); _run(p, "来源：xiaohua_vn · underwriter/add-loan-liveness-verify + appserver/integrate-underwriter-identity-verification", size=8.5, color=DIM, name=FONT_M)
+footer(s, "Use·案例")
+notes(s, "真实案例：xiaohua_vn 的身份核验跨服务接入。讲清网关薄、后端决策、DTO 契约和错误可追踪，避免展开活体算法细节。")
+
+# ---------------- 19 real case: sms boundary ----------------
+s = new_slide()
+header(s, "USE · 真实案例 02", "先拆生产者与消费者，模块边界自然清楚", color=GREEN, title_size=24)
+tagline(s, "短信指标迁移没有改业务口径，先把『生成聚合事实』和『消费决策输入』拆开，复用就顺了。", color=GREEN)
+add_box(s, Inches(0.62), Inches(2.02), Inches(6.05), Inches(4.72), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=0.75)
+tf = txbox(s, Inches(0.9), Inches(2.18), Inches(5.5), Inches(0.3))
+p = para(tf, True); _run(p, "发生了什么", size=13, bold=True, color=GREEN)
+for t in ["原来 magic 同时采集短信、解释配置、计算指标、消费规则，职责过重。", "其他模块想复用短信指标，只能绕过 aggr，边界越来越模糊。"]:
+    p = para(tf); p.space_before = Pt(10); p.line_spacing = 1.15
+    _run(p, "▸ " + t, size=12.5, color=TEXT)
+add_box(s, Inches(0.9), Inches(4.28), Inches(2.35), Inches(1.7), fill=AMBER_P, line=ORANGE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=1.0)
+tf = txbox(s, Inches(1.08), Inches(4.47), Inches(2.0), Inches(1.25), anchor=MSO_ANCHOR.MIDDLE)
+p = para(tf, True); p.alignment = PP_ALIGN.CENTER; _run(p, "原来", size=11, bold=True, color=ORANGE)
+p = para(tf); p.alignment = PP_ALIGN.CENTER; _run(p, "magic 既生产又消费", size=12, bold=True, color=WHITE)
+add_box(s, Inches(3.75), Inches(4.28), Inches(2.35), Inches(1.7), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=1.0)
+tf = txbox(s, Inches(3.93), Inches(4.47), Inches(2.0), Inches(1.25), anchor=MSO_ANCHOR.MIDDLE)
+p = para(tf, True); p.alignment = PP_ALIGN.CENTER; _run(p, "现在", size=11, bold=True, color=GREEN)
+p = para(tf); p.alignment = PP_ALIGN.CENTER; _run(p, "aggr 生产画像  →  magic 消费", size=11.5, bold=True, color=WHITE)
+add_box(s, Inches(6.9), Inches(2.02), Inches(5.8), Inches(4.72), fill=CYAN_P, line=CYAN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=1.0)
+tf = txbox(s, Inches(7.18), Inches(2.18), Inches(5.25), Inches(0.3))
+p = para(tf, True); _run(p, "项目怎么做  ·  可复用做法", size=13, bold=True, color=CYAN)
+for t in ["aggr 承接采集 → 计算 → 结果装配，对外暴露明确 DTO。", "magic 改成 Feign 消费方，保留薄适配入口，避免一次性大拆。", "82 个指标业务口径保持不变，Map<String,Object> 换成强类型契约。", "复用原则：先问『谁生产事实，谁消费事实』，再移动代码。"]:
+    p = para(tf); p.space_before = Pt(10); p.line_spacing = 1.15
+    _run(p, "▸ " + t, size=12, color=TEXT)
+tf = txbox(s, Inches(0.86), Inches(6.85), Inches(11.8), Inches(0.18))
+p = para(tf, True); _run(p, "来源：xiaohua_vn · openspec/changes/migrate-sms-indicator-calculation-to-aggr/", size=8.5, color=DIM, name=FONT_M)
+footer(s, "Use·案例")
+notes(s, "真实案例：xiaohua_vn 短信指标从 magic 迁移到 aggr。只讲职责移动、强类型契约和兼容性，不展开 82 个指标的计算细节。")
+
+# ---------------- 20 real case: stable routing ----------------
+s = new_slide()
+header(s, "USE · 真实案例 03", "把随机分流改成同一用户稳定命中", color=ORANGE, title_size=24)
+tagline(s, "重试场景最怕『第一次和第二次不是同一家』；把路由输入从 choose() 变成 choose(cid)，问题立刻可控。", color=ORANGE)
+add_box(s, Inches(0.62), Inches(2.02), Inches(5.95), Inches(4.72), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=0.75)
+tf = txbox(s, Inches(0.9), Inches(2.18), Inches(5.4), Inches(0.3))
+p = para(tf, True); _run(p, "发生了什么", size=13, bold=True, color=ORANGE)
+for t in ["原来 LivenessProviderRouter.choose() 随机分流，同一用户重试可能切换服务商。", "首次拿到的 livenessId 与后续服务商不匹配，排查困难，用户体验也不稳定。"]:
+    p = para(tf); p.space_before = Pt(10); p.line_spacing = 1.15
+    _run(p, "▸ " + t, size=12.5, color=TEXT)
+add_box(s, Inches(0.9), Inches(4.3), Inches(2.3), Inches(1.65), fill=AMBER_P, line=ORANGE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=1.0)
+tf = txbox(s, Inches(1.1), Inches(4.5), Inches(1.9), Inches(1.2), anchor=MSO_ANCHOR.MIDDLE)
+p = para(tf, True); p.alignment = PP_ALIGN.CENTER; _run(p, "随机", size=15, bold=True, color=ORANGE)
+p = para(tf); p.alignment = PP_ALIGN.CENTER; _run(p, "重试可能换服务商", size=11.5, color=TEXT)
+add_box(s, Inches(3.7), Inches(4.3), Inches(2.4), Inches(1.65), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=1.0)
+tf = txbox(s, Inches(3.9), Inches(4.5), Inches(2.0), Inches(1.2), anchor=MSO_ANCHOR.MIDDLE)
+p = para(tf, True); p.alignment = PP_ALIGN.CENTER; _run(p, "按 cid", size=15, bold=True, color=GREEN)
+p = para(tf); p.alignment = PP_ALIGN.CENTER; _run(p, "同一用户稳定命中", size=11.5, color=TEXT)
+add_box(s, Inches(6.9), Inches(2.02), Inches(5.8), Inches(4.72), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=1.0)
+tf = txbox(s, Inches(7.18), Inches(2.18), Inches(5.25), Inches(0.3))
+p = para(tf, True); _run(p, "项目怎么做  ·  可复用做法", size=13, bold=True, color=GREEN)
+for t in ["使用 cid 末两位做确定性路由；Apollo 权重语义保持不变。", "cid 为 null、空串、非数字时走降级策略，不让异常输入阻断主链路。", "用 00 / 49 / 50 / 99 等边界值验证，回滚就是恢复随机分流。", "复用原则：任何灰度或路由先问『同一用户是否必须稳定命中』。"]:
+    p = para(tf); p.space_before = Pt(10); p.line_spacing = 1.15
+    _run(p, "▸ " + t, size=12, color=TEXT)
+tf = txbox(s, Inches(0.86), Inches(6.85), Inches(11.8), Inches(0.18))
+p = para(tf, True); _run(p, "来源：xiaohua_vn · openspec/changes/liveness-provider-cid-weighted-routing/", size=8.5, color=DIM, name=FONT_M)
+footer(s, "Use·案例")
+notes(s, "真实案例：xiaohua_vn 活体服务商确定性分流。用随机→按 cid 稳定命中的对比讲清问题、验证和回滚。")
+
+# ---------------- 21 real case: aegis guardrails ----------------
+s = new_slide()
+header(s, "USE · 真实案例 04", "线上失败不是靠提醒，而是变成运行时边界", color=PINK, title_size=24)
+tagline(s, "aegis 的做法很直接：把超窗、误查代码这类风险，收口到运行时接缝和工具声明里。", color=PINK)
+add_box(s, Inches(0.62), Inches(2.02), Inches(6.0), Inches(4.72), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=0.75)
+tf = txbox(s, Inches(0.9), Inches(2.18), Inches(5.45), Inches(0.3))
+p = para(tf, True); _run(p, "发生了什么", size=13, bold=True, color=PINK)
+for t in ["LKE 曾出现 input length too long；自由环还能自主查询私有 GitLab 代码。", "只写提示词提醒不够：一个是运行时边界，一个是能力暴露边界。"]:
+    p = para(tf); p.space_before = Pt(10); p.line_spacing = 1.15
+    _run(p, "▸ " + t, size=12.5, color=TEXT)
+add_box(s, Inches(0.9), Inches(4.32), Inches(5.35), Inches(1.72), fill=PURPLE_P, line=PURPLE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=1.0)
+tf = txbox(s, Inches(1.12), Inches(4.52), Inches(4.9), Inches(1.3), anchor=MSO_ANCHOR.MIDDLE)
+p = para(tf, True); p.alignment = PP_ALIGN.CENTER
+_run(p, "失败 / 风险  →  change  →  可执行护栏", size=15, bold=True, color=WHITE)
+p = para(tf); p.alignment = PP_ALIGN.CENTER; p.space_before = Pt(10)
+_run(p, "问题变成仓库里的默认行为", size=11.5, color=PINK)
+add_box(s, Inches(6.9), Inches(2.02), Inches(5.8), Inches(4.72), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06, line_w=1.0)
+tf = txbox(s, Inches(7.18), Inches(2.18), Inches(5.25), Inches(0.3))
+p = para(tf, True); _run(p, "项目怎么做  ·  可复用做法", size=13, bold=True, color=GREEN)
+for t in ["context-window：ModelClient 缝估算预算，先丢最老 history，再收窄 userText；工具结果封顶 8,000 字符。", "code-query-human-confirmation：从自由环移除 code.lookup / code.search，只保留用户显式触发的 code.locate。", "默认关闭或受控启用，保留 fail-open / 回滚路径，避免护栏变成新故障。", "复用原则：高风险能力优先结构性收口，线上失败优先落成可配置边界。"]:
+    p = para(tf); p.space_before = Pt(9); p.line_spacing = 1.1
+    _run(p, "▸ " + t, size=11.3, color=TEXT)
+tf = txbox(s, Inches(0.86), Inches(6.85), Inches(11.8), Inches(0.18))
+p = para(tf, True); _run(p, "来源：xhproject/aegis · archive/2026-09-09-log-context-window-cap/ + archive/2026-09-09-code-query-human-confirmation/", size=8.5, color=DIM, name=FONT_M)
+footer(s, "Use·案例")
+notes(s, "真实案例：aegis 的上下文窗口治理与代码查询人工确认。强调结构化能力收口和运行时预算，不展开 Spring AI 内部实现。")
+
+# ---------------- 22-24 varhub-risk cases ----------------
+real_case_slide(
+    "USE · varhub-risk 案例 05",
+    "把 V3 SQL 变成 240+ 个可复用还款变量",
+    "核心判断：大规模变量建设先守住语义，再扩展窗口、维度和消费场景。",
+    CYAN,
+    ["风控需要还款行为画像；V3 Hive SQL 已有口径，线上取数落到 MySQL 实时表。",
+     "变量覆盖历史、近 N 期 / 月、生命周期、逾期时序、订单结构与趋势交叉。"],
+    ("Stage 0 预处理  →  Stage 1 标签  →  多窗口聚合", "实时计算 · 变量包 LOAA_PRE / LOAB_PRE"),
+    ["用 V3 SQL 作为语义基线，Java 侧拆成预处理、标签、聚合和结果 DTO。",
+     "按 3/6/12/24/36 期、3/6/12/24/36/60 月等窗口复用同一套中间模型。",
+     "修复 `as_of_date > current_repay_date` 过滤后，近 N 期与连续逾期结果不再纳入未来期次。",
+     "可复用原则：先固定口径，再扩展变量数量；聚合维度必须可回溯到来源规则。"],
+    "varhub-risk · openspec/changes/repay-derivative-variables/ + align-v3-sql-code-logic/",
+    "varhub-risk 还款衍生变量案例：重点讲 SQL 语义基线、分阶段计算、中间模型与多窗口复用，不展开 240+ 个变量清单。"
+)
+
+real_case_slide(
+    "USE · varhub-risk 案例 06",
+    "跨库学历特征：静态数据进入变量中心",
+    "核心判断：跨库特征的难点不在查询，而在数据所有权、身份关联和变量契约。",
+    GREEN,
+    ["提现审批和跑批需要学历画像，但变量中心缺少学信网离线回溯特征。",
+     "数据由 DBA 落库，服务侧负责消费 4 张静态表并加工 9 个变量。"],
+    ("学历 / 学籍  +  软科排名  +  985/211 标签", "identity_no_md5 关联  →  9 个类型化变量"),
+    ["新增 EducationFeatureService，查询与加工集中在变量服务，不泄漏静态表细节。",
+     "整数 / 字符串变量使用明确后缀和 DTO，注册后绑定 LOAA_PRE / LOAB_PRE。",
+     "DBA 负责表结构与落库，服务负责读取、转换和变量口径，边界清晰。",
+     "可复用原则：先定义数据 owner、关联键、空值语义，再定义变量编码。"],
+    "varhub-risk · openspec/changes/education-features/",
+    "varhub-risk 学历特征案例：重点讲跨数据源边界、身份关联与变量注册，不展开 4 张表的字段明细。"
+)
+
+real_case_slide(
+    "USE · varhub-risk 案例 07",
+    "订单标签直连三域，保持决策变量单一入口",
+    "核心判断：跨域取数先固定路由语义，再把上游差异收敛成一个稳定变量。",
+    ORANGE,
+    ["贷中决策需要识别订单购买的是优享卡、补 16% 保险，还是未购买。",
+     "事实分散在 order、rubick、datainquiry 三个域，变量中心不复制上游业务逻辑。"],
+    ("order 路由  →  保险查询 / 优享卡查询", "汇聚为 ORDER_PCH_CARD_TYPE_S：0 / 1 / 2"),
+    ["通过 needRedirect 固定保险 hold 路径，再调用 rubick 保险查询与 datainquiry 卡查询。",
+     "新增变量，不修改既有变量和接口；Dubbo consumer 版本 / group 与上游契约对齐。",
+     "已知口径误差显式记录：退保回退、划扣二态等数据缺口不伪装成精确结果。",
+     "可复用原则：复杂上游在服务边界收敛为单值枚举，未知契约先标注再接入。"],
+    "varhub-risk · openspec/changes/add-order-pch-card-type-var/",
+    "varhub-risk 订单卡类型案例：重点讲跨域 Dubbo 依赖、路由语义、单值变量契约和已知口径误差，不展开上游实现。"
+)
+
+# ---------------- 25 review ----------------
+s = new_slide()
+header(s, "回顾", "这套系统现在到哪、怎么衡量、什么该上", color=GREEN)
+add_box(s, Inches(0.62), Inches(1.6), Inches(6.0), Inches(2.86), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.08, line_w=0.75)
+tf = txbox(s, Inches(0.86), Inches(1.72), Inches(5.6), Inches(2.6))
+p = para(tf, True); _run(p, "演进到哪", size=12.5, bold=True, color=CYAN)
+for t in ["从纯方法论文档 → Agent 驱动接入", "OpenSpec 为 owner + Delta Specs 演进",
+          "Self-Refine 有界闭环 + 经验记忆 + Fitness",
+          "需求反思 / RAM/D 先想清再写（0.4）",
+          "多 Agent 与跨平台 CI（0.5）"]:
+    p = para(tf); p.space_before = Pt(6); p.line_spacing = 1.15
+    _run(p, "▸ " + t, size=11.5, color=TEXT)
+add_box(s, Inches(0.62), Inches(4.6), Inches(6.0), Inches(2.4), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.08, line_w=0.75)
+tf = txbox(s, Inches(0.86), Inches(4.72), Inches(5.6), Inches(2.2))
+p = para(tf, True); _run(p, "怎么衡量有效", size=12.5, bold=True, color=GREEN)
+for t in ["改对：review 迭代↓ · 返工率↓ · 逃逸缺陷↓", "改稳：变更失败率↓ · 恢复时间↓",
+          "看得清：带证据的变更占比↑ · 审计闭环",
+          "省成本：稳定前缀 → prompt cache 命中↑"]:
+    p = para(tf); p.space_before = Pt(6); p.line_spacing = 1.15
+    _run(p, "▸ " + t, size=11.5, color=TEXT)
+add_box(s, Inches(6.9), Inches(1.6), Inches(5.8), Inches(5.4), fill=AMBER_P, line=ORANGE, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.08, line_w=1.0)
+tf = txbox(s, Inches(7.12), Inches(1.75), Inches(5.4), Inches(0.3))
+p = para(tf, True); _run(p, "什么项目该上 HEK", size=12.5, bold=True, color=ORANGE)
+for t in ["需要稳定架构的团队 / 领域工程", "AI 已实质参与日常变更，想从生成器变伙伴",
+          "关注合规 / 可审计，想证据成为资产",
+          "低风险局部改动可走 light 档——方法论是默认值，不是强制每处套用"]:
+    p = para(tf); p.space_before = Pt(7); p.line_spacing = 1.18
+    _run(p, "▸ " + t, size=11.5, color=TEXT)
 footer(s, "回顾")
-notes(s, "演进线索：从“方法论文档”到“Agent 驱动接入”再到“OpenSpec 为 owner + 治理证据”。0.4 把需求反思与任务 DAG 加上，0.5 完成收敛。衡量务必先有 baseline 与样本量，再谈收益。")
+notes(s, "收尾前给判断标准：何时有价值、怎么衡量、什么项目适合。强调先立 baseline 再谈收益。")
 
 # ---------------- 26 closing ----------------
 s = new_slide()
-top = add_box(s, 0, 0, prs.slide_width, Inches(0.16), fill=GREEN)
-bands(s, [(-1.6, 5.3, 17.6, 0.7, CYAN, 5, -12), (-1.6, 6.15, 17.6, 0.35, PURPLE, 5, -12)])
+top = add_box(s, Inches(0.02), Inches(0.02), prs.slide_width - Inches(0.04), Inches(0.12), fill=GREEN)
 bolt(s, int(Inches(11.15)), int(Inches(0.75)), int(Inches(0.95)), int(Inches(2.4)), color=GREEN, alpha=70, glow=False)
 tf = txbox(s, Inches(0.9), Inches(0.75), Inches(9.6), Inches(0.5))
-p = para(tf, True); _run(p, "写在最后 · ONE MORE THING", size=13, bold=True, color=GREEN)
-tf = txbox(s, Inches(0.9), Inches(1.25), Inches(9.6), Inches(1.7))
+p = para(tf, True); _run(p, "写在最后 · TAKEAWAY", size=13, bold=True, color=GREEN)
+tf = txbox(s, Inches(0.9), Inches(1.3), Inches(9.6), Inches(1.55))
 p = para(tf, True)
-_run(p, "把“人脑里的规则”，变成", size=30, bold=True, color=WHITE)
-_run(p, "“仓库里的规则”", size=30, bold=True, color=CYAN)
-_run(p, "。", size=30, bold=True, color=WHITE)
-p = para(tf); p.space_before = Pt(6)
-_run(p, "让 AI 每次会话，都站在更可靠的基础上。", size=18, color=RGBColor(0xC9, 0xD6, 0xE4))
-add_box(s, Inches(0.9), Inches(3.5), Inches(11.6), Inches(2.35), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06)
-tf = txbox(s, Inches(1.2), Inches(3.68), Inches(11.0), Inches(2.05))
-p = para(tf, True); _run(p, "五条带走", size=13, bold=True, color=GREEN)
+_run(p, "把“人脑里的规则”，变成", size=28, bold=True, color=WHITE)
+_run(p, "“仓库里的规则”", size=28, bold=True, color=CYAN)
+_run(p, "。", size=28, bold=True, color=WHITE)
+add_box(s, Inches(0.9), Inches(3.35), Inches(11.6), Inches(2.55), fill=PANEL, line=BORDER_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.06)
+tf = txbox(s, Inches(1.2), Inches(3.52), Inches(11.0), Inches(2.2))
+p = para(tf, True); _run(p, "五条结论", size=13, bold=True, color=GREEN)
 for i, t in enumerate([
-    "规格先于代码 → OpenSpec change 四件套，delta 验证后合回权威库",
-    "上下文决定质量 → 确定性加载，别让 Agent 搜",
-    "契约与审批绑定 → 摘要一致才有效，变更即失效",
-    "完成 = 门禁 + 证据 → 代码生成 ≠ 做完；错误要反哺成规则",
-    "从“生成器”到“伙伴” → 仓库内控制系统 Harness Engineering Kit",
+    "框架就五件事：原则 / 流程 / 产物 / 治理 / 反哺",
+    "Agent = LLM + Harness：模型负责推理，Harness 负责上下文、权限与证据",
+    "规格先于代码：proposal·spec·design·tasks，delta 合回权威库",
+    "完成 = 门禁 + 证据：生成了 ≠ 做完；错误要反哺成规则",
+    "落地策略：先跑通 → 再加门禁，避免一次性全配",
 ]):
-    p = para(tf); p.space_before = Pt(6.5); p.line_spacing = 1.12
+    p = para(tf); p.space_before = Pt(6); p.line_spacing = 1.12
     _run(p, f"{i+1}. {t}", size=13.5, color=TEXT, bold=(i == 4))
-chips(s, Inches(0.9), Inches(6.25), 0, ["GitHub · 8425334/harness-engineering-kit", "README.zh · AI 实战教程"],
+chips(s, Inches(0.9), Inches(6.2), 0, ["GitHub · 8425334/harness-engineering-kit", "README.zh · AI 实战教程"],
       fill=BG2, color=CYAN, size=11.5, line=CYAN)
-tf = txbox(s, Inches(0.9), Inches(6.95), Inches(11.8), Inches(0.4))
+tf = txbox(s, Inches(0.9), Inches(6.9), Inches(11.8), Inches(0.4))
 p = para(tf, True); _run(p, "分享人：沈学海   ·   ", size=11, bold=True, color=WHITE)
-_run(p, "感谢聆听 · 欢迎交流讨论  |  讲不完的细节全部落在仓库里，可按文档逐步实操", size=11, color=DIM)
-notes(s, "收束到五条可带走的话。若要现场演示，建议打开 aegis 项目走一个代表性变更（如能力驱动 AI 平台），展示 OpenSpec 四件套、证据文件与 Fitness 门禁。")
+_run(p, "感谢聆听 · 讲的细节全部在仓库里，开箱即可实操", size=11, color=DIM)
+notes(s, "收束到五条结论，重点是『先跑通再加门禁』。现场可打开 aegis，走一条代表性变更展示四件套与 Fitness。")
 
 # ---------------------------------------------------------------- save
 out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Harness-Engineering-Kit-全局导览.pptx")

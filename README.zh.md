@@ -6,7 +6,7 @@ English documentation: [README.md](README.md)
 
 > 📖 **[Harness AI Coding 实战教程](docs/ai-coding-tutorial.zh.md)**：从"为什么需要工程化"到用真实命令跑通一次非平凡变更的完整导览（含全栈并行进阶；图表以飞书在线版白板呈现）。
 
-> 🎞️ **[Harness Engineering Kit 全局导览 PPT（中文 · 32 页）](presentations/Harness-Engineering-Kit-全局导览.pptx)**：按 Why → What → How → Grow → Use 展开的总览，含 RAM/RAD 实例页；由 `presentations/build_hek_deck.py` 生成，可随时重新生成。
+> 🎞️ **[Harness Engineering Kit 全局导览 PPT（中文 · 26 页）](presentations/Harness-Engineering-Kit-全局导览.pptx)**：按 Why → What → How → Grow → Use 展开的上手导览，并穿插 xiaohua_vn / aegis / varhub-risk 真实案例；由 `presentations/build_hek_deck.py` 生成，可随时重新生成。
 
 ## 架构
 
