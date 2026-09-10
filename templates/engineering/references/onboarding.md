@@ -47,7 +47,7 @@ For desktop Agents without a stable CLI (for example WorkBuddy or Trae Work), us
 | `fresh` | No Harness entrypoint is present | Create the canonical control plane and local Skills |
 | `partial` | Some current files exist | Preserve project configuration; fill missing controls |
 | `legacy` | Previous Skill or methodology markers are present | Add current controls and provide a migration report; do not delete legacy files |
-| `current` | Version, policy, and Engineering Skill are present | Sync canonical resources and run drift checks |
+| `current` | Version, policy, and Engineering Skill are present | Sync canonical resources and run drift checks; for a Skill, runtime, or control-plane failure mid-conversation use [self-repair.md](self-repair.md) instead of reinstalling |
 
 Tier 1 installs the core controls together with the production policy scaffold that `agent-policy.yaml` references. Tier 2 additionally installs Fitness gate scripts, Fitness rules, and lesson-memory templates. Choose Tier 2 for a complete integration unless the user explicitly requests a minimal bootstrap.
 

@@ -11,6 +11,10 @@ Engineering is a governance wrapper, not a competing lifecycle. OpenSpec owns ch
 
 When the user asks to接入、初始化、升级或迁移 Harness, use [references/onboarding.md](references/onboarding.md). Generate the read-only plan, explain the exact file and OpenSpec Skill actions, ask for confirmation, then apply and run deterministic checks. Never copy OpenSpec Skill prompts into Harness; `openspec init` or `openspec update` owns them.
 
+## Self-Repair
+
+When the `engineering` Skill is missing or stale, the Python runtime or an installed control script is unusable, or the Harness control plane is incomplete or drifted, use [references/self-repair.md](references/self-repair.md). Diagnose read-only, restore only canonical Kit resources, re-check, and report every residual manual finding with its remedy. Repair never installs interpreters or packages, never rewrites existing project facts, and never writes outside the project root.
+
 ## Requirement Reflection
 
 Before a consequential action, follow `docs/methodology/core/requirement-reflection.md`. Report only the result, evidence, assumptions, recommendation, and confirmation needed. Stop on material ambiguity, conflict, missing authorization, or missing evidence.

@@ -47,6 +47,8 @@ Usage:
   harness-engineering-kit uninstall [options] Remove an installed Harness control plane
   harness-engineering-kit plan [options]    Print a read-only JSON plan
   harness-engineering-kit check [options]   Run deterministic checks
+  harness-engineering-kit doctor [options]  Diagnose the install and environment (read-only)
+  harness-engineering-kit repair [options]  Diagnose and self-repair the install and environment
   harness-engineering-kit handoff [options] Generate a prompt for a desktop Agent without CLI
   harness-engineering-kit agents [options]  List supported AI agents
 
@@ -54,9 +56,9 @@ Options:
   --project-root <path>  Target project (default: current Git root/current directory)
   --source-root <path>   Kit source (default: installed package)
   --tier <1|2>           Install scope: 1 = lightweight, 2 = full (default: 2)
-  --yes                  Apply init without an interactive confirmation
+  --yes                  Apply init or repair without an interactive confirmation
   --apply                Apply init without an interactive confirmation
-  --plan                 Make init read-only
+  --plan                 Make init or repair read-only
   --no-check             Skip the post-init check
   --agent <name>         Agent to open, hand off, and target for initialization (claude, codex, opencode, cursor, gemini, workbuddy, trae-work)
   --open                 Open the selected agent in non-interactive mode
@@ -85,6 +87,15 @@ project-owned or edited after install, prunes directories that become empty, and
 writes docs/methodology/uninstall.json. Use --keep-project-facts to also retain
 root adapters and project configuration, --yes to apply without prompting, and
 --json for a machine-readable plan or receipt.
+
+The repair command covers a broken conversation-time environment: an engineering
+Skill that is missing or stale, an unusable Python runtime or control script, and
+an incomplete or drifted Harness control plane. It is a read-only diagnosis until
+confirmed with --yes (or --apply), restores only canonical Kit resources, never
+rewrites existing project facts, never installs interpreters or packages, and
+never writes outside the project root. doctor is the read-only equivalent. Use
+--agent <name> to select the Agent whose project-local Skill is repaired, and
+--json for a machine-readable diagnosis or receipt (repair.json).
 `;
 }
 
@@ -437,6 +448,35 @@ function invoke(modes, options, capture = false) {
   return completed;
 }
 
+function repairArgs(mode, options) {
+  const args = ['--source-root', path.resolve(options.sourceRoot || packageRoot), `--${mode}`];
+  if (options.projectRoot) args.unshift('--project-root', path.resolve(options.projectRoot));
+  const selectedAgent = options.agent || process.env.HEK_AGENT;
+  if (selectedAgent) {
+    const agent = findAgent(selectedAgent);
+    if (!agent) throw new Error(`不支持的 AI Agent: ${selectedAgent}`);
+    args.push('--agent', agent.id);
+  }
+  if (options.tier) args.push('--tier', options.tier);
+  if (options.json) args.push('--json');
+  return args;
+}
+
+function invokeRepair(mode, options, capture = false) {
+  const interpreter = findPython();
+  const script = path.join(path.resolve(options.sourceRoot || packageRoot), 'scripts', 'repair.py');
+  if (!fs.existsSync(script) || !fs.statSync(script).isFile()) {
+    throw new Error(`Harness source is missing scripts/repair.py: ${path.dirname(script)}`);
+  }
+  const completed = spawnSync(interpreter.command, [...interpreter.args, script, ...repairArgs(mode, options)], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+  });
+  if (completed.error) throw completed.error;
+  return completed;
+}
+
 function parsePlan(output) {
   try {
     return JSON.parse(output);
@@ -640,10 +680,18 @@ function summarizeUninstallReceipt(output) {
   }, {});
   const summary = Object.entries(counts).map(([kind, count]) => `${kind}=${count}`).join(', ');
   console.log(`卸载完成: ${summary || '无动作'}`);
-  const preserved = (receipt.results || []).filter((entry) => String(entry.result).startsWith('kept'));
-  if (preserved.length) {
-    console.log(`已保留 ${preserved.length} 个被修改或属于项目事实的文件：`);
-    preserved.slice(0, 20).forEach((entry) => console.log(`  - ${entry.target} (${entry.result})`));
+  const retained = (receipt.results || []).filter((entry) => (
+    String(entry.result).startsWith('kept')
+    || (Array.isArray(entry.preserved) && entry.preserved.length > 0)
+  ));
+  if (retained.length) {
+    console.log(`已保留 ${retained.length} 个被修改、符号链接或属于项目事实的文件：`);
+    retained.slice(0, 20).forEach((entry) => {
+      const detail = entry.preserved && entry.preserved.length
+        ? `${entry.target} (${entry.result}: ${entry.preserved.join(', ')})`
+        : `${entry.target} (${entry.result})`;
+      console.log(`  - ${detail}`);
+    });
   }
   console.log('回执: docs/methodology/uninstall.json');
   return receipt;
@@ -696,6 +744,115 @@ async function runUninstall(options) {
   return typeof applied.status === 'number' ? applied.status : 2;
 }
 
+function summarizeDiagnosis(output) {
+  const diagnosis = parsePlan(output);
+  if (!diagnosis) {
+    process.stdout.write(output);
+    return null;
+  }
+  const environment = diagnosis.environment || {};
+  console.log(`状态: ${diagnosis.status} | Agent: ${diagnosis.agent} | Tier ${diagnosis.tier}`);
+  console.log(`版本: 已安装 ${diagnosis.installed_version} → Kit ${diagnosis.source_version}（${diagnosis.version_relation}）`);
+  console.log(
+    `环境: python=${(environment.python || {}).version || '缺失'}`
+    + ` | node=${(environment.node || {}).version || '缺失'}`
+    + ` | openspec=${(environment.openspec || {}).version || '缺失'}`,
+  );
+  const findings = Array.isArray(diagnosis.findings) ? diagnosis.findings : [];
+  const counts = findings.reduce((all, finding) => {
+    all[finding.severity] = (all[finding.severity] || 0) + 1;
+    return all;
+  }, {});
+  const summary = Object.entries(counts).map(([severity, count]) => `${severity}=${count}`).join(', ');
+  console.log(`发现: ${summary || '无'}`);
+  findings.slice(0, 20).forEach((finding) => {
+    const suffix = finding.count > 1 ? ` (+${finding.count - 1})` : '';
+    console.log(`  - [${finding.severity}] ${finding.id}: ${finding.detail}${suffix}`);
+    if (finding.remedy) console.log(`      补救: ${finding.remedy}`);
+  });
+  if (Array.isArray(diagnosis.errors)) diagnosis.errors.forEach((error) => console.error(`错误: ${error}`));
+  return diagnosis;
+}
+
+function summarizeRepairReceipt(output) {
+  const receipt = parsePlan(output);
+  if (!receipt) {
+    process.stdout.write(output);
+    return null;
+  }
+  const results = Array.isArray(receipt.results) ? receipt.results : [];
+  const counts = results.reduce((all, entry) => {
+    all[entry.result] = (all[entry.result] || 0) + 1;
+    return all;
+  }, {});
+  const summary = Object.entries(counts).map(([kind, count]) => `${kind}=${count}`).join(', ');
+  console.log(`修复完成: ${summary || '无动作'} | 状态: ${receipt.status}`);
+  results
+    .filter((entry) => ['created', 'updated', 'generated'].includes(String(entry.result)))
+    .slice(0, 20)
+    .forEach((entry) => console.log(`  - ${entry.kind} ${entry.target} → ${entry.result}`));
+  const failed = results.filter((entry) => String(entry.result) === 'failed');
+  if (failed.length) {
+    console.error(`失败 ${failed.length} 项，可重试或按补救说明手工处理：`);
+    failed.slice(0, 10).forEach((entry) => console.error(`  - ${entry.target}: ${entry.error || '未知错误'}`));
+  }
+  const residual = receipt.verification && Array.isArray(receipt.verification.findings)
+    ? receipt.verification.findings
+    : [];
+  const blocking = residual.filter((finding) => finding.severity === 'repairable' || finding.severity === 'manual');
+  if (blocking.length) {
+    console.log(`修复后仍有 ${blocking.length} 项未解决：`);
+    blocking.slice(0, 10).forEach((finding) => (
+      console.log(`  - [${finding.severity}] ${finding.id}: ${finding.remedy || finding.detail}`)
+    ));
+  }
+  console.log('回执: docs/methodology/repair.json');
+  return receipt;
+}
+
+async function runRepair(options, readOnly = false) {
+  const diagnosis = invokeRepair('diagnose', { ...options, json: true }, true);
+  if (!parsePlan(diagnosis.stdout)) {
+    process.stdout.write(diagnosis.stdout || '');
+    process.stderr.write(diagnosis.stderr || '');
+    return diagnosis.status || 2;
+  }
+  if (!options.json) summarizeDiagnosis(diagnosis.stdout);
+
+  if (readOnly || options.plan) {
+    if (options.json) process.stdout.write(diagnosis.stdout);
+    else console.log('只读诊断，未修改任何文件。');
+    return typeof diagnosis.status === 'number' ? diagnosis.status : 0;
+  }
+
+  const interactive = process.stdin.isTTY && process.stdout.isTTY;
+  const confirmed = options.yes || options.apply
+    || (!options.json && await askForConfirmation('按 y 修复以上可修复项，其他键取消: '));
+  if (!confirmed) {
+    if (options.json) {
+      process.stdout.write(diagnosis.stdout);
+      console.error('未执行修复：--json 模式需要 --yes 才会应用（harness-engineering-kit repair --yes）。');
+      return 2;
+    }
+    if (!interactive) {
+      console.error('未执行修复：非交互环境请使用 harness-engineering-kit repair --yes。');
+      return 2;
+    }
+    console.log('已取消，未修改项目。');
+    return 0;
+  }
+
+  const applied = invokeRepair('apply', { ...options, json: true }, true);
+  if (options.json) {
+    process.stdout.write(applied.stdout || '');
+    process.stderr.write(applied.stderr || '');
+  } else {
+    summarizeRepairReceipt(applied.stdout);
+    if (applied.stderr) process.stderr.write(applied.stderr);
+  }
+  return typeof applied.status === 'number' ? applied.status : 2;
+}
+
 async function main(argv = process.argv.slice(2)) {
   let parsed;
   try {
@@ -724,6 +881,8 @@ async function main(argv = process.argv.slice(2)) {
     }
     if (parsed.command === 'init') return await runInit(parsed.options);
     if (parsed.command === 'uninstall') return await runUninstall(parsed.options);
+    if (parsed.command === 'repair') return await runRepair(parsed.options);
+    if (parsed.command === 'doctor') return await runRepair(parsed.options, true);
     if (parsed.command === 'handoff') return runHandoff(parsed.options);
     if (parsed.command === 'plan') return invoke('plan', { ...parsed.options, json: true, forwardAgent: true }).status || 0;
     if (parsed.command === 'check') return invoke('check', parsed.options).status || 0;
@@ -753,11 +912,16 @@ module.exports = {
   handoffPayload,
   main,
   parseArgs,
+  invokeRepair,
+  repairArgs,
+  runRepair,
   runUninstall,
   selectAgent,
   selectTier,
   selectWithArrows,
   summarizeUninstallPlan,
   summarizeUninstallReceipt,
+  summarizeDiagnosis,
+  summarizeRepairReceipt,
   usage,
 };

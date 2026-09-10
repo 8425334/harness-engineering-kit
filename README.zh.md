@@ -91,6 +91,8 @@ npx --yes --package github:8425334/harness-engineering-kit hek handoff --agent t
 npx --yes --package github:8425334/harness-engineering-kit hek uninstall --plan --json
 npx --yes --package github:8425334/harness-engineering-kit hek uninstall --yes
 npx --yes --package github:8425334/harness-engineering-kit hek uninstall --yes --keep-project-facts
+npx --yes --package github:8425334/harness-engineering-kit hek doctor --json
+npx --yes --package github:8425334/harness-engineering-kit hek repair --yes
 ```
 
 无 CLI 的桌面 Agent 先执行 `hek init --direct --yes` 导入项目控制面，再执行 `hek handoff --agent workbuddy` 或 `hek handoff --agent trae-work`。然后在对应 Agent 中打开项目，复制命令生成的提示词，让 Agent 读取项目内的 `AGENTS.md`/`CLAUDE.md` 和 `docs/methodology/agent-policy.yaml`。`handoff` 不会猜测或启动未知桌面应用，也不会写入项目文件。
@@ -103,7 +105,9 @@ npx --yes --package github:8425334/harness-engineering-kit hek uninstall --yes -
 
 版本化升级会比较项目已安装版本与 Kit 版本：低版本到高版本同步全部规范资源，同版本仍检查漂移，高版本降级直接阻断，并报告该目标版本声明的特殊迁移事项。详见 [版本化管理](docs/versioning.md)。
 
-`hek uninstall` 用于撤销接入。默认只读，必须用 `--yes`（或 `--apply`）确认后才删除；它读取 `docs/methodology/onboarding.json` 回执，只删除 Harness 安装且内容仍与回执摘要一致的资源。安装时保留、属于项目事实、以及安装后被修改的文件都会原地保留并在回执中列出，清空后的目录会被裁剪。每次执行都会写入 `docs/methodology/uninstall.json`。`--keep-project-facts` 额外保留 `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`、`ai.json`、`AI.md`、`agent-policy.yaml`、`profile.yaml` 和 `openspec/config.yaml`；`--json` 输出机器可读计划（不带 `--yes` 时退出码 2）或回执。没有回执时退化为"只删除仍与 Kit 源文件逐字节一致的文件"。
+`hek uninstall` 用于撤销接入。默认只读，必须用 `--yes`（或 `--apply`）确认后才删除；它读取 `docs/methodology/onboarding.json` 回执，只删除 Harness 安装且内容仍与回执摘要一致的资源。安装时保留、属于项目事实、安装后被修改的文件以及符号链接目标都会原地保留并在回执中列出，清空后的目录会被裁剪。每次执行都会写入 `docs/methodology/uninstall.json`。`--keep-project-facts` 额外保留 `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`、`ai.json`、`AI.md`、`agent-policy.yaml`、`profile.yaml` 和 `openspec/config.yaml`；`--json` 输出机器可读计划（不带 `--yes` 时退出码 2）或回执。没有回执时退化为"只删除仍与 Kit 源文件逐字节一致的文件"，无法校验的一律保留。
+
+`hek doctor` 与 `hek repair` 处理对话运行期损坏的环境。`doctor` 只读诊断，`repair` 先输出同一份计划，`--yes`（或 `--apply`）后执行。覆盖三类故障：`engineering` Skill 对当前 Agent 缺失或过期、Python 运行时或已安装控制脚本不可用、控制面不完整或与 Kit 漂移。修复只恢复 Kit 规范资源，重建缺失的控制面目录，在 OpenSpec CLI 可用时重新生成生命周期 Skill，并逐项幂等执行。它绝不覆盖已存在的项目事实文件、不安装解释器或依赖包、不重写已存在的 `docs/fitness/**` 基线、不做降级、不写项目根目录之外；需要人工处理的问题以 `manual` 发现项给出确切补救命令。Agent 范围依次来自 `--agent`、onboarding 回执、已存在的 Skill 目录。每次执行写入 `docs/methodology/repair.json`；安装后同一引擎位于 `docs/methodology/scripts/repair.py`，默认使用 onboarding 记录的 `--source-root`。
 
 `ai.json` 超限或结构非法、`AI.md` 未索引或超限、策略缺失、占位符未填、引用路径断裂、任务图/执行证据非法、Profile 非法、Skill 资源缺失、安装内容过期或平台适配不支持都会失败。Engineering Skill 会针对 Claude Code、Codex、OpenCode、Cursor、Gemini 和 Trae 安装并校验。旧 `ramer`、`fe-engineering`、`multi-agent` 入口不再兼容。
 
@@ -138,6 +142,7 @@ Explore 结束前运行 `preflight_lessons.py`；用 `record_failure.py` 记录 
 - [治理基线](i18n/zh/core/methodology-governance.md)
 - [Self-Refine 反馈闭环](i18n/zh/core/self-refine.md)
 - [需求反思与澄清](i18n/zh/core/requirement-reflection.md)
+- [自修复与运行环境完整性](i18n/zh/core/self-repair.md)
 - [任务图与并行执行](i18n/zh/core/task-orchestration.md)
 - [项目经验记忆](i18n/zh/core/lesson-memory.md)
 - [后端 Profile](i18n/zh/core/backend-profile.md)

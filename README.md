@@ -90,6 +90,8 @@ npx --yes --package github:8425334/harness-engineering-kit hek init --agent open
 npx --yes --package github:8425334/harness-engineering-kit hek init --direct --yes
 npx --yes --package github:8425334/harness-engineering-kit hek agents
 npx --yes --package github:8425334/harness-engineering-kit hek init --plan --json
+npx --yes --package github:8425334/harness-engineering-kit hek doctor --json
+npx --yes --package github:8425334/harness-engineering-kit hek repair --yes
 npx --yes --package github:8425334/harness-engineering-kit hek handoff --agent workbuddy
 npx --yes --package github:8425334/harness-engineering-kit hek handoff --agent trae-work --json
 npx --yes --package github:8425334/harness-engineering-kit hek uninstall --plan --json
@@ -107,9 +109,11 @@ A fresh project's placeholders must be filled from real repository facts before 
 
 Version-aware upgrades compare the installed `docs/methodology/VERSION` with the Kit version, synchronize all canonical resources for lower-to-higher upgrades, block downgrades, and report any release-specific migration review. See [Versioning and Upgrades](docs/versioning.md).
 
-`hek uninstall` reverses onboarding. It stays read-only until confirmed with `--yes` (or `--apply`), reads the `docs/methodology/onboarding.json` receipt, and deletes only the assets Harness installed whose bytes still match the recorded digests. Files the install preserved, project-owned facts, and files edited afterwards stay in place and are reported, and directories that become empty are pruned. Each apply writes `docs/methodology/uninstall.json`. Use `--keep-project-facts` to also retain `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`, `ai.json`, `AI.md`, `agent-policy.yaml`, `profile.yaml`, and `openspec/config.yaml`; `--json` prints the machine-readable plan (without `--yes`, exit 2) or the receipt. When no receipt exists it falls back to removing only files that are still byte-identical to the Kit source.
+`hek uninstall` reverses onboarding. It stays read-only until confirmed with `--yes` (or `--apply`), reads the `docs/methodology/onboarding.json` receipt, and deletes only the assets Harness installed whose bytes still match the recorded digests. Files the install preserved, project-owned facts, files edited afterwards, and symlinked targets stay in place and are reported, and directories that become empty are pruned. Each apply writes `docs/methodology/uninstall.json`. Use `--keep-project-facts` to also retain `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`, `ai.json`, `AI.md`, `agent-policy.yaml`, `profile.yaml`, and `openspec/config.yaml`; `--json` prints the machine-readable plan (without `--yes`, exit 2) or the receipt. When no receipt exists it falls back to removing only files that are still byte-identical to the Kit source, and anything it cannot verify is kept.
 
 The check fails for an oversized or structurally invalid `ai.json`, unindexed or oversized `AI.md`, missing policy, placeholders, broken referenced paths, invalid task graphs/execution evidence, invalid profiles, missing Skill resources, stale installed Skill content, or unsupported platform adapters. The Engineering Skill is installed and checked for Claude Code, Codex, OpenCode, Cursor, Gemini, and Trae. The legacy `ramer`, `fe-engineering`, and `multi-agent` entries are intentionally not supported.
+
+`hek doctor` and `hek repair` handle a broken conversation-time environment. `doctor` is a read-only diagnosis; `repair` prints the same plan and applies it after `--yes` (or `--apply`). They cover an `engineering` Skill that is missing or stale for the active Agent, a Python runtime or installed control script that is unusable, and a control plane that is incomplete or drifted from the Kit. Repair restores only canonical Kit resources, recreates missing control-plane directories, re-syncs the Skill tree and the OpenSpec lifecycle Skills when their CLI is available, and is idempotent per operation. It never rewrites existing project-owned facts, never installs interpreters or packages, never rewrites an existing `docs/fitness/**` baseline, never downgrades an installation, and never writes outside the project root; anything that needs a human is reported as a `manual` finding with its exact remedy. The Agent scope comes from `--agent`, then the onboarding receipt, then only Skill trees that already exist. Each apply writes `docs/methodology/repair.json`. In an installed project the same engine runs from `docs/methodology/scripts/repair.py`, defaulting `--source-root` to the path recorded by onboarding.
 
 Resolve task context with the installed project controls. See the [CLI Onboarding Playbook](templates/engineering/references/onboarding.md) for the execution contract.
 
@@ -142,6 +146,7 @@ Use `preflight_lessons.py` before Explore closes, `record_failure.py` for Fitnes
 - [Governance](core/methodology-governance.md)
 - [Self-Refine Feedback Loop](core/self-refine.md)
 - [Requirement Reflection and Clarification](core/requirement-reflection.md)
+- [Self-Repair and Runtime Integrity](core/self-repair.md)
 - [Task Graph and Parallel Execution](core/task-orchestration.md)
 - [Project Lesson Memory](core/lesson-memory.md)
 - [Backend Profile](core/backend-profile.md)

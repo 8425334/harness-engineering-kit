@@ -431,3 +431,100 @@ test('uninstall explains how to confirm in a non-interactive shell', () => {
   assert.equal(result.status, 2);
   assert.match(result.stderr, /uninstall --yes/);
 });
+
+test('uninstall without a receipt never deletes files it cannot verify', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-uninstall-'));
+  spawnSync('git', ['init', '-q'], { cwd: directory });
+  fs.writeFileSync(path.join(directory, 'AGENTS.md'), '# Project rules\n');
+  fs.writeFileSync(path.join(directory, 'ai.json'), '{"name":"mine"}\n');
+
+  const applied = run([
+    'uninstall', '--project-root', directory, '--source-root', root, '--json', '--yes',
+  ], { cwd: directory });
+
+  assert.equal(applied.status, 0, applied.stderr);
+  const receipt = JSON.parse(applied.stdout);
+  assert.equal(receipt.receipt_source, 'source-analysis');
+  assert.deepEqual(receipt.results.filter((entry) => entry.result === 'removed'), []);
+  assert.equal(fs.existsSync(path.join(directory, 'AGENTS.md')), true);
+  assert.equal(fs.existsSync(path.join(directory, 'ai.json')), true);
+});
+
+test('parses the repair and doctor commands', () => {
+  const parsed = cliModule.parseArgs(['repair', '--agent', 'codex', '--yes', '--json']);
+  assert.equal(parsed.command, 'repair');
+  assert.equal(parsed.options.agent, 'codex');
+  assert.equal(parsed.options.yes, true);
+  assert.equal(typeof cliModule.runRepair, 'function');
+  assert.equal(typeof cliModule.invokeRepair, 'function');
+  assert.match(cliModule.usage(), /harness-engineering-kit doctor/);
+  assert.match(cliModule.usage(), /harness-engineering-kit repair/);
+});
+
+function installHarnessProject(prefix) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  spawnSync('git', ['init', '-q'], { cwd: directory });
+  const installed = run([
+    'init', '--project-root', directory, '--source-root', root,
+    '--tier', '1', '--agent', 'codex', '--json', '--yes', '--no-check',
+  ], { cwd: directory });
+  assert.equal(installed.status, 0, installed.stderr);
+  return directory;
+}
+
+test('doctor prints a read-only diagnosis and never writes', () => {
+  const directory = installHarnessProject('harness-doctor-');
+  const skill = path.join(directory, '.agents/skills/engineering');
+  fs.rmSync(skill, { recursive: true, force: true });
+
+  const result = run(['doctor', '--project-root', directory, '--source-root', root, '--json'], { cwd: directory });
+  assert.equal(result.status, 2);
+  const diagnosis = JSON.parse(result.stdout);
+  assert.equal(diagnosis.mode, 'diagnose');
+  assert.equal(diagnosis.read_only, true);
+  assert.equal(diagnosis.agent, 'codex');
+  assert.equal(typeof diagnosis.environment.python.ok, 'boolean');
+  assert.ok(diagnosis.findings.some((finding) => finding.id === 'skill-missing'));
+  assert.equal(fs.existsSync(skill), false);
+  assert.equal(fs.existsSync(path.join(directory, 'docs/methodology/repair.json')), false);
+});
+
+test('doctor reports a healthy install without findings', () => {
+  const directory = installHarnessProject('harness-doctor-healthy-');
+  const result = run(['doctor', '--project-root', directory, '--source-root', root, '--json'], { cwd: directory });
+  assert.equal(result.status, 0, result.stdout);
+  const diagnosis = JSON.parse(result.stdout);
+  assert.ok(diagnosis.status.startsWith('healthy'), diagnosis.status);
+  assert.equal(fs.existsSync(path.join(directory, 'docs/methodology/repair.json')), false);
+});
+
+test('repair --json without --yes prints the diagnosis and keeps files', () => {
+  const directory = installHarnessProject('harness-repair-plan-');
+  fs.rmSync(path.join(directory, '.agents/skills/engineering'), { recursive: true, force: true });
+
+  const result = run(['repair', '--project-root', directory, '--source-root', root, '--json'], { cwd: directory });
+  assert.equal(result.status, 2);
+  const diagnosis = JSON.parse(result.stdout);
+  assert.equal(diagnosis.read_only, true);
+  assert.match(result.stderr, /repair --yes/);
+  assert.equal(fs.existsSync(path.join(directory, '.agents/skills/engineering')), false);
+});
+
+test('repair --json --yes restores canonical assets and writes a receipt', () => {
+  const directory = installHarnessProject('harness-repair-apply-');
+  fs.rmSync(path.join(directory, '.agents/skills/engineering'), { recursive: true, force: true });
+  fs.rmSync(path.join(directory, 'docs/methodology/core/change-lifecycle.md'), { force: true });
+
+  const result = run([
+    'repair', '--project-root', directory, '--source-root', root, '--json', '--yes',
+  ], { cwd: directory });
+  assert.equal(result.status, 0, result.stdout || result.stderr);
+  const receipt = JSON.parse(result.stdout);
+  assert.equal(receipt.mode, 'apply');
+  assert.equal(receipt.read_only, false);
+  assert.equal(receipt.status, 'repaired');
+  assert.equal(receipt.verification.status, 'passed');
+  assert.equal(fs.existsSync(path.join(directory, '.agents/skills/engineering/SKILL.md')), true);
+  assert.equal(fs.existsSync(path.join(directory, 'docs/methodology/core/change-lifecycle.md')), true);
+  assert.equal(fs.existsSync(path.join(directory, 'docs/methodology/repair.json')), true);
+});

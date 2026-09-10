@@ -528,6 +528,112 @@ class OnboardTests(unittest.TestCase):
             self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep\n")
             self.assertTrue((root / ".agents/skills/engineering/link").is_symlink())
 
+    def test_uninstall_without_receipt_preserves_edited_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            actions = onboard.source_actions(self.source, root, 1, "fresh", "codex")
+            apply_with_receipt(root, self.source, actions)
+            edited = root / "AGENTS.md"
+            edited.write_text(edited.read_text(encoding="utf-8") + "\nproject edit\n", encoding="utf-8")
+            (root / "docs/methodology/onboarding.json").unlink()
+            completed = run_onboard(
+                "--project-root", str(root), "--source-root", str(self.source),
+                "--uninstall", "--tier", "1", "--apply", "--json",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            receipt = json.loads(completed.stdout)
+            results = {entry["target"]: entry["result"] for entry in receipt["results"]}
+            self.assertEqual(results.get("AGENTS.md"), "kept-modified")
+            self.assertTrue(edited.is_file())
+            # An unmodified canonical asset is still byte-identical to the Kit and goes away.
+            self.assertFalse((root / "docs/methodology/VERSION").exists())
+
+    def test_uninstall_without_receipt_leaves_foreign_project_untouched(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            agents = root / "AGENTS.md"
+            agents.write_text("# Project rules nobody else wrote\n", encoding="utf-8")
+            ai = root / "ai.json"
+            ai.write_text('{"name": "my-project"}\n', encoding="utf-8")
+            completed = run_onboard(
+                "--project-root", str(root), "--source-root", str(self.source),
+                "--uninstall", "--tier", "1", "--apply", "--json",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            self.assertTrue(agents.is_file())
+            self.assertTrue(ai.is_file())
+            receipt = json.loads(completed.stdout)
+            removed = [entry for entry in receipt["results"] if entry["result"] == "removed"]
+            self.assertEqual(removed, [])
+
+    def test_uninstall_keeps_openspec_skills_without_recorded_digests(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            actions = onboard.source_actions(self.source, root, 1, "fresh", "codex")
+            apply_with_receipt(root, self.source, actions)
+            edited = root / ".agents/skills/openspec-explore/SKILL.md"
+            edited.write_text(edited.read_text(encoding="utf-8") + "\nuser edit\n", encoding="utf-8")
+            receipt_path = root / "docs/methodology/onboarding.json"
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            # Older Kit releases wrote OpenSpec entries without per-file digests.
+            for entry in receipt["results"]:
+                if isinstance(entry, dict):
+                    entry.pop("trees", None)
+            receipt_path.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            completed = run_onboard(
+                "--project-root", str(root), "--source-root", str(self.source),
+                "--uninstall", "--apply", "--json",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            self.assertTrue(edited.is_file())
+            results = {entry["target"]: entry["result"] for entry in json.loads(completed.stdout)["results"]}
+            self.assertEqual(results.get(".agents/skills/openspec-explore"), "kept")
+            # The Engineering Skill still has a receipt digest and is removed.
+            self.assertFalse((root / ".agents/skills/engineering").exists())
+
+    def test_uninstall_keeps_symlinked_targets_without_aborting(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            outside = Path(directory) / "shared-agent-skills"
+            outside.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            actions = onboard.source_actions(self.source, root, 1, "fresh", "codex")
+            apply_with_receipt(root, self.source, actions)
+            (root / ".agents").rename(root / ".agents.installed")
+            (root / ".agents").symlink_to(outside, target_is_directory=True)
+            sentinel = outside / "keep.txt"
+            sentinel.write_text("keep\n", encoding="utf-8")
+            completed = run_onboard(
+                "--project-root", str(root), "--source-root", str(self.source),
+                "--uninstall", "--apply", "--json",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep\n")
+            self.assertTrue((root / ".agents").is_symlink())
+            self.assertTrue((root / ".agents.installed/skills/engineering/SKILL.md").is_file())
+            self.assertFalse((root / "docs/methodology/core").exists())
+
+    def test_uninstall_prunes_nested_empty_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            actions = onboard.source_actions(self.source, root, 1, "fresh", "codex")
+            apply_with_receipt(root, self.source, actions)
+            leftover = root / "docs/methodology/lessons/2026-01-01"
+            leftover.mkdir(parents=True)
+            completed = run_onboard(
+                "--project-root", str(root), "--source-root", str(self.source),
+                "--uninstall", "--apply", "--json",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            receipt = json.loads(completed.stdout)
+            self.assertNotIn("errors", receipt)
+            self.assertFalse((root / "docs/methodology/lessons").exists())
+            self.assertFalse((root / "AGENTS.md").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -28,7 +28,7 @@ After drafting every task response, run the response-level requirement reflectio
 
 ## Workflow
 
-Automatically select and load the `engineering` Skill whenever the user requests feature implementation, a bug fix, refactoring, API/database/UI changes, or any other non-trivial code change. Do not require the user to type `/engineering` or name the Skill. The Skill orchestrates the lifecycle; it does not define project conventions.
+Automatically select and load the `engineering` Skill whenever the user requests feature implementation, a bug fix, refactoring, API/database/UI changes, or any other non-trivial code change. Do not require the user to type `/engineering` or name the Skill. The Skill orchestrates the lifecycle; it does not define project conventions. If the Skill is missing or stale, the Python runtime is unusable, or the control plane is incomplete, self-repair before proceeding via `docs/methodology/core/self-repair.md` (`hek repair`, or `python3 docs/methodology/scripts/repair.py --project-root . --apply`, Windows `py -3`); it restores only canonical resources, keeps every existing project fact, and reports anything that needs a human.
 
 OpenSpec owns change creation, artifact progression, task checkboxes, validation, Sync, and Archive. Use its native `openspec-*` Skills and CLI directly. Engineering attaches `governance.json` with `init_governance.py`, then records approval, execution, review, Fitness, and production evidence. Run `python3 docs/methodology/scripts/check_change_workspace.py` (Windows: `py -3`) before Explore; a live change must have both `.openspec.yaml` and `governance.json`. `tasks.md` is the sole task definition and progress source; never create a parallel task plan or lifecycle state.
 
