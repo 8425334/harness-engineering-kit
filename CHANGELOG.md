@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Added `hek uninstall` (and `scripts/onboard.py --uninstall`) as the supported way to reverse onboarding: it plans read-only by default, removes only assets recorded in `docs/methodology/onboarding.json` whose digests still match, preserves project-owned or post-install-edited files, prunes emptied directories, and writes `docs/methodology/uninstall.json`. `--keep-project-facts` retains root adapters and project configuration, and a missing receipt falls back to deleting only files still byte-identical to the Kit source. Onboarding receipts now record per-file digests for the Engineering Skill and OpenSpec-generated Skills so uninstall can verify them precisely.
+
 ## [0.5.1] — 2026-09-08
 
 ### Changed

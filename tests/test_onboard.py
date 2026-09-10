@@ -405,6 +405,129 @@ class OnboardTests(unittest.TestCase):
             checked = run_onboard("--project-root", str(root), "--source-root", str(self.source), "--agent", "claude", "--check")
             self.assertEqual(checked.returncode, 0, checked.stdout)
 
+    def test_uninstall_plan_is_receipt_driven_and_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".git").mkdir()
+            (root / "AGENTS.md").write_text("project-owned\n", encoding="utf-8")
+            actions = onboard.source_actions(self.source, root, 1, "partial")
+            apply_with_receipt(root, self.source, actions)
+            completed = run_onboard(
+                "--project-root", str(root), "--source-root", str(self.source),
+                "--uninstall", "--plan", "--json",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            plan = json.loads(completed.stdout)
+            self.assertEqual(plan["mode"], "uninstall")
+            self.assertTrue(plan["read_only"])
+            self.assertEqual(plan["receipt_source"], "docs/methodology/onboarding.json")
+            targets = {removal["target"] for removal in plan["removals"]}
+            self.assertIn("docs/methodology/core/change-lifecycle.md", targets)
+            self.assertIn("docs/methodology/onboarding.json", targets)
+            # A file the install preserved is project-owned and never planned for removal.
+            self.assertNotIn("AGENTS.md", targets)
+            self.assertTrue((root / "docs/methodology/core/change-lifecycle.md").is_file())
+
+    def test_uninstall_apply_removes_installed_assets_and_writes_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            actions = onboard.source_actions(self.source, root, 1, "fresh", "codex")
+            apply_with_receipt(root, self.source, actions)
+            completed = run_onboard(
+                "--project-root", str(root), "--source-root", str(self.source),
+                "--uninstall", "--apply", "--json",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            receipt = json.loads(completed.stdout)
+            self.assertFalse(receipt["read_only"])
+            counts: dict[str, int] = {}
+            for entry in receipt["results"]:
+                counts[entry["result"]] = counts.get(entry["result"], 0) + 1
+            self.assertGreater(counts.get("removed", 0), 0)
+            self.assertFalse((root / "AGENTS.md").exists())
+            self.assertFalse((root / ".agents/skills/engineering").exists())
+            self.assertFalse((root / "docs/methodology/core").exists())
+            self.assertFalse((root / "docs/methodology/onboarding.json").exists())
+            self.assertTrue((root / "docs/methodology/uninstall.json").is_file())
+
+    def test_uninstall_preserves_modified_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            actions = onboard.source_actions(self.source, root, 1, "fresh", "codex")
+            apply_with_receipt(root, self.source, actions)
+            edited = root / "docs/methodology/core/change-lifecycle.md"
+            edited.write_text(edited.read_text(encoding="utf-8") + "\nproject edit\n", encoding="utf-8")
+            completed = run_onboard(
+                "--project-root", str(root), "--source-root", str(self.source),
+                "--uninstall", "--apply", "--json",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            receipt = json.loads(completed.stdout)
+            kept = {entry["target"]: entry["result"] for entry in receipt["results"]}
+            self.assertEqual(kept.get("docs/methodology/core/change-lifecycle.md"), "kept-modified")
+            self.assertTrue(edited.is_file())
+
+    def test_uninstall_keep_project_facts_retains_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            actions = onboard.source_actions(self.source, root, 1, "fresh", "codex")
+            apply_with_receipt(root, self.source, actions)
+            completed = run_onboard(
+                "--project-root", str(root), "--source-root", str(self.source),
+                "--uninstall", "--apply", "--json", "--keep-project-facts",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            receipt = json.loads(completed.stdout)
+            self.assertTrue(receipt["keep_project_facts"])
+            for relative in ("AGENTS.md", "ai.json", "docs/methodology/agent-policy.yaml", "openspec/config.yaml"):
+                self.assertTrue((root / relative).is_file(), relative)
+            self.assertFalse((root / "docs/methodology/core").exists())
+
+    def test_uninstall_without_receipt_falls_back_to_source_analysis(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            actions = onboard.source_actions(self.source, root, 1, "fresh", "codex")
+            apply_with_receipt(root, self.source, actions)
+            (root / "docs/methodology/onboarding.json").unlink()
+            planned = run_onboard(
+                "--project-root", str(root), "--source-root", str(self.source),
+                "--uninstall", "--tier", "1", "--plan", "--json",
+            )
+            self.assertEqual(planned.returncode, 0, planned.stdout)
+            plan = json.loads(planned.stdout)
+            self.assertEqual(plan["receipt_source"], "source-analysis")
+            self.assertTrue(any(removal["target"] == "docs/methodology/VERSION" for removal in plan["removals"]))
+            applied = run_onboard(
+                "--project-root", str(root), "--source-root", str(self.source),
+                "--uninstall", "--tier", "1", "--apply", "--json",
+            )
+            self.assertEqual(applied.returncode, 0, applied.stdout)
+            self.assertFalse((root / "docs/methodology/VERSION").exists())
+
+    def test_uninstall_does_not_follow_symlinked_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "project"
+            outside = Path(directory) / "outside"
+            root.mkdir()
+            outside.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            actions = onboard.source_actions(self.source, root, 1, "fresh", "codex")
+            apply_with_receipt(root, self.source, actions)
+            sentinel = outside / "keep.txt"
+            sentinel.write_text("keep\n", encoding="utf-8")
+            (root / ".agents/skills/engineering/link").symlink_to(outside, target_is_directory=True)
+            completed = run_onboard(
+                "--project-root", str(root), "--source-root", str(self.source),
+                "--uninstall", "--apply", "--json",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep\n")
+            self.assertTrue((root / ".agents/skills/engineering/link").is_symlink())
+
 
 if __name__ == "__main__":
     unittest.main()

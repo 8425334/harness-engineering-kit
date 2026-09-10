@@ -22,6 +22,7 @@ test('prints help and version', () => {
   const help = run(['--help']);
   assert.equal(help.status, 0);
   assert.match(help.stdout, /harness-engineering-kit init/);
+  assert.match(help.stdout, /harness-engineering-kit uninstall/);
   assert.match(help.stdout, /harness-engineering-kit handoff/);
 
   const version = run(['--version']);
@@ -351,4 +352,82 @@ test('reports an unavailable configured Python executable', () => {
   const result = run(['plan'], { env: { HARNESS_PYTHON: 'definitely-not-a-python' } });
   assert.equal(result.status, 2);
   assert.match(result.stderr, /Python 3 is required/);
+});
+
+test('parses the uninstall options', () => {
+  const parsed = cliModule.parseArgs(['uninstall', '--keep-project-facts', '--yes']);
+  assert.equal(parsed.command, 'uninstall');
+  assert.equal(parsed.options.keepProjectFacts, true);
+  assert.equal(parsed.options.yes, true);
+  assert.equal(typeof cliModule.runUninstall, 'function');
+  assert.match(cliModule.usage(), /--keep-project-facts/);
+});
+
+test('uninstall --json without --yes prints the plan and keeps files', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-uninstall-'));
+  spawnSync('git', ['init', '-q'], { cwd: directory });
+  const installed = run([
+    'init', '--project-root', directory, '--source-root', root,
+    '--tier', '1', '--agent', 'codex', '--json', '--yes', '--no-check',
+  ], { cwd: directory });
+  assert.equal(installed.status, 0, installed.stderr);
+
+  const planned = run(['uninstall', '--project-root', directory, '--source-root', root, '--json'], { cwd: directory });
+  assert.equal(planned.status, 2);
+  const plan = JSON.parse(planned.stdout);
+  assert.equal(plan.mode, 'uninstall');
+  assert.equal(plan.read_only, true);
+  assert.equal(plan.receipt_source, 'docs/methodology/onboarding.json');
+  assert.match(planned.stderr, /uninstall --yes/);
+  assert.equal(fs.existsSync(path.join(directory, 'AGENTS.md')), true);
+  assert.equal(fs.existsSync(path.join(directory, '.agents/skills/engineering')), true);
+});
+
+test('uninstall --json --yes removes installed assets and prints a receipt', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-uninstall-'));
+  spawnSync('git', ['init', '-q'], { cwd: directory });
+  const installed = run([
+    'init', '--project-root', directory, '--source-root', root,
+    '--tier', '1', '--agent', 'codex', '--json', '--yes', '--no-check',
+  ], { cwd: directory });
+  assert.equal(installed.status, 0, installed.stderr);
+
+  const applied = run(['uninstall', '--project-root', directory, '--source-root', root, '--json', '--yes'], { cwd: directory });
+  assert.equal(applied.status, 0, applied.stderr);
+  const receipt = JSON.parse(applied.stdout);
+  assert.equal(receipt.read_only, false);
+  assert.ok(receipt.results.some((entry) => entry.result === 'removed'));
+  assert.equal(fs.existsSync(path.join(directory, 'AGENTS.md')), false);
+  assert.equal(fs.existsSync(path.join(directory, '.agents/skills/engineering')), false);
+  assert.equal(fs.existsSync(path.join(directory, 'docs/methodology/onboarding.json')), false);
+  assert.equal(fs.existsSync(path.join(directory, 'docs/methodology/uninstall.json')), true);
+});
+
+test('uninstall --keep-project-facts preserves project configuration', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-uninstall-'));
+  spawnSync('git', ['init', '-q'], { cwd: directory });
+  const installed = run([
+    'init', '--project-root', directory, '--source-root', root,
+    '--tier', '1', '--agent', 'codex', '--json', '--yes', '--no-check',
+  ], { cwd: directory });
+  assert.equal(installed.status, 0, installed.stderr);
+
+  const applied = run([
+    'uninstall', '--project-root', directory, '--source-root', root,
+    '--json', '--yes', '--keep-project-facts',
+  ], { cwd: directory });
+  assert.equal(applied.status, 0, applied.stderr);
+  const receipt = JSON.parse(applied.stdout);
+  assert.equal(receipt.keep_project_facts, true);
+  assert.equal(fs.existsSync(path.join(directory, 'AGENTS.md')), true);
+  assert.equal(fs.existsSync(path.join(directory, 'ai.json')), true);
+  assert.equal(fs.existsSync(path.join(directory, 'docs/methodology/agent-policy.yaml')), true);
+  assert.equal(fs.existsSync(path.join(directory, 'docs/methodology/core')), false);
+});
+
+test('uninstall explains how to confirm in a non-interactive shell', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-uninstall-'));
+  const result = run(['uninstall', '--project-root', directory, '--source-root', root], { cwd: directory });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /uninstall --yes/);
 });

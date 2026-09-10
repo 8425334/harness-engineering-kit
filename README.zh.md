@@ -88,6 +88,9 @@ npx --yes --package github:8425334/harness-engineering-kit hek agents           
 npx --yes --package github:8425334/harness-engineering-kit hek init --plan --json     # 只读输出机器可读计划
 npx --yes --package github:8425334/harness-engineering-kit hek handoff --agent workbuddy
 npx --yes --package github:8425334/harness-engineering-kit hek handoff --agent trae-work --json
+npx --yes --package github:8425334/harness-engineering-kit hek uninstall --plan --json
+npx --yes --package github:8425334/harness-engineering-kit hek uninstall --yes
+npx --yes --package github:8425334/harness-engineering-kit hek uninstall --yes --keep-project-facts
 ```
 
 无 CLI 的桌面 Agent 先执行 `hek init --direct --yes` 导入项目控制面，再执行 `hek handoff --agent workbuddy` 或 `hek handoff --agent trae-work`。然后在对应 Agent 中打开项目，复制命令生成的提示词，让 Agent 读取项目内的 `AGENTS.md`/`CLAUDE.md` 和 `docs/methodology/agent-policy.yaml`。`handoff` 不会猜测或启动未知桌面应用，也不会写入项目文件。
@@ -99,6 +102,8 @@ npx --yes --package github:8425334/harness-engineering-kit hek handoff --agent t
 `hek init` 采用 Agent 驱动：先选择安装范围与已安装的 Agent，在解析出的项目根目录打开该 Agent 的 CLI，并传入 Kit 路径、接入契约和所选 Agent 目标。由 Agent 读取项目事实、生成只读计划、请求确认、填写项目专属配置、执行 canonical 脚本并运行确定性检查；所选 Agent 只初始化对应的原生上下文入口与项目 Skill。Tier 1（轻量接入）安装核心控制面和生命周期门禁所需的最小 Fitness 执行器及 SDD 同步规则；默认 Tier 2（完整接入）额外安装完整 Fitness 规则和经验记忆。每次接入都会写入 `docs/methodology/onboarding.json`，记录版本、文件摘要、创建/更新/保留的文件和校验结果。只有明确需要无 Agent 的兼容性确定性安装时才使用 `--direct`；它会忽略 `--agent` 和 `HEK_AGENT` 并安装全部兼容入口。
 
 版本化升级会比较项目已安装版本与 Kit 版本：低版本到高版本同步全部规范资源，同版本仍检查漂移，高版本降级直接阻断，并报告该目标版本声明的特殊迁移事项。详见 [版本化管理](docs/versioning.md)。
+
+`hek uninstall` 用于撤销接入。默认只读，必须用 `--yes`（或 `--apply`）确认后才删除；它读取 `docs/methodology/onboarding.json` 回执，只删除 Harness 安装且内容仍与回执摘要一致的资源。安装时保留、属于项目事实、以及安装后被修改的文件都会原地保留并在回执中列出，清空后的目录会被裁剪。每次执行都会写入 `docs/methodology/uninstall.json`。`--keep-project-facts` 额外保留 `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`、`ai.json`、`AI.md`、`agent-policy.yaml`、`profile.yaml` 和 `openspec/config.yaml`；`--json` 输出机器可读计划（不带 `--yes` 时退出码 2）或回执。没有回执时退化为"只删除仍与 Kit 源文件逐字节一致的文件"。
 
 `ai.json` 超限或结构非法、`AI.md` 未索引或超限、策略缺失、占位符未填、引用路径断裂、任务图/执行证据非法、Profile 非法、Skill 资源缺失、安装内容过期或平台适配不支持都会失败。Engineering Skill 会针对 Claude Code、Codex、OpenCode、Cursor、Gemini 和 Trae 安装并校验。旧 `ramer`、`fe-engineering`、`multi-agent` 入口不再兼容。
 

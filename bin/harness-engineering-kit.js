@@ -44,6 +44,7 @@ function usage() {
 
 Usage:
   harness-engineering-kit init [options]    Plan, confirm, install, and check
+  harness-engineering-kit uninstall [options] Remove an installed Harness control plane
   harness-engineering-kit plan [options]    Print a read-only JSON plan
   harness-engineering-kit check [options]   Run deterministic checks
   harness-engineering-kit handoff [options] Generate a prompt for a desktop Agent without CLI
@@ -63,6 +64,8 @@ Options:
   --direct               Run the deterministic installer; --agent and HEK_AGENT are ignored
   --prompt <text>        Initial prompt sent to a terminal agent
   --list-agents          List supported agents and installation status
+  --keep-project-facts   With uninstall, keep root adapters, ai.json, AI.md, policy,
+                         profile, and OpenSpec config
   --json                 Machine-readable output: never opens an agent and never prompts;
                          without --yes init prints the plan and exits 2; with --yes it
                          applies, checks, and prints one JSON receipt
@@ -75,6 +78,13 @@ the arrow keys when --tier is not given), then opens the selected Agent; pick th
 skip entry for the compatibility deterministic flow, and it falls back automatically
 when no agent is installed. A selected Agent receives only its native context entry
 and matching Skill. Set HARNESS_PYTHON to select a Python executable explicitly.
+
+The uninstall command is a read-only plan until confirmed: it removes only the
+Harness assets recorded by docs/methodology/onboarding.json, keeps files that were
+project-owned or edited after install, prunes directories that become empty, and
+writes docs/methodology/uninstall.json. Use --keep-project-facts to also retain
+root adapters and project configuration, --yes to apply without prompting, and
+--json for a machine-readable plan or receipt.
 `;
 }
 
@@ -112,6 +122,7 @@ function parseArgs(argv) {
     else if (token === '--no-open') result.options.noOpen = true;
     else if (token === '--direct') result.options.direct = true;
     else if (token === '--list-agents') result.options.listAgents = true;
+    else if (token === '--keep-project-facts') result.options.keepProjectFacts = true;
     else if (VALUE_OPTIONS.has(token)) {
       applyOption(result, token, args.shift());
     } else {
@@ -405,6 +416,8 @@ function baseArgs(options) {
     if (agent) args.push('--agent', agent.id);
   }
   if (options.tier) args.push('--tier', options.tier);
+  if (options.uninstall) args.push('--uninstall');
+  if (options.keepProjectFacts) args.push('--keep-project-facts');
   if (options.json) args.push('--json');
   return args;
 }
@@ -458,11 +471,11 @@ function summarizePlan(output) {
   return plan;
 }
 
-function askForConfirmation() {
+function askForConfirmation(prompt = '按 y 应用以上计划，其他键取消: ') {
   if (!process.stdin.isTTY || !process.stdout.isTTY) return Promise.resolve(false);
   const interfaceHandle = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((resolve) => {
-    interfaceHandle.question('按 y 应用以上计划，其他键取消: ', (answer) => {
+    interfaceHandle.question(prompt, (answer) => {
       interfaceHandle.close();
       resolve(/^y(es)?$/i.test(answer.trim()));
     });
@@ -596,6 +609,93 @@ async function runInit(options) {
   return checkStatus;
 }
 
+function summarizeUninstallPlan(output) {
+  const plan = parsePlan(output);
+  if (!plan) {
+    process.stdout.write(output);
+    return null;
+  }
+  const counts = (plan.removals || []).reduce((all, removal) => {
+    all[removal.kind] = (all[removal.kind] || 0) + 1;
+    return all;
+  }, {});
+  const actions = Object.entries(counts).map(([kind, count]) => `${kind}=${count}`).join(', ');
+  console.log(`状态: uninstall | 项目: ${plan.project_root}`);
+  console.log(`已安装版本: ${plan.installed_version} → Kit ${plan.source_version}`);
+  console.log(`计划来源: ${plan.receipt_source}${plan.keep_project_facts ? ' | 保留项目事实' : ''}`);
+  console.log(`计划: ${actions || '无动作'}`);
+  console.log('只删除 Harness 安装的文件，保留安装前已存在或安装后被修改的文件。');
+  return plan;
+}
+
+function summarizeUninstallReceipt(output) {
+  const receipt = parsePlan(output);
+  if (!receipt) {
+    process.stdout.write(output);
+    return null;
+  }
+  const counts = (receipt.results || []).reduce((all, entry) => {
+    all[entry.result] = (all[entry.result] || 0) + 1;
+    return all;
+  }, {});
+  const summary = Object.entries(counts).map(([kind, count]) => `${kind}=${count}`).join(', ');
+  console.log(`卸载完成: ${summary || '无动作'}`);
+  const preserved = (receipt.results || []).filter((entry) => String(entry.result).startsWith('kept'));
+  if (preserved.length) {
+    console.log(`已保留 ${preserved.length} 个被修改或属于项目事实的文件：`);
+    preserved.slice(0, 20).forEach((entry) => console.log(`  - ${entry.target} (${entry.result})`));
+  }
+  console.log('回执: docs/methodology/uninstall.json');
+  return receipt;
+}
+
+async function runUninstall(options) {
+  const invocation = { ...options, uninstall: true, forwardAgent: true };
+  const planned = invoke('plan', { ...invocation, json: true }, true);
+  if (planned.status !== 0) {
+    process.stdout.write(planned.stdout || '');
+    process.stderr.write(planned.stderr || '');
+    return planned.status || 2;
+  }
+  const interactive = process.stdin.isTTY && process.stdout.isTTY;
+  if (!options.json) summarizeUninstallPlan(planned.stdout);
+
+  if (options.plan) {
+    if (options.json) process.stdout.write(planned.stdout);
+    else console.log('只读计划，未删除任何文件。');
+    return 0;
+  }
+
+  const confirmed = options.yes || options.apply
+    || (!options.json && await askForConfirmation('按 y 删除以上文件，其他键取消: '));
+  if (!confirmed) {
+    if (options.json) {
+      process.stdout.write(planned.stdout);
+      console.error('未执行删除：--json 模式需要 --yes 才会卸载（harness-engineering-kit uninstall --yes）。');
+      return 2;
+    }
+    if (!interactive) {
+      console.error('未执行删除：非交互环境请使用 harness-engineering-kit uninstall --yes。');
+      return 2;
+    }
+    console.log('已取消，未删除任何文件。');
+    return 0;
+  }
+
+  const applied = invoke('apply', { ...invocation, json: true }, true);
+  if (options.json) {
+    process.stdout.write(applied.stdout || '');
+    process.stderr.write(applied.stderr || '');
+  } else if (applied.status !== 0) {
+    const receipt = parsePlan(applied.stdout);
+    const errors = receipt && Array.isArray(receipt.errors) ? receipt.errors.join('；') : (applied.stderr || '').trim();
+    console.error(`卸载失败：${errors || '未知错误'}`);
+  } else {
+    summarizeUninstallReceipt(applied.stdout);
+  }
+  return typeof applied.status === 'number' ? applied.status : 2;
+}
+
 async function main(argv = process.argv.slice(2)) {
   let parsed;
   try {
@@ -623,6 +723,7 @@ async function main(argv = process.argv.slice(2)) {
       return 0;
     }
     if (parsed.command === 'init') return await runInit(parsed.options);
+    if (parsed.command === 'uninstall') return await runUninstall(parsed.options);
     if (parsed.command === 'handoff') return runHandoff(parsed.options);
     if (parsed.command === 'plan') return invoke('plan', { ...parsed.options, json: true, forwardAgent: true }).status || 0;
     if (parsed.command === 'check') return invoke('check', parsed.options).status || 0;
@@ -652,8 +753,11 @@ module.exports = {
   handoffPayload,
   main,
   parseArgs,
+  runUninstall,
   selectAgent,
   selectTier,
   selectWithArrows,
+  summarizeUninstallPlan,
+  summarizeUninstallReceipt,
   usage,
 };

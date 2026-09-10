@@ -152,7 +152,11 @@ python3 <kit>/scripts/onboard.py \
 
 **问：旧文件什么时候删？**
 
-接入阶段不删。等增量更新校验完成后，再发起单独的清理变更，列出每个删除项、替代入口、回滚方式并重新确认。
+接入阶段不删。等增量更新校验完成后，再发起单独的清理变更，列出每个删除项、替代入口、回滚方式并重新确认。旧架构入口（`ramer`、`fe-engineering`、`multi-agent`、`docs/sdd` 等）不属于 `hek uninstall` 的删除范围，必须单独确认。
+
+**问：怎么卸载已接入的 Harness 控制面？**
+
+运行 `hek uninstall` 查看只读计划，确认后加 `--yes`（或 `--apply`）；`hek uninstall --plan --json` 输出机器可读计划。它读取 `docs/methodology/onboarding.json` 回执，只删除 Harness 安装且内容仍与回执摘要一致的文件；安装时保留、安装后被修改的文件会原地保留并列出，清空后的目录会被裁剪，每次执行写入 `docs/methodology/uninstall.json`。需要保留 `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`、`ai.json`、`AI.md`、策略、Profile 和 OpenSpec 配置时加 `--keep-project-facts`。没有回执时只删除仍与 Kit 源文件逐字节一致的文件。
 
 **问：Agent 找不到 Kit 路径怎么办？**
 

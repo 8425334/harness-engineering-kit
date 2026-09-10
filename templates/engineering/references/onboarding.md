@@ -56,7 +56,8 @@ The selected tier is the target scope of this run, not evidence that Tier 1 is a
 ## Safety Boundaries
 
 - `--plan` is read-only and is the default mode; `--apply` writes project controls. A later `--check` may update the onboarding receipt with its result, but never changes project controls.
+- `--uninstall` reverses onboarding and is also read-only until `--apply`. It deletes only assets recorded in `docs/methodology/onboarding.json` whose digests still match, keeps files the install preserved or that were edited afterwards, prunes emptied directories, and writes `docs/methodology/uninstall.json`. Prefer `hek uninstall [--keep-project-facts]` so the CLI supplies the confirmation flow, and treat any removal outside the receipt as a separate, explicitly approved change.
 - Root adapters, `ai.json`, policy, profile, OpenSpec configuration, and `AI.md` are preserved when present. Their edits require explicit user approval in the conversation.
 - Canonical methodology scripts, core documents, workflow templates, and the project-local Engineering Skill may be synchronized on upgrade.
-- No command performs `git reset`, deletes legacy entries, changes `docs/fitness/**` after bootstrap, installs dependencies, or accesses production systems.
+- No command performs `git reset`, deletes legacy entries outside an explicit uninstall, changes `docs/fitness/**` after bootstrap, installs dependencies, or accesses production systems.
 - If the kit source cannot be located, stop and ask for its path; never guess a remote source.

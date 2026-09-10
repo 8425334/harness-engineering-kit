@@ -114,6 +114,25 @@ JAVA_SCANNER = "templates/fitness/JavaParameterScanner.java.template"
 KIT_DEV_ONLY_SCRIPTS = frozenset({"smoke_test_skills.py"})
 RELEASE_MIGRATIONS = "migrations/releases.json"
 
+ONBOARDING_RECEIPT = "docs/methodology/onboarding.json"
+UNINSTALL_RECEIPT = "docs/methodology/uninstall.json"
+
+# Project-owned facts that an uninstall keeps when --keep-project-facts is set.
+# They are the files onboarding fills from repository evidence and the user is
+# most likely to want after the control plane is gone.
+PROJECT_FACT_TARGETS = frozenset(
+    {
+        "AGENTS.md",
+        "CLAUDE.md",
+        "GEMINI.md",
+        "ai.json",
+        "AI.md",
+        "docs/methodology/agent-policy.yaml",
+        "docs/methodology/profile.yaml",
+        "openspec/config.yaml",
+    }
+)
+
 
 @dataclass(frozen=True)
 class Action:
@@ -121,6 +140,16 @@ class Action:
     source: str | None
     target: str
     reason: str
+
+
+@dataclass(frozen=True)
+class Removal:
+    kind: str
+    target: str
+    reason: str
+    source: str | None = None
+    expected_sha256: str | None = None
+    expected_tree: dict[str, str] | None = None
 
 
 def sha256(path: Path) -> str:
@@ -530,6 +559,7 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
                 ensure_dir(target_dir)
                 copied = 0
                 changed = 0
+                tree: dict[str, str] = {}
                 for item in source_dir.rglob("*"):
                     if item.is_file():
                         destination = target_dir / item.relative_to(source_dir)
@@ -540,8 +570,11 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
                         if not destination.exists() or sha256(item) != sha256(destination):
                             changed += 1
                         shutil.copy2(item, destination)
+                        tree[item.relative_to(source_dir).as_posix()] = sha256(destination)
                 result = "created" if not existed else ("unchanged" if changed == 0 else "updated")
-                results.append({"target": action.target, "result": result, "files": copied})
+                # Digest every installed file so a later uninstall can prove a
+                # path is still the Kit's own content before deleting it.
+                results.append({"target": action.target, "result": result, "files": copied, "tree": tree})
                 continue
             if action.kind == "openspec-init":
                 with tempfile.TemporaryDirectory(prefix="hek-openspec-home-") as isolated_home:
@@ -569,12 +602,16 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
                         raise OSError("OpenSpec did not generate required Skills: " + ", ".join(missing))
                     copied = 0
                     changed = 0
+                    directories: list[str] = []
+                    trees: dict[str, dict[str, str]] = {}
                     for tool in action.target.split(","):
                         for skill in REQUIRED_OPENSPEC_SKILLS:
                             source_dir = staging / OPENSPEC_SKILL_ROOTS[tool] / skill
                             target_dir = root / OPENSPEC_SKILL_ROOTS[tool] / skill
                             ensure_safe_target(root, target_dir)
                             ensure_dir(target_dir)
+                            directories.append(target_dir.relative_to(root).as_posix())
+                            tree = trees.setdefault(target_dir.relative_to(root).as_posix(), {})
                             for item in source_dir.rglob("*"):
                                 if not item.is_file():
                                     continue
@@ -586,6 +623,7 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
                                 if not destination.exists() or sha256(item) != sha256(destination):
                                     changed += 1
                                 shutil.copy2(item, destination)
+                                tree[item.relative_to(source_dir).as_posix()] = sha256(destination)
                 schema_check = subprocess.run(
                     ["openspec", "schema", "validate", "harness-engineering", "--json"],
                     cwd=root,
@@ -603,7 +641,16 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
                 if schema_payload.get("valid") is not True:
                     raise OSError("OpenSpec harness-engineering schema is invalid")
                 result = "unchanged" if changed == 0 else "generated"
-                results.append({"target": action.target, "result": result, "provider": "openspec", "files": copied})
+                results.append(
+                    {
+                        "target": action.target,
+                        "result": result,
+                        "provider": "openspec",
+                        "files": copied,
+                        "directories": directories,
+                        "trees": trees,
+                    }
+                )
                 continue
             if not action.source:
                 continue
@@ -632,6 +679,392 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
                 pass
         raise
     return results
+
+
+def load_receipt(root: Path) -> dict[str, object] | None:
+    path = root / ONBOARDING_RECEIPT
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def receipt_entries(receipt: dict[str, object] | None) -> list[dict[str, object]]:
+    if not isinstance(receipt, dict):
+        return []
+    entries = receipt.get("results")
+    if not isinstance(entries, list):
+        return []
+    return [entry for entry in entries if isinstance(entry, dict)]
+
+
+def openspec_skill_directories(tools: str) -> list[str]:
+    directories: list[str] = []
+    for tool in tools.split(","):
+        skill_root = OPENSPEC_SKILL_ROOTS.get(tool.strip())
+        if not skill_root:
+            continue
+        directories.extend(f"{skill_root}/{skill}" for skill in REQUIRED_OPENSPEC_SKILLS)
+    return directories
+
+
+def source_tree_map(source: Path, relative: str) -> dict[str, str]:
+    base = source / relative
+    if not base.is_dir():
+        return {}
+    return {
+        item.relative_to(base).as_posix(): sha256(item)
+        for item in base.rglob("*")
+        if item.is_file()
+    }
+
+
+def uninstall_removals(
+    root: Path,
+    source: Path,
+    receipt: dict[str, object] | None,
+    tier: int,
+    agent: str | None,
+    keep_project_facts: bool,
+) -> list[Removal]:
+    """Derive the removal plan from the install receipt, falling back to source facts.
+
+    A path is only removed when the receipt proves Harness wrote it and, for
+    regular files, its digest still matches the recorded install digest. Files
+    the install preserved, and files edited after install, stay in place.
+    """
+
+    removals: list[Removal] = []
+    seen: set[str] = set()
+
+    def add(removal: Removal) -> None:
+        if removal.target in seen:
+            return
+        if not (root / removal.target).exists():
+            return
+        seen.add(removal.target)
+        removals.append(removal)
+
+    entries = receipt_entries(receipt)
+    if entries:
+        for entry in entries:
+            target = entry.get("target")
+            result = entry.get("result")
+            if not isinstance(target, str):
+                continue
+            if result in {"report", "preserved"}:
+                continue
+            if result == "ready":
+                add(Removal("prune-dir", target, "Harness workspace directory"))
+                continue
+            if entry.get("provider") == "openspec":
+                directories = entry.get("directories")
+                if not isinstance(directories, list) or not directories:
+                    directories = openspec_skill_directories(target)
+                trees = entry.get("trees")
+                trees = trees if isinstance(trees, dict) else {}
+                for directory in directories:
+                    if not isinstance(directory, str):
+                        continue
+                    expected = trees.get(directory)
+                    add(
+                        Removal(
+                            "remove-tree",
+                            directory,
+                            "OpenSpec lifecycle Skill generated by Harness",
+                            expected_tree=expected if isinstance(expected, dict) else None,
+                        )
+                    )
+                continue
+            if isinstance(entry.get("tree"), dict) or isinstance(entry.get("files"), int):
+                expected = entry.get("tree")
+                add(
+                    Removal(
+                        "remove-tree",
+                        target,
+                        "project-local Engineering Skill",
+                        source="templates/engineering",
+                        expected_tree=expected if isinstance(expected, dict) else None,
+                    )
+                )
+                continue
+            if isinstance(entry.get("sha256"), str):
+                add(Removal("remove", target, "installed Harness control asset", expected_sha256=entry["sha256"]))
+                continue
+    else:
+        # No receipt: infer from the current source and only delete files whose
+        # bytes still match the Kit, which leaves filled project facts alone.
+        for action in source_actions(source, root, tier, "fresh", agent):
+            if action.kind == "report":
+                continue
+            if action.kind == "mkdir":
+                add(Removal("prune-dir", action.target, action.reason))
+            elif action.kind == "sync-tree":
+                add(Removal("remove-tree", action.target, action.reason, source="templates/engineering"))
+            elif action.kind == "openspec-init":
+                for directory in openspec_skill_directories(action.target):
+                    add(Removal("remove-tree", directory, "OpenSpec lifecycle Skill generated by Harness"))
+            else:
+                add(Removal("remove", action.target, action.reason, source=action.source))
+
+    receipt_path = root / ONBOARDING_RECEIPT
+    if receipt_path.is_file():
+        add(Removal("remove", ONBOARDING_RECEIPT, "Harness onboarding receipt", expected_sha256=sha256(receipt_path)))
+
+    if keep_project_facts:
+        removals = [
+            Removal("keep", removal.target, "project-owned fact kept by --keep-project-facts")
+            if removal.target in PROJECT_FACT_TARGETS
+            else removal
+            for removal in removals
+        ]
+    return removals
+
+
+def render_uninstall_plan(
+    root: Path,
+    source: Path,
+    removals: list[Removal],
+    receipt: dict[str, object] | None,
+    tier: int,
+    agent: str | None,
+    keep_project_facts: bool,
+) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "mode": "uninstall",
+        "project_root": str(root),
+        "source_root": str(source),
+        "installed_version": read_version(root / "docs/methodology/VERSION") or "unknown",
+        "source_version": read_version(source / "VERSION") or "unknown",
+        "tier": tier,
+        "agent": agent or "all",
+        "keep_project_facts": keep_project_facts,
+        "receipt_source": ONBOARDING_RECEIPT if receipt else "source-analysis",
+        "read_only": True,
+        "removals": [removal.__dict__ for removal in removals],
+    }
+
+
+def _remove_regular_file(root: Path, path: Path, target: str, expected_sha256: str | None) -> dict[str, object]:
+    if not path.exists() and not path.is_symlink():
+        return {"target": target, "result": "missing"}
+    if path.is_symlink() or not path.is_file():
+        return {"target": target, "result": "kept-unsafe"}
+    if expected_sha256 and sha256(path) != expected_sha256:
+        return {"target": target, "result": "kept-modified"}
+    path.unlink()
+    return {"target": target, "result": "removed"}
+
+
+def walk_regular_files(base: Path) -> list[Path]:
+    """List files under base without following symlinked directories."""
+    files: list[Path] = []
+    stack = [base]
+    while stack:
+        directory = stack.pop()
+        try:
+            entries = sorted(directory.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.is_symlink():
+                continue
+            if entry.is_dir():
+                stack.append(entry)
+            elif entry.is_file():
+                files.append(entry)
+    return files
+
+
+def _remove_tree(
+    root: Path,
+    source: Path,
+    path: Path,
+    target: str,
+    removal: Removal,
+    removed_files: list[Path],
+) -> dict[str, object]:
+    if not path.exists():
+        return {"target": target, "result": "missing"}
+    if path.is_symlink() or not path.is_dir():
+        return {"target": target, "result": "kept-unsafe"}
+    expected = removal.expected_tree
+    if expected is None and removal.source:
+        expected = source_tree_map(source, removal.source)
+    removed = 0
+    preserved: list[str] = []
+    for item in walk_regular_files(path):
+        relative = item.relative_to(path).as_posix()
+        digest = expected.get(relative) if expected else None
+        if expected and (digest is None or sha256(item) != digest):
+            preserved.append(relative)
+            continue
+        item.unlink()
+        removed_files.append(item)
+        removed += 1
+    if removed == 0 and not preserved:
+        return {"target": target, "result": "missing"}
+    if preserved:
+        return {"target": target, "result": "removed-unverified-tree", "files": removed, "preserved": sorted(preserved)}
+    if expected is None:
+        return {"target": target, "result": "removed-unverified-tree", "files": removed}
+    return {"target": target, "result": "removed", "files": removed}
+
+
+def _prune_directory(root: Path, path: Path, target: str) -> dict[str, object]:
+    if not path.exists():
+        return {"target": target, "result": "missing"}
+    if path.is_symlink() or not path.is_dir():
+        return {"target": target, "result": "kept-unsafe"}
+    leftovers = [item.relative_to(root).as_posix() for item in walk_regular_files(path)]
+    if leftovers:
+        return {"target": target, "result": "kept-nonempty", "files": sorted(leftovers)[:20]}
+    path.rmdir()
+    return {"target": target, "result": "pruned"}
+
+
+def apply_uninstall(root: Path, source: Path, removals: list[Removal]) -> list[dict[str, object]]:
+    """Delete planned Harness assets, restoring everything if a delete fails."""
+    results: list[dict[str, object]] = []
+    backups: dict[Path, tuple[bytes, int]] = {}
+    pruned_dirs: list[Path] = []
+    removed_files: list[Path] = []
+
+    if not removals:
+        return results
+
+    def backup(path: Path) -> None:
+        if path not in backups and path.is_file() and not path.is_symlink():
+            backups[path] = (path.read_bytes(), path.stat().st_mode)
+
+    try:
+        for removal in removals:
+            target = root / removal.target
+            if removal.kind == "keep":
+                results.append({"target": removal.target, "result": "kept"})
+                continue
+            if removal.kind == "prune-dir":
+                results.append(_prune_directory(root, target, removal.target))
+                continue
+            if removal.kind == "remove":
+                ensure_safe_target(root, target)
+                backup(target)
+                entry = _remove_regular_file(root, target, removal.target, removal.expected_sha256)
+                if entry["result"] == "removed":
+                    removed_files.append(target)
+                results.append(entry)
+                continue
+            if removal.kind == "remove-tree":
+                ensure_safe_target(root, target)
+                if target.is_dir() and not target.is_symlink():
+                    for item in walk_regular_files(target):
+                        backup(item)
+                entry = _remove_tree(root, source, target, removal.target, removal, removed_files)
+                if entry["result"].startswith("removed"):
+                    removed_files.append(target)
+                results.append(entry)
+                continue
+        # Remove directories that only existed to hold deleted Harness assets.
+        candidates = {
+            parent
+            for removed in removed_files
+            for parent in _ancestor_dirs(root, removed)
+        }
+        for candidate in sorted(candidates, key=lambda item: len(item.parts), reverse=True):
+            if candidate.exists() and not candidate.is_symlink() and candidate.is_dir() and not any(candidate.iterdir()):
+                candidate.rmdir()
+                pruned_dirs.append(candidate)
+                results.append({"target": candidate.relative_to(root).as_posix(), "result": "pruned"})
+    except (OSError, shutil.Error):
+        for target, (content, mode) in backups.items():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            target.chmod(mode)
+        for directory in reversed(pruned_dirs):
+            directory.mkdir(parents=True, exist_ok=True)
+        raise
+    return results
+
+
+def _ancestor_dirs(root: Path, target: Path) -> list[Path]:
+    directories: list[Path] = []
+    if target.is_dir() and not target.is_symlink():
+        current = target
+    else:
+        current = target.parent
+    while current != root and current != current.parent:
+        if current.is_symlink() or not current.is_dir():
+            break
+        directories.append(current)
+        current = current.parent
+    return directories
+
+
+def print_uninstall_summary(plan: dict[str, object]) -> None:
+    counts: dict[str, int] = {}
+    for entry in plan.get("results") or []:  # type: ignore[union-attr]
+        if isinstance(entry, dict):
+            key = str(entry.get("result", "unknown"))
+            counts[key] = counts.get(key, 0) + 1
+    summary = ", ".join(f"{kind}={count}" for kind, count in sorted(counts.items())) or "no actions"
+    print(f"HARNESS UNINSTALL APPLIED: {summary}")
+    if any(key.startswith("kept") for key in counts):
+        print("Preserved files were modified after install, or are project-owned facts; see the receipt for details.")
+    print(f"Receipt: {UNINSTALL_RECEIPT}")
+
+
+def run_uninstall(
+    root: Path,
+    source: Path,
+    tier: int,
+    agent: str | None,
+    as_json: bool,
+    should_apply: bool,
+    keep_project_facts: bool,
+) -> int:
+    receipt = load_receipt(root)
+    if receipt:
+        recorded_agent = receipt.get("agent")
+        if agent is None and isinstance(recorded_agent, str) and recorded_agent not in {"", "all"}:
+            agent = recorded_agent
+        recorded_tier = receipt.get("tier")
+        if isinstance(recorded_tier, int) and recorded_tier in (1, 2):
+            tier = recorded_tier
+    removals = uninstall_removals(root, source, receipt, tier, agent, keep_project_facts)
+    plan = render_uninstall_plan(root, source, removals, receipt, tier, agent, keep_project_facts)
+
+    if should_apply:
+        plan["read_only"] = False
+        plan["confirmed_at"] = datetime.now(timezone.utc).isoformat()
+        try:
+            plan["results"] = apply_uninstall(root, source, removals)
+        except (OSError, shutil.Error) as exc:
+            plan["errors"] = [f"uninstall failed and rolled back: {exc}"]
+            if as_json:
+                print(json.dumps(plan, ensure_ascii=False, indent=2))
+            else:
+                print(f"HARNESS UNINSTALL FAILED AND ROLLED BACK: {exc}", file=sys.stderr)
+            return 2
+        if removals:
+            receipt_path = root / UNINSTALL_RECEIPT
+            receipt_path.parent.mkdir(parents=True, exist_ok=True)
+            receipt_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    if as_json:
+        print(json.dumps(plan, ensure_ascii=False, indent=2))
+    elif should_apply:
+        print_uninstall_summary(plan)
+    else:
+        print(f"HARNESS UNINSTALL PLAN: {root}")
+        print(f"Plan source: {plan['receipt_source']} | installed {plan['installed_version']} | tier {plan['tier']} | agent {plan['agent']}")
+        for removal in removals:
+            print(f"- {removal.kind:11} {removal.target} ({removal.reason})")
+        print("Read-only plan. Confirm with the user, then rerun with --uninstall --apply.")
+    return 0
 
 
 def run_check(root: Path, source: Path, agent: str | None = None) -> tuple[int, list[str]]:
@@ -698,6 +1131,8 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--apply", action="store_true", help="apply the displayed plan after user confirmation")
     parser.add_argument("--check", action="store_true", help="run deterministic checks after onboarding")
+    parser.add_argument("--uninstall", action="store_true", help="plan or apply removal of an installed Harness control plane")
+    parser.add_argument("--keep-project-facts", action="store_true", help="keep root adapters and project configuration when uninstalling")
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args()
 
@@ -709,6 +1144,16 @@ def main() -> int:
     if args.apply and not (root / ".git").exists():
         print(f"HARNESS ONBOARDING ERROR: target is not a Git repository: {root}", file=sys.stderr)
         return 2
+    if args.uninstall:
+        return run_uninstall(
+            root,
+            source,
+            min(args.tier, 2),
+            args.agent,
+            args.as_json,
+            args.apply,
+            args.keep_project_facts,
+        )
     agent = args.agent
     status = detect_status(root, agent)
     effective_tier = min(args.tier, 2)

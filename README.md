@@ -92,6 +92,9 @@ npx --yes --package github:8425334/harness-engineering-kit hek agents
 npx --yes --package github:8425334/harness-engineering-kit hek init --plan --json
 npx --yes --package github:8425334/harness-engineering-kit hek handoff --agent workbuddy
 npx --yes --package github:8425334/harness-engineering-kit hek handoff --agent trae-work --json
+npx --yes --package github:8425334/harness-engineering-kit hek uninstall --plan --json
+npx --yes --package github:8425334/harness-engineering-kit hek uninstall --yes
+npx --yes --package github:8425334/harness-engineering-kit hek uninstall --yes --keep-project-facts
 ```
 
 For a desktop Agent without a CLI, first install the project controls with `hek init --direct --yes`, then run `hek handoff --agent workbuddy` or `hek handoff --agent trae-work`. Open the project in that Agent, copy the generated prompt, and let it read the repository's `AGENTS.md`/`CLAUDE.md` and `docs/methodology/agent-policy.yaml`. `handoff` never launches an unknown desktop application and never writes project files.
@@ -103,6 +106,8 @@ A fresh project's placeholders must be filled from real repository facts before 
 `hek init` is Agent-driven: it asks for the install scope, selects an installed Agent, opens that Agent's CLI in the resolved project root, and passes the Kit path plus the onboarding contract and selected Agent target. The Agent reads project facts, generates the read-only plan, asks for confirmation, fills project-specific values, applies the canonical script, and runs deterministic checks. Tier 1 (lightweight) installs the core control plane plus the minimal staged Fitness executor and SDD sync rule required by lifecycle gates; the default Tier 2 (full) additionally installs the complete Fitness rule set and lesson memory. Each run writes `docs/methodology/onboarding.json` with the source version, file digests, created/updated/preserved files, and verification result. Use `--direct` only when a headless compatibility install is explicitly wanted; it ignores `--agent` and `HEK_AGENT` and installs all supported adapters.
 
 Version-aware upgrades compare the installed `docs/methodology/VERSION` with the Kit version, synchronize all canonical resources for lower-to-higher upgrades, block downgrades, and report any release-specific migration review. See [Versioning and Upgrades](docs/versioning.md).
+
+`hek uninstall` reverses onboarding. It stays read-only until confirmed with `--yes` (or `--apply`), reads the `docs/methodology/onboarding.json` receipt, and deletes only the assets Harness installed whose bytes still match the recorded digests. Files the install preserved, project-owned facts, and files edited afterwards stay in place and are reported, and directories that become empty are pruned. Each apply writes `docs/methodology/uninstall.json`. Use `--keep-project-facts` to also retain `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`, `ai.json`, `AI.md`, `agent-policy.yaml`, `profile.yaml`, and `openspec/config.yaml`; `--json` prints the machine-readable plan (without `--yes`, exit 2) or the receipt. When no receipt exists it falls back to removing only files that are still byte-identical to the Kit source.
 
 The check fails for an oversized or structurally invalid `ai.json`, unindexed or oversized `AI.md`, missing policy, placeholders, broken referenced paths, invalid task graphs/execution evidence, invalid profiles, missing Skill resources, stale installed Skill content, or unsupported platform adapters. The Engineering Skill is installed and checked for Claude Code, Codex, OpenCode, Cursor, Gemini, and Trae. The legacy `ramer`, `fe-engineering`, and `multi-agent` entries are intentionally not supported.
 
