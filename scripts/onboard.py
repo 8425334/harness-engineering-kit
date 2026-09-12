@@ -161,6 +161,17 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def openspec_executable() -> str:
+    """Resolve the OpenSpec CLI for subprocess use.
+
+    Windows resolves a command without an extension by appending only ``.exe``,
+    so the bare name ``openspec`` never reaches the ``.cmd`` shim that npm
+    installs. ``shutil.which`` honours ``PATHEXT`` and returns the real
+    launcher, matching the resolution already used by ``repair.py``.
+    """
+    return shutil.which("openspec") or "openspec"
+
+
 def project_root(value: Path | None) -> Path:
     if value:
         return value.resolve()
@@ -588,13 +599,22 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
                     environment["HOME"] = isolated_home
                     environment["USERPROFILE"] = isolated_home
                     environment["OPENSPEC_TELEMETRY"] = "0"
+                    openspec = openspec_executable()
                     commands = (
-                        ["openspec", "config", "set", "profile", "custom"],
-                        ["openspec", "config", "set", "workflows", json.dumps(OPENSPEC_WORKFLOWS)],
-                        ["openspec", "init", str(staging), "--tools", action.target, "--profile", "custom", "--no-animation"],
+                        [openspec, "config", "set", "profile", "custom"],
+                        [openspec, "config", "set", "workflows", json.dumps(OPENSPEC_WORKFLOWS)],
+                        [openspec, "init", str(staging), "--tools", action.target, "--profile", "custom", "--no-animation"],
                     )
                     for command in commands:
-                        completed = subprocess.run(command, text=True, capture_output=True, env=environment, check=False)
+                        completed = subprocess.run(
+                            command,
+                            text=True,
+                            encoding="utf-8",
+                            errors="replace",
+                            capture_output=True,
+                            env=environment,
+                            check=False,
+                        )
                         if completed.returncode:
                             raise OSError(completed.stderr.strip() or completed.stdout.strip() or "openspec init failed")
                     missing = [
@@ -630,9 +650,11 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
                                 shutil.copy2(item, destination)
                                 tree[item.relative_to(source_dir).as_posix()] = sha256(destination)
                 schema_check = subprocess.run(
-                    ["openspec", "schema", "validate", "harness-engineering", "--json"],
+                    [openspec_executable(), "schema", "validate", "harness-engineering", "--json"],
                     cwd=root,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     capture_output=True,
                     env={**os.environ, "OPENSPEC_TELEMETRY": "0"},
                     check=False,
