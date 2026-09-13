@@ -4,7 +4,7 @@
 Verifies that infrastructure modules don't contain business packages, and that
 application modules don't contain orchestration entry points (controllers, etc.).
 
-Copy to: docs/fitness/scripts/check_architecture_boundary.py
+Copy to: .hek/fitness/scripts/check_architecture_boundary.py
 """
 # {{CHECK_ARCHITECTURE_BOUNDARY_TEMPLATE}}
 
@@ -61,7 +61,7 @@ def main() -> int:
     if fitness_dir.exists():
         for required in ["README.md"]:
             if not (fitness_dir / required).exists():
-                violations.append(f"docs/fitness missing required entry: {required}")
+                violations.append(f".hek/fitness missing required entry: {required}")
 
     if violations:
         print("Architecture boundary violations:")

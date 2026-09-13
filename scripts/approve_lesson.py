@@ -8,7 +8,13 @@ import json
 import sys
 from pathlib import Path
 
-from lessons_common import load_failure_events, validate_lesson, validate_slug, write_json_file
+from lessons_common import (
+    lessons_dir as resolve_lessons_dir,
+    load_failure_events,
+    validate_lesson,
+    validate_slug,
+    write_json_file,
+)
 from methodology_common import append_event, file_lock, read_json, sha256, utc_now
 
 
@@ -43,8 +49,7 @@ def main() -> int:
         change_dir.relative_to(project_root)
     except ValueError:
         errors.append("change record project_root does not contain the change workspace")
-    lessons_dir = project_root / "docs" / "methodology" / "lessons"
-    destination = lessons_dir / f"{candidate.get('lesson_id')}.json"
+    destination = resolve_lessons_dir(project_root) / f"{candidate.get('lesson_id')}.json"
     if destination.exists():
         errors.append(f"lesson already exists: {destination}")
     if errors:

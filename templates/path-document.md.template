@@ -2,7 +2,7 @@
 
 Scope: {{SCOPE_DESCRIPTION}}
 
-This detailed context is selected through root `ai.json`. It supplements applicable native `AGENTS.md`/`CLAUDE.md` instructions and `docs/methodology/agent-policy.yaml`; it cannot override or weaken them.
+This detailed context is selected through root `ai.json`. It supplements applicable native `AGENTS.md`/`CLAUDE.md` instructions and `.hek/project/agent-policy.yaml`; it cannot override or weaken them.
 
 Ancestor contexts remain applicable. Record only facts and differences specific to this scope; do not repeat inherited content.
 

@@ -4,7 +4,7 @@ weight: 20
 tier: fast
 metrics:
   - name: changed_controller_permission_check
-    command: python3 docs/fitness/scripts/check_permission_management.py
+    command: python3 .hek/fitness/scripts/check_permission_management.py
     pattern: "Permission management ok"
     hard_gate: true
     tier: fast

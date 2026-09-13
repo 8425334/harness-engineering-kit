@@ -3,7 +3,7 @@
 
 Scans tracked files for patterns that bypass AI Agent permission boundaries.
 
-Copy to: docs/fitness/scripts/check_security_baseline.py
+Copy to: .hek/fitness/scripts/check_security_baseline.py
 """
 # {{CHECK_SECURITY_BASELINE_TEMPLATE}}
 
@@ -31,7 +31,7 @@ EXCLUDED_DIRS = {
     "dist",
     # {{EXTRA_EXCLUDED_DIRS}} — add project-specific doc dirs, e.g.:
     # "docs/ai-docs",
-    # "docs/fitness",
+    # ".hek/fitness",
 }
 
 

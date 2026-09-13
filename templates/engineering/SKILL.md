@@ -5,7 +5,7 @@ description: Automatically govern requested feature implementation, bug fixes, r
 
 # Engineering
 
-Engineering is a governance wrapper, not a competing lifecycle. OpenSpec owns change creation, artifact order, task progress, Sync, and Archive. Repository policy comes from applicable native instructions, `docs/methodology/agent-policy.yaml`, the resolved path context, and the selected profile.
+Engineering is a governance wrapper, not a competing lifecycle. OpenSpec owns change creation, artifact order, task progress, Sync, and Archive. Repository policy comes from applicable native instructions, `.hek/project/agent-policy.yaml`, the resolved path context, and the selected profile.
 
 ## Onboarding
 
@@ -17,7 +17,7 @@ When the `engineering` Skill is missing or stale, the Python runtime or an insta
 
 ## Requirement Reflection
 
-Before a consequential action, follow `docs/methodology/core/requirement-reflection.md`. Report only the result, evidence, assumptions, recommendation, and confirmation needed. Stop on material ambiguity, conflict, missing authorization, or missing evidence.
+Before a consequential action, follow `.hek/kit/core/requirement-reflection.md`. Report only the result, evidence, assumptions, recommendation, and confirmation needed. Stop on material ambiguity, conflict, missing authorization, or missing evidence.
 
 ## Route
 
@@ -55,8 +55,8 @@ Engineering wraps that sequence with governance gates:
 
 - Explore/Propose: context resolution, requirement reflection, lessons, context impact, Design Review, and OpenSpec strict artifact validation.
 - Apply: require current `approval.json`; record actual task runs and integration in `execution-evidence.json` while OpenSpec remains the sole owner of `tasks.md` checkbox state.
-- Verify/Review: invoke `openspec-verify-change`, prepare the final `review-evidence.json` file map, run project tests/build and `python3 docs/fitness/scripts/fitness.py --stage review --change <change-id> --tier <policy-tier> --report <change>/evidence/fitness-review.json`, then record the report digest and run `check_execution.py` and `check_phase.py <change-dir> REVIEW`.
-- Sync: snapshot canonical specs, let `openspec-sync-specs` perform the intelligent merge, run `openspec validate --specs` and `python3 docs/fitness/scripts/fitness.py --stage sync --change <change-id> --tier fast --report <change>/evidence/fitness-sync.json`, then record source/destination digests and run the `SYNC` governance gate.
+- Verify/Review: invoke `openspec-verify-change`, prepare the final `review-evidence.json` file map, run project tests/build and `python3 .hek/fitness/scripts/fitness.py --stage review --change <change-id> --tier <policy-tier> --report <change>/evidence/fitness-review.json`, then record the report digest and run `check_execution.py` and `check_phase.py <change-dir> REVIEW`.
+- Sync: snapshot canonical specs, let `openspec-sync-specs` perform the intelligent merge, run `openspec validate --specs` and `python3 .hek/fitness/scripts/fitness.py --stage sync --change <change-id> --tier fast --report <change>/evidence/fitness-sync.json`, then record source/destination digests and run the `SYNC` governance gate.
 - Archive: require governance and production closure, then let `openspec-archive-change` perform the archive.
 
 Harness has no second change state machine. Approval and evidence files are facts checked against OpenSpec artifacts, not lifecycle state transitions.
@@ -71,6 +71,6 @@ The coordinator owns integration, conflict resolution, final verification, and r
 
 ## Evidence
 
-Use `record_skill_event.py`, `record_failure.py`, `create_lesson_candidate.py`, and the governance templates as applicable. `execution-evidence.json` task ids must exactly equal the checked OpenSpec tasks at Review, and its changed files must equal `review-evidence.json` files. Project Agents must not edit `docs/fitness/**` except canonical first installation or an approved repair.
+Use `record_skill_event.py`, `record_failure.py`, `create_lesson_candidate.py`, and the governance templates as applicable. `execution-evidence.json` task ids must exactly equal the checked OpenSpec tasks at Review, and its changed files must equal `review-evidence.json` files. Project Agents must not edit `.hek/fitness/**` except canonical first installation or an approved repair.
 
 If OpenSpec or a required native Skill is unavailable, report the missing dependency and stop lifecycle work; do not recreate its workflow inside Engineering. Return the selected OpenSpec action, governance checks, changed files, exact verification, uncovered cases, and the next valid OpenSpec action.

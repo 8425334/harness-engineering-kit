@@ -11,24 +11,27 @@ from pathlib import Path
 from check_agent_policy import validate as validate_agent_policy
 from check_change_workspace import REQUIRED_SCHEMA, change_schema
 from check_context_docs import validate_project as validate_context_docs
+import layout
 from check_profile import read_project_profile
 from methodology_common import append_event, utc_now, write_json
 from openspec_common import orchestration_contract
 
 
-CANONICAL_POLICY_LOCATION = ("docs", "methodology", "agent-policy.yaml")
+CANONICAL_POLICY_LOCATION = Path(layout.policy_rel()).parts
 
 
 def project_root_from_policy(policy_path: Path) -> Path:
     """Derive the project root from the canonical policy location.
 
-    The root is only knowable when the policy sits at
-    ``<project root>/docs/methodology/agent-policy.yaml``; anything else is a
-    caller error instead of a guessed (and crash-prone) ``parents[2]``.
+    The root is only knowable when the policy sits where the active layout says
+    it belongs; anything else is a caller error instead of a guessed (and
+    crash-prone) parent index.
     """
-    if policy_path.parts[-3:] != CANONICAL_POLICY_LOCATION:
-        raise ValueError("agent policy must be located at <project root>/docs/methodology/agent-policy.yaml")
-    return policy_path.parents[2]
+    if policy_path.parts[-len(CANONICAL_POLICY_LOCATION):] != CANONICAL_POLICY_LOCATION:
+        raise ValueError(
+            f"agent policy must be located at <project root>/{layout.policy_rel()}"
+        )
+    return policy_path.parents[len(CANONICAL_POLICY_LOCATION) - 1]
 
 
 def main() -> int:
@@ -41,8 +44,8 @@ def main() -> int:
     parser.add_argument("--fallback-reason")
     parser.add_argument("--delivery-scope", choices=("technical", "production"), default="technical")
     parser.add_argument("--production-record")
-    parser.add_argument("--profile-path", type=Path, default=Path("docs/methodology/profile.yaml"))
-    parser.add_argument("--policy-path", type=Path, default=Path("docs/methodology/agent-policy.yaml"))
+    parser.add_argument("--profile-path", type=Path, default=None)
+    parser.add_argument("--policy-path", type=Path, default=None)
     parser.add_argument("--root", type=Path, default=Path("openspec/changes"))
     args = parser.parse_args()
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,62}", args.change_id):
@@ -54,14 +57,19 @@ def main() -> int:
     if args.trigger == "manual-fallback" and not args.fallback_reason:
         print("INVALID: manual-fallback requires --fallback-reason")
         return 2
-    profile_path = args.profile_path.resolve()
-    policy_path = args.policy_path.resolve()
+    # Defaults resolve through the active layout so the command works from any
+    # directory, not only the project root.
+    profile_path = (args.profile_path or layout.profile_path()).resolve()
+    policy_path = (args.policy_path or layout.policy_path()).resolve()
     policy_errors = validate_agent_policy(policy_path)
     if policy_errors:
         print(f"INVALID POLICY: {'; '.join(policy_errors)}")
         return 2
     if profile_path.parent != policy_path.parent:
-        print("INVALID: profile and agent policy must share docs/methodology")
+        print(
+            "INVALID: profile and agent policy must share "
+            f"{layout.relative('policy_dir')}"
+        )
         return 2
     try:
         project_root = project_root_from_policy(policy_path)
@@ -83,10 +91,13 @@ def main() -> int:
     except ValueError:
         print(f"INVALID: --root must stay inside the project root: {project_root}")
         return 2
-    (project_root / "docs" / "methodology" / "lessons").mkdir(parents=True, exist_ok=True)
+    layout.path("lessons", project_root).mkdir(parents=True, exist_ok=True)
     if args.production_record:
-        production_record = (Path.cwd() / args.production_record).resolve()
-        allowed_production_dir = (project_root / "docs/methodology/production/changes").resolve()
+        # Resolve against the project root, matching how allowed_production_dir is
+        # built; a CWD-relative join made a project-relative argument fail
+        # whenever the command ran from anywhere else.
+        production_record = (project_root / args.production_record).resolve()
+        allowed_production_dir = layout.path("production_changes", project_root).resolve()
         try:
             production_record.relative_to(allowed_production_dir)
         except ValueError:

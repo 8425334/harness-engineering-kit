@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+import layout
 from methodology_common import file_lock, read_json, utc_now, write_json
 
 
@@ -113,7 +114,7 @@ def _require_string_array(lesson: dict[str, Any], field: str, *, non_empty: bool
 
 
 def lessons_dir(project_root: Path) -> Path:
-    return project_root / "docs" / "methodology" / "lessons"
+    return layout.path("lessons", project_root)
 
 
 def load_lessons(project_root: Path, *, active_only: bool = True) -> tuple[list[dict[str, Any]], list[str]]:

@@ -6,7 +6,7 @@ Sub-check 2 (normal/deep): changed modules must meet a JaCoCo line-coverage thre
 
 Java + JaCoCo. Adapt module prefixes, package roots, and suffix lists to your project.
 
-Copy to: docs/fitness/scripts/check_test_coverage.py
+Copy to: .hek/fitness/scripts/check_test_coverage.py
 """
 # {{CHECK_TEST_COVERAGE_TEMPLATE}}
 

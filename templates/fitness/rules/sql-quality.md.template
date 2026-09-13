@@ -9,7 +9,7 @@ metrics:
     hard_gate: true
     tier: fast
   - name: sql_update_location_check
-    command: python3 docs/fitness/scripts/check_sql_updates.py
+    command: python3 .hek/fitness/scripts/check_sql_updates.py
     pattern: "SQL update location ok"
     hard_gate: true
     tier: fast

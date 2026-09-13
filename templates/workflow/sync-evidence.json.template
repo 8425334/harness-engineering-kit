@@ -23,7 +23,7 @@
     },
     {
       "id": "sync_semantics",
-      "command": "python3 docs/fitness/scripts/fitness.py --stage=sync --change {{CHANGE_ID}} --tier fast --report openspec/changes/{{CHANGE_ID}}/evidence/fitness-sync.json",
+      "command": "python3 .hek/fitness/scripts/fitness.py --stage=sync --change {{CHANGE_ID}} --tier fast --report openspec/changes/{{CHANGE_ID}}/evidence/fitness-sync.json",
       "status": "passed",
       "exit_code": 0,
       "evidence": "openspec/changes/{{CHANGE_ID}}/evidence/fitness-sync.json",

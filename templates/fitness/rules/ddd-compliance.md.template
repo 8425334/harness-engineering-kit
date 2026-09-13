@@ -4,7 +4,7 @@ weight: 15
 tier: fast
 metrics:
   - name: domain_purity
-    command: python3 docs/fitness/scripts/check_ddd_compliance.py --check domain-purity
+    command: python3 .hek/fitness/scripts/check_ddd_compliance.py --check domain-purity
     pattern: "DDD compliance ok"
     hard_gate: true
     tier: fast
@@ -14,7 +14,7 @@ metrics:
 
 ## 当前目标
 
-验证代码迭代是否遵循 DDD 建模纪律（详见 `docs/methodology/core/ddd-modeling.md` 的"建模纪律"节）。
+验证代码迭代是否遵循 DDD 建模纪律（详见 `.hek/kit/core/ddd-modeling.md` 的"建模纪律"节）。
 
 ## 当前检查
 

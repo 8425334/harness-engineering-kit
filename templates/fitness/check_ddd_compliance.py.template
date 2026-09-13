@@ -7,7 +7,7 @@ infrastructure annotations/classes (DI, controllers, data access). Enforces the
 
 Java-only. Adapt path keywords and forbidden lists to your project.
 
-Copy to: docs/fitness/scripts/check_ddd_compliance.py
+Copy to: .hek/fitness/scripts/check_ddd_compliance.py
 """
 # {{CHECK_DDD_COMPLIANCE_TEMPLATE}}
 

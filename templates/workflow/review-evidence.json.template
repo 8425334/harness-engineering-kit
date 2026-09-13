@@ -10,7 +10,7 @@
   },
   "commands": [
     {
-      "command": "python3 docs/fitness/scripts/fitness.py --stage=review --change {{CHANGE_ID}} --tier fast --report openspec/changes/{{CHANGE_ID}}/evidence/fitness-review.json",
+      "command": "python3 .hek/fitness/scripts/fitness.py --stage=review --change {{CHANGE_ID}} --tier fast --report openspec/changes/{{CHANGE_ID}}/evidence/fitness-review.json",
       "exit_code": 0,
       "evidence": "openspec/changes/{{CHANGE_ID}}/evidence/fitness-review.json",
       "evidence_sha256": "{{FITNESS_REPORT_SHA256}}"

@@ -22,8 +22,12 @@ from functools import cmp_to_key
 from pathlib import Path
 
 try:
+    from . import layout
+    from .openspec_common import openspec_executable
     from .versioning import classify_versions, compare_versions, parse_version, read_version
 except ImportError:
+    import layout
+    from openspec_common import openspec_executable
     from versioning import classify_versions, compare_versions, parse_version, read_version
 
 
@@ -31,10 +35,10 @@ ROOT_FILES = {
     "templates/AGENTS.md.template": "AGENTS.md",
     "templates/CLAUDE.md.template": "CLAUDE.md",
     "templates/GEMINI.md.template": "GEMINI.md",
-    "templates/agent-policy.yaml.template": "docs/methodology/agent-policy.yaml",
-    "templates/methodology-profile.yaml.template": "docs/methodology/profile.yaml",
-    "templates/ai.json.template": "ai.json",
-    "templates/path-document.md.template": "AI.md",
+    "templates/agent-policy.yaml.template": layout.policy_rel(),
+    "templates/methodology-profile.yaml.template": layout.profile_rel(),
+    "templates/ai.json.template": layout.relative("context_index"),
+    "templates/path-document.md.template": layout.relative("context_doc", module_path="."),
     "templates/openspec-config.yaml.template": "openspec/config.yaml",
     "templates/openspec-readme.md.template": "openspec/README.md",
 }
@@ -94,6 +98,8 @@ REQUIRED_OPENSPEC_SKILLS = (
 
 OPENSPEC_WORKFLOWS = ("propose", "explore", "apply", "update", "sync", "archive", "verify")
 
+# Paths that only a retired layout ever created. They are historical facts, not
+# layout-relative targets, so they stay literal across layout changes.
 LEGACY_MARKERS = (
     "docs/sdd",
     ".cursor/skills",
@@ -114,8 +120,8 @@ JAVA_SCANNER = "templates/fitness/JavaParameterScanner.java.template"
 KIT_DEV_ONLY_SCRIPTS = frozenset({"smoke_test_skills.py"})
 RELEASE_MIGRATIONS = "migrations/releases.json"
 
-ONBOARDING_RECEIPT = "docs/methodology/onboarding.json"
-UNINSTALL_RECEIPT = "docs/methodology/uninstall.json"
+ONBOARDING_RECEIPT = layout.relative("onboarding_receipt")
+UNINSTALL_RECEIPT = layout.relative("uninstall_receipt")
 
 # Seed content for the tier-2 verification ledger. Uninstall compares against
 # this digest so a ledger that was actually filled in is never deleted.
@@ -130,10 +136,10 @@ PROJECT_FACT_TARGETS = frozenset(
         "AGENTS.md",
         "CLAUDE.md",
         "GEMINI.md",
-        "ai.json",
-        "AI.md",
-        "docs/methodology/agent-policy.yaml",
-        "docs/methodology/profile.yaml",
+        layout.relative("context_index"),
+        layout.relative("context_doc", module_path="."),
+        layout.policy_rel(),
+        layout.profile_rel(),
         "openspec/config.yaml",
     }
 )
@@ -159,17 +165,6 @@ class Removal:
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def openspec_executable() -> str:
-    """Resolve the OpenSpec CLI for subprocess use.
-
-    Windows resolves a command without an extension by appending only ``.exe``,
-    so the bare name ``openspec`` never reaches the ``.cmd`` shim that npm
-    installs. ``shutil.which`` honours ``PATHEXT`` and returns the real
-    launcher, matching the resolution already used by ``repair.py``.
-    """
-    return shutil.which("openspec") or "openspec"
 
 
 def project_root(value: Path | None) -> Path:
@@ -232,8 +227,8 @@ def detect_status(root: Path, agent: str | None = None) -> str:
             root / SKILL_ROOTS[str(target["skill_platform"])] / "engineering/SKILL.md"
         ).is_file()
         canonical = (
-            (root / "docs/methodology/VERSION").is_file()
-            and (root / "docs/methodology/agent-policy.yaml").is_file()
+            layout.path("version", root).is_file()
+            and layout.policy_path(root).is_file()
             and root_ready
             and skill_ready
         )
@@ -241,8 +236,8 @@ def detect_status(root: Path, agent: str | None = None) -> str:
             return "current"
     if agent is None:
         canonical = (
-            (root / "docs/methodology/VERSION").is_file()
-            and (root / "docs/methodology/agent-policy.yaml").is_file()
+            layout.path("version", root).is_file()
+            and layout.policy_path(root).is_file()
             and (root / ".agents/skills/engineering/SKILL.md").is_file()
         )
         if canonical:
@@ -262,13 +257,13 @@ def source_actions(source: Path, root: Path, tier: int, status: str, agent: str 
             actions.append(Action("create", relative, target, "required Harness entrypoint"))
 
     for relative in sorted((source / "core").glob("*.md")):
-        actions.append(Action("sync", str(relative.relative_to(source)), f"docs/methodology/core/{relative.name}", "canonical methodology"))
+        actions.append(Action("sync", str(relative.relative_to(source)), f"{layout.relative('core')}/{relative.name}", "canonical methodology"))
     for relative in sorted((source / "scripts").glob("*.py")):
         if relative.name in KIT_DEV_ONLY_SCRIPTS:
             continue
-        actions.append(Action("sync", str(relative.relative_to(source)), f"docs/methodology/scripts/{relative.name}", "canonical control script"))
+        actions.append(Action("sync", str(relative.relative_to(source)), f"{layout.relative('scripts')}/{relative.name}", "canonical control script"))
     for relative in sorted((source / "templates/workflow").glob("*.template")):
-        actions.append(Action("sync", str(relative.relative_to(source)), f"docs/methodology/change-templates/{relative.name}", "change evidence template"))
+        actions.append(Action("sync", str(relative.relative_to(source)), f"{layout.relative('change_templates')}/{relative.name}", "change evidence template"))
     for relative in sorted((source / "templates/openspec-schema").rglob("*")):
         if relative.is_file():
             target = Path("openspec/schemas/harness-engineering") / relative.relative_to(source / "templates/openspec-schema")
@@ -276,28 +271,28 @@ def source_actions(source: Path, root: Path, tier: int, status: str, agent: str 
     for relative in sorted((source / "templates/compaction").glob("*")):
         if relative.is_file():
             target_name = relative.name.replace(".template", "")
-            actions.append(Action("sync", str(relative.relative_to(source)), f"docs/methodology/compaction/{target_name}", "portable compaction recovery resource"))
+            actions.append(Action("sync", str(relative.relative_to(source)), f"{layout.relative('compaction')}/{target_name}", "portable compaction recovery resource"))
     actions.extend(
         Action("mkdir", None, target, "Harness workspace directory")
         for target in (
-            "docs/methodology/production/changes",
-            "docs/methodology/production/audit",
-            "docs/methodology/lessons",
+            layout.relative("production_changes"),
+            layout.relative("production_audit"),
+            layout.relative("lessons"),
             "openspec/changes",
             "openspec/specs",
         )
     )
     version_file = source / "VERSION"
     if version_file.is_file():
-        actions.append(Action("sync", "VERSION", "docs/methodology/VERSION", "installed methodology version"))
+        actions.append(Action("sync", "VERSION", layout.relative("version"), "installed methodology version"))
 
     # agent-policy.yaml references the production policy at every tier, so the
     # production control scaffold must be installed at every tier as well.
     for relative in sorted((source / "templates/production").glob("*.template")):
         target = {
-            "README.md.template": "docs/methodology/production/README.md",
-            "policy.yaml.template": "docs/methodology/production/policy.yaml",
-            "change-record.json.template": "docs/methodology/production/change-record.template.json",
+            "README.md.template": layout.relative("production_readme"),
+            "policy.yaml.template": layout.relative("production_policy"),
+            "change-record.json.template": layout.relative("production_template"),
         }.get(relative.name)
         if target:
             actions.append(Action("create", str(relative.relative_to(source)), target, "production control"))
@@ -307,22 +302,22 @@ def source_actions(source: Path, root: Path, tier: int, status: str, agent: str 
         for relative in sorted((source / "templates/fitness").glob("*.py.template")):
             if tier < 2 and relative.name not in minimal_fitness:
                 continue
-            actions.append(Action("create", str(relative.relative_to(source)), f"docs/fitness/scripts/{relative.stem}", "optional Fitness control"))
+            actions.append(Action("create", str(relative.relative_to(source)), f"{layout.relative('fitness')}/scripts/{relative.stem}", "optional Fitness control"))
         sdd_rule = source / "templates/fitness/rules/sdd-quality.md.template"
-        actions.append(Action("create", str(sdd_rule.relative_to(source)), "docs/fitness/sdd-quality.md", "required staged Fitness control"))
+        actions.append(Action("create", str(sdd_rule.relative_to(source)), f"{layout.relative('fitness')}/sdd-quality.md", "required staged Fitness control"))
     if tier >= 2:
-        actions.append(Action("create", JAVA_SCANNER, "docs/fitness/scripts/JavaParameterScanner.java", "Java Fitness scanner"))
-        actions.append(Action("create-empty", None, "docs/fitness/verification-ledger.md", "Fitness verification ledger"))
+        actions.append(Action("create", JAVA_SCANNER, f"{layout.relative('fitness')}/scripts/JavaParameterScanner.java", "Java Fitness scanner"))
+        actions.append(Action("create-empty", None, layout.relative("fitness_ledger"), "Fitness verification ledger"))
         fitness_readme = source / "templates/fitness/README.md"
         if fitness_readme.is_file():
-            actions.append(Action("create", str(fitness_readme.relative_to(source)), "docs/fitness/README.md", "optional Fitness control"))
+            actions.append(Action("create", str(fitness_readme.relative_to(source)), f"{layout.relative('fitness')}/README.md", "optional Fitness control"))
         for relative in sorted((source / "templates/fitness/rules").glob("*.md.template")):
             if relative.name == "sdd-quality.md.template":
                 continue
-            actions.append(Action("create", str(relative.relative_to(source)), f"docs/fitness/{relative.stem}", "optional Fitness rule"))
+            actions.append(Action("create", str(relative.relative_to(source)), f"{layout.relative('fitness')}/{relative.stem}", "optional Fitness rule"))
         lessons_readme = source / "templates/lessons/README.md.template"
         if lessons_readme.is_file():
-            actions.append(Action("create", str(lessons_readme.relative_to(source)), "docs/methodology/lessons/README.md", "lesson memory"))
+            actions.append(Action("create", str(lessons_readme.relative_to(source)), f"{layout.relative('lessons')}/README.md", "lesson memory"))
 
     for platform in skill_platforms_for(agent):
         actions.append(Action("sync-tree", "templates/engineering", f"{SKILL_ROOTS[platform]}/engineering", "selected Agent Skill discovery"))
@@ -423,7 +418,7 @@ def render_plan(
     target_version: str | None = None,
 ) -> dict[str, object]:
     legacy_markers = [marker for marker in LEGACY_MARKERS if (root / marker).exists()]
-    installed_version = installed_version if installed_version is not None else read_version(root / "docs/methodology/VERSION")
+    installed_version = installed_version if installed_version is not None else read_version(layout.path("version", root))
     target_version = target_version if target_version is not None else read_version(source / "VERSION")
     version_relation = classify_versions(installed_version, target_version)
     if installed_version is None and status != "fresh":
@@ -495,14 +490,15 @@ def validate_action_sources(source: Path, actions: list[Action], agent: str | No
     required.extend(path.relative_to(source).as_posix() for path in (source / "templates/openspec-schema").rglob("*") if path.is_file())
     required.extend(path.relative_to(source).as_posix() for path in (source / "templates/compaction").glob("*"))
     required.extend(path.relative_to(source).as_posix() for path in (source / "templates/production").glob("*.template"))
-    if any(action.target.startswith("docs/fitness/") for action in actions):
+    fitness_dir = layout.relative("fitness")
+    if any(action.target.startswith(layout.protected_prefix()) for action in actions):
         required.extend(
             path.relative_to(source).as_posix()
             for path in (source / "templates/fitness").glob("*.py.template")
-            if any(action.target == f"docs/fitness/scripts/{path.stem}" for action in actions)
+            if any(action.target == f"{fitness_dir}/scripts/{path.stem}" for action in actions)
         )
         required.append("templates/fitness/rules/sdd-quality.md.template")
-    if any(action.target == "docs/fitness/README.md" for action in actions):
+    if any(action.target == f"{fitness_dir}/README.md" for action in actions):
         required.extend(path.relative_to(source).as_posix() for path in (source / "templates/fitness").glob("*.template"))
         required.extend(path.relative_to(source).as_posix() for path in (source / "templates/fitness/rules").glob("*.md.template"))
         required.append("templates/lessons/README.md.template")
@@ -906,7 +902,7 @@ def render_uninstall_plan(
         "mode": "uninstall",
         "project_root": str(root),
         "source_root": str(source),
-        "installed_version": read_version(root / "docs/methodology/VERSION") or "unknown",
+        "installed_version": read_version(layout.path("version", root)) or "unknown",
         "source_version": read_version(source / "VERSION") or "unknown",
         "tier": tier,
         "agent": agent or "all",
@@ -1202,8 +1198,8 @@ def run_check(root: Path, source: Path, agent: str | None = None) -> tuple[int, 
     checks = [
         ("check_root_context.py", ["check_root_context.py", str(root), "--context-file", *context_files]),
         ("check_context_docs.py", ["check_context_docs.py", str(root)]),
-        ("check_agent_policy.py", ["check_agent_policy.py", str(root / "docs/methodology/agent-policy.yaml")]),
-        ("check_profile.py", ["check_profile.py", str(root / "docs/methodology/profile.yaml")]),
+        ("check_agent_policy.py", ["check_agent_policy.py", str(layout.policy_path(root))]),
+        ("check_profile.py", ["check_profile.py", str(layout.profile_path(root))]),
         ("resolve_context.py", ["resolve_context.py", "--root", str(root), "."]),
         ("context_cache.py benchmark", ["context_cache.py", "benchmark", "--root", str(root), "--target", ".", "--iterations", "1000", "--json"]),
         ("check_fitness_protection.py", ["check_fitness_protection.py", "--root", str(root)]),
@@ -1226,7 +1222,12 @@ def run_check(root: Path, source: Path, agent: str | None = None) -> tuple[int, 
         if not script.is_file():
             failures.append(f"{name}: source script missing")
             continue
-        completed = subprocess.run([sys.executable, str(script), *command[1:]], cwd=root, text=True, capture_output=True)
+        # Decode as UTF-8 explicitly: the locale codec (GBK on a Chinese Windows)
+        # raises inside the reader thread and truncates the reported failure.
+        completed = subprocess.run(
+            [sys.executable, str(script), *command[1:]], cwd=root,
+            text=True, encoding="utf-8", errors="replace", capture_output=True,
+        )
         if completed.returncode:
             failures.append(f"{name}: {completed.stdout.strip() or completed.stderr.strip()}")
     return (2 if failures else 0), failures
@@ -1245,7 +1246,7 @@ def print_apply_summary(plan: dict[str, object]) -> None:
             counts[key] = counts.get(key, 0) + 1
     summary = ", ".join(f"{kind}={count}" for kind, count in sorted(counts.items())) or "no actions"
     print(f"HARNESS ONBOARDING APPLIED: {summary}")
-    print("Receipt: docs/methodology/onboarding.json")
+    print(f"Receipt: {ONBOARDING_RECEIPT}")
 
 
 def main() -> int:
@@ -1286,7 +1287,7 @@ def main() -> int:
     agent = args.agent
     status = detect_status(root, agent)
     effective_tier = min(args.tier, 2)
-    installed_version = read_version(root / "docs/methodology/VERSION")
+    installed_version = read_version(layout.path("version", root))
     target_version = read_version(source / "VERSION")
     version_relation = classify_versions(installed_version, target_version)
     if installed_version is None and status != "fresh":
@@ -1324,12 +1325,13 @@ def main() -> int:
             else:
                 print(f"HARNESS ONBOARDING FAILED AND ROLLED BACK: {exc}", file=sys.stderr)
             return 2
-        (root / "docs/methodology").mkdir(parents=True, exist_ok=True)
-        (root / "docs/methodology/onboarding.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        receipt = root / ONBOARDING_RECEIPT
+        receipt.parent.mkdir(parents=True, exist_ok=True)
+        receipt.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if args.check:
         code, failures = run_check(root, source, agent)
         plan["check"] = {"status": "passed" if not failures else "failed", "failures": failures}
-        receipt = root / "docs/methodology/onboarding.json"
+        receipt = root / ONBOARDING_RECEIPT
         if receipt.is_file():
             try:
                 saved = json.loads(receipt.read_text(encoding="utf-8"))

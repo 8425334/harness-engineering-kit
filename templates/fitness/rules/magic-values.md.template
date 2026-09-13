@@ -4,12 +4,12 @@ weight: 15
 tier: fast
 metrics:
   - name: magic_value_check
-    command: python3 docs/fitness/scripts/check_magic_values.py
+    command: python3 .hek/fitness/scripts/check_magic_values.py
     pattern: "Magic value check ok"
     hard_gate: false
     tier: fast
   - name: magic_value_selftest
-    command: python3 docs/fitness/scripts/test_magic_values.py
+    command: python3 .hek/fitness/scripts/test_magic_values.py
     pattern: "OK"
     hard_gate: true
     tier: fast

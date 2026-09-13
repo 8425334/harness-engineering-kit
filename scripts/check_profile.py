@@ -7,6 +7,8 @@ import re
 import sys
 from pathlib import Path
 
+import layout
+
 
 ALLOWED_PROFILES = {"light", "standard", "regulated", "experimental"}
 ALLOWED_RISKS = {"low", "medium", "high", "critical"}
@@ -115,7 +117,7 @@ def validate(path: Path) -> list[str]:
 
 
 def main() -> int:
-    path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("docs/methodology/profile.yaml")
+    path = Path(sys.argv[1]) if len(sys.argv) > 1 else layout.profile_path()
     errors = validate(path)
     if errors:
         print("PROFILE INVALID")

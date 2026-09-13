@@ -4,7 +4,7 @@ weight: 20
 tier: fast
 metrics:
   - name: dangerous_agent_config_check
-    command: python3 docs/fitness/scripts/check_security_baseline.py
+    command: python3 .hek/fitness/scripts/check_security_baseline.py
     pattern: "Security baseline ok"
     hard_gate: true
     tier: fast

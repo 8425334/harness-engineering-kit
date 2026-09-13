@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import layout
+
 
 MAX_INDEX_BYTES = 8192
 MAX_DETAIL_BYTES = 65536
@@ -17,7 +19,7 @@ TOP_LEVEL_KEYS = {"schema_version", "kind", "project", "summary", "modules", "en
 MODULE_KEYS = {"path", "summary", "context", "read_when"}
 ENTRYPOINT_KEYS = {"policy", "lifecycle"}
 DETAIL_HEADINGS = ("## Responsibilities", "## Boundaries", "## Local Verification", "## Navigation")
-EXCLUDED_DIRECTORIES = {".git", ".claude", ".agents", "node_modules", "target", "build", "dist", "archive", "changes", ".venv", "venv"}
+EXCLUDED_DIRECTORIES = {".git", ".claude", ".agents", ".hek", "node_modules", "target", "build", "dist", "archive", "changes", ".venv", "venv"}
 AI_JSON_SIGNALS = {"project-summary", "module-topology", "context-route", "entrypoint"}
 AI_MD_SIGNALS = {"responsibility", "boundary", "invariant", "dependency", "contract", "local-verification"}
 CONTEXT_SIGNALS = {"none", *AI_JSON_SIGNALS, *AI_MD_SIGNALS}
@@ -76,9 +78,14 @@ def validate_detail(path: Path) -> list[str]:
 def find_ai_docs(project_root: Path) -> tuple[set[Path], list[str]]:
     documents: set[Path] = set()
     errors: list[str] = []
-    for path in project_root.rglob("AI.md"):
+    scan_root = project_root / layout.relative("context_root")
+    if not scan_root.is_dir():
+        return documents, errors
+    for path in scan_root.rglob("AI.md"):
         relative = path.relative_to(project_root)
-        if any(part in EXCLUDED_DIRECTORIES for part in relative.parts):
+        # Exclusions are matched against the scan root, so a layout that nests
+        # path documents under a dot directory is not excluded wholesale.
+        if any(part in EXCLUDED_DIRECTORIES for part in path.relative_to(scan_root).parts):
             continue
         try:
             resolved = path.resolve()
@@ -114,11 +121,11 @@ def planned_file_path(project_root: Path, value: Any) -> str | None:
 
 def validate_project(project_root: Path) -> tuple[list[str], set[str]]:
     project_root = project_root.resolve()
-    index_path = project_root / "ai.json"
+    index_path = layout.path("context_index", project_root)
     errors: list[str] = []
     contexts: set[str] = set()
     if not index_path.is_file():
-        return ["missing root context index: ai.json"], contexts
+        return [f"missing context index: {layout.relative('context_index')}"], contexts
     if index_path.stat().st_size > MAX_INDEX_BYTES:
         errors.append(f"ai.json exceeds {MAX_INDEX_BYTES} bytes")
     try:
@@ -171,7 +178,7 @@ def validate_project(project_root: Path) -> tuple[list[str], set[str]]:
             errors.append(f"{label}.read_when requires 1-8 keywords up to 40 characters")
         elif len(set(read_when)) != len(read_when):
             errors.append(f"{label}.read_when keywords must be unique")
-        expected_context = "AI.md" if module_path == "." else f"{str(module_path).rstrip('/')}/AI.md"
+        expected_context = layout.relative("context_doc", module_path=str(module_path))
         if context != expected_context:
             errors.append(f"{label}.context must be {expected_context}")
             continue
@@ -262,9 +269,14 @@ def validate_context_impact(path: Path, project_root: Path) -> tuple[dict[str, A
                 errors.append(f"context-impact.json {document} path {planned!r}: {path_error}")
             if planned not in analyzed_paths:
                 errors.append(f"context-impact.json {document} path must also appear in analyzed_paths: {planned}")
-            if document == "ai_json" and planned != "ai.json":
-                errors.append("context-impact.json ai_json path must be root ai.json")
-            if document == "ai_md" and not (planned == "AI.md" or str(planned).endswith("/AI.md")):
+            if document == "ai_json" and planned != layout.relative("context_index"):
+                errors.append(
+                    f"context-impact.json ai_json path must be {layout.relative('context_index')}"
+                )
+            if document == "ai_md" and not (
+                planned == layout.relative("context_doc", module_path=".")
+                or str(planned).endswith("/AI.md")
+            ):
                 errors.append(f"context-impact.json ai_md path must end with AI.md: {planned}")
     return impact, errors
 

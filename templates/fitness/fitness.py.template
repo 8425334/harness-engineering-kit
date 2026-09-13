@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Run repository fitness rules declared in docs/fitness/*.md.
+"""Run repository fitness rules declared in .hek/fitness/*.md.
 
 Zero dependencies — stdlib only. Copy to any project and add rule files.
 
-Copy to: docs/fitness/scripts/fitness.py
-Make executable: chmod +x docs/fitness/scripts/fitness.py
+Copy to: .hek/fitness/scripts/fitness.py
+Make executable: chmod +x .hek/fitness/scripts/fitness.py
 """
 # {{FITNESS_PY_TEMPLATE}}
 

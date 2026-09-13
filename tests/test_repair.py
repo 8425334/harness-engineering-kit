@@ -10,7 +10,20 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts import onboard, repair
+from scripts import layout, onboard, repair
+
+
+# Layout-derived paths; the concrete values are pinned in test_layout.py.
+VERSION_REL = layout.relative("version")
+# Read from the kit so a version bump does not need matching edits here.
+SOURCE_VERSION = (Path(__file__).resolve().parents[1] / "VERSION").read_text(encoding="utf-8").strip()
+CORE = layout.relative("core")
+SCRIPTS = layout.relative("scripts")
+REPAIR_REL = layout.relative("repair_receipt")
+RECEIPT_REL = layout.relative("onboarding_receipt")
+POLICY_REL = layout.policy_rel()
+CONTEXT_INDEX = layout.relative("context_index")
+FITNESS = layout.relative("fitness")
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -31,15 +44,16 @@ def install(root: Path, agent: str = "codex", tier: int = 1) -> None:
         "status": "fresh",
         "project_root": str(root),
         "source_root": str(REPO),
-        "source_version": "0.5.1",
-        "installed_version": "0.5.1",
+        "source_version": SOURCE_VERSION,
+        "installed_version": SOURCE_VERSION,
         "version_relation": "fresh",
         "tier": tier,
         "agent": agent,
         "read_only": False,
     }
-    (root / "docs/methodology").mkdir(parents=True, exist_ok=True)
-    (root / "docs/methodology/onboarding.json").write_text(
+    receipt_path = layout.receipt_path(root)
+    receipt_path.parent.mkdir(parents=True, exist_ok=True)
+    receipt_path.write_text(
         json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     tool = onboard.OPENSPEC_TOOLS.get(agent)
@@ -110,7 +124,7 @@ class RepairTests(unittest.TestCase):
         self.assertIn("skill-missing", finding_ids(payload))
         after = sorted(path.relative_to(self.root).as_posix() for path in self.root.rglob("*"))
         self.assertEqual(before, after)
-        self.assertFalse((self.root / "docs/methodology/repair.json").exists())
+        self.assertFalse((self.root / REPAIR_REL).exists())
 
     # -- repair ------------------------------------------------------------
 
@@ -124,15 +138,15 @@ class RepairTests(unittest.TestCase):
         self.assertEqual(blocking_findings(payload), [])
         self.assertTrue((skill / "SKILL.md").is_file())
         self.assertTrue((skill / "references/self-repair.md").is_file())
-        receipt = json.loads((self.root / "docs/methodology/repair.json").read_text(encoding="utf-8"))
+        receipt = json.loads((self.root / REPAIR_REL).read_text(encoding="utf-8"))
         self.assertEqual(receipt["mode"], "apply")
         self.assertEqual(receipt["verification"]["status"], "passed")
 
     def test_repairs_missing_canonical_resources_and_broken_script(self) -> None:
         install(self.root)
-        (self.root / "docs/methodology/core/change-lifecycle.md").unlink()
-        (self.root / "docs/methodology/scripts/versioning.py").unlink()
-        broken = self.root / "docs/methodology/scripts/check_profile.py"
+        (self.root / f"{CORE}/change-lifecycle.md").unlink()
+        (self.root / f"{SCRIPTS}/versioning.py").unlink()
+        broken = self.root / f"{SCRIPTS}/check_profile.py"
         broken.write_text("def broken(:\n", encoding="utf-8")
 
         code, payload = repair.run(self.options())
@@ -144,8 +158,8 @@ class RepairTests(unittest.TestCase):
 
         code, payload = repair.run(self.options(apply=True))
         self.assertEqual(code, 0, payload)
-        self.assertTrue((self.root / "docs/methodology/core/change-lifecycle.md").is_file())
-        self.assertTrue((self.root / "docs/methodology/scripts/versioning.py").is_file())
+        self.assertTrue((self.root / f"{CORE}/change-lifecycle.md").is_file())
+        self.assertTrue((self.root / f"{SCRIPTS}/versioning.py").is_file())
         self.assertEqual(
             broken.read_text(encoding="utf-8"),
             (REPO / "scripts/check_profile.py").read_text(encoding="utf-8"),
@@ -153,21 +167,21 @@ class RepairTests(unittest.TestCase):
 
     def test_repairs_unversioned_install(self) -> None:
         install(self.root)
-        (self.root / "docs/methodology/VERSION").unlink()
+        (self.root / VERSION_REL).unlink()
         code, payload = repair.run(self.options())
         self.assertEqual(payload["version_relation"], "unversioned")
         self.assertIn("control-plane-missing", finding_ids(payload))
         code, payload = repair.run(self.options(apply=True))
         self.assertEqual(code, 0, payload)
         self.assertEqual(
-            (self.root / "docs/methodology/VERSION").read_text(encoding="utf-8").strip(),
+            (self.root / VERSION_REL).read_text(encoding="utf-8").strip(),
             (REPO / "VERSION").read_text(encoding="utf-8").strip(),
         )
 
     def test_repair_preserves_project_owned_facts(self) -> None:
         install(self.root)
         agents = self.root / "AGENTS.md"
-        policy = self.root / "docs/methodology/agent-policy.yaml"
+        policy = self.root / POLICY_REL
         agents.write_text("# project rules\n", encoding="utf-8")
         policy.write_text("project: mine\n", encoding="utf-8")
         code, payload = repair.run(self.options(apply=True))
@@ -177,23 +191,23 @@ class RepairTests(unittest.TestCase):
 
     def test_repair_restores_missing_project_fact_with_placeholder_notice(self) -> None:
         install(self.root)
-        (self.root / "ai.json").unlink()
+        (self.root / CONTEXT_INDEX).unlink()
         code, payload = repair.run(self.options())
         self.assertIn("project-fact-missing", finding_ids(payload))
         code, payload = repair.run(self.options(apply=True))
         self.assertEqual(code, 0, payload)
-        self.assertTrue((self.root / "ai.json").is_file())
+        self.assertTrue((self.root / CONTEXT_INDEX).is_file())
 
     def test_protected_fitness_baseline_is_never_rewritten(self) -> None:
         install(self.root)
-        fitness_rule = self.root / "docs/fitness/sdd-quality.md"
+        fitness_rule = self.root / f"{FITNESS}/sdd-quality.md"
         self.assertTrue(fitness_rule.is_file())
         fitness_rule.unlink()
         code, payload = repair.run(self.options())
         self.assertEqual(code, 2)
         finding = next(f for f in payload["findings"] if f["id"] == "fitness-change-requires-approval")
         self.assertEqual(finding["severity"], "manual")
-        self.assertEqual([entry for entry in payload["repairs"] if entry["target"].startswith("docs/fitness/")], [])
+        self.assertEqual([entry for entry in payload["repairs"] if entry["target"].startswith(layout.protected_prefix())], [])
         code, payload = repair.run(self.options(apply=True))
         self.assertEqual(code, 2)
         self.assertEqual(payload["status"], "needs-attention")
@@ -201,7 +215,7 @@ class RepairTests(unittest.TestCase):
 
     def test_downgrade_blocks_repair(self) -> None:
         install(self.root)
-        (self.root / "docs/methodology/VERSION").write_text("99.0.0\n", encoding="utf-8")
+        (self.root / VERSION_REL).write_text("99.0.0\n", encoding="utf-8")
         code, payload = repair.run(self.options())
         self.assertEqual(code, 2)
         self.assertIn("version-downgrade", finding_ids(payload))
@@ -209,7 +223,7 @@ class RepairTests(unittest.TestCase):
         code, payload = repair.run(self.options(apply=True))
         self.assertEqual(code, 2)
         self.assertEqual(payload["status"], "needs-attention")
-        self.assertFalse((self.root / "docs/methodology/repair.json").exists())
+        self.assertFalse((self.root / REPAIR_REL).exists())
 
     # -- scope and environment --------------------------------------------
 
@@ -226,9 +240,9 @@ class RepairTests(unittest.TestCase):
 
     def test_unknown_agent_scope_is_reported_not_guessed(self) -> None:
         install(self.root)
-        receipt = json.loads((self.root / "docs/methodology/onboarding.json").read_text(encoding="utf-8"))
+        receipt = json.loads((self.root / RECEIPT_REL).read_text(encoding="utf-8"))
         receipt["agent"] = "all"
-        (self.root / "docs/methodology/onboarding.json").write_text(json.dumps(receipt), encoding="utf-8")
+        (self.root / RECEIPT_REL).write_text(json.dumps(receipt), encoding="utf-8")
         shutil.rmtree(self.root / ".agents/skills/engineering")
         code, payload = repair.run(self.options())
         self.assertIn("skill-scope-unknown", finding_ids(payload))

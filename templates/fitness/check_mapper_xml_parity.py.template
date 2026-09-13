@@ -10,7 +10,7 @@ Verifies that:
 Exit 0 = no violations found.
 Exit 1 = violations found (details printed to stdout).
 
-Copy to: docs/fitness/scripts/check_mapper_xml_parity.py
+Copy to: .hek/fitness/scripts/check_mapper_xml_parity.py
 """
 # {{CHECK_MAPPER_XML_PARITY_TEMPLATE}}
 

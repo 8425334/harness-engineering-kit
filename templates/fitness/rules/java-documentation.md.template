@@ -4,12 +4,12 @@ weight: 15
 tier: fast
 metrics:
   - name: java_documentation_contract
-    command: python3 docs/fitness/scripts/check_java_documentation_contract.py
+    command: python3 .hek/fitness/scripts/check_java_documentation_contract.py
     pattern: "Java documentation contract ok"
     hard_gate: false
     tier: fast
   - name: java_documentation_selftest
-    command: python3 docs/fitness/scripts/test_java_documentation_contract.py
+    command: python3 .hek/fitness/scripts/test_java_documentation_contract.py
     pattern: "OK"
     hard_gate: true
     tier: fast

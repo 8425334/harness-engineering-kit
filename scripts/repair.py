@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 try:
+    from . import layout
     from .onboard import (
         AGENT_TARGETS,
         OPENSPEC_SKILL_ROOTS,
@@ -46,6 +47,7 @@ try:
     )
     from .versioning import classify_versions, read_version
 except ImportError:  # pragma: no cover - direct script execution
+    import layout
     from onboard import (
         AGENT_TARGETS,
         OPENSPEC_SKILL_ROOTS,
@@ -64,7 +66,7 @@ except ImportError:  # pragma: no cover - direct script execution
     from versioning import classify_versions, read_version
 
 
-REPAIR_RECEIPT = "docs/methodology/repair.json"
+REPAIR_RECEIPT = layout.relative("repair_receipt")
 PLATFORMS = ("claude", "codex", "opencode", "cursor", "gemini", "trae")
 # Read-only observation targets: Harness installs the Skill project-locally, but
 # a stale user-level duplicate can shadow it inside an Agent that also scans the
@@ -338,12 +340,12 @@ def diagnose(root: Path, source: Path, agent: str | None, tier: int) -> dict[str
     openspec = environment["openspec"]
 
     installed = (
-        (root / "docs/methodology/VERSION").is_file()
-        or (root / "docs/methodology/scripts").is_dir()
+        layout.path("version", root).is_file()
+        or layout.path("scripts", root).is_dir()
         or load_receipt(root) is not None
     )
     source_version = read_version(source / "VERSION")
-    installed_version = read_version(root / "docs/methodology/VERSION")
+    installed_version = read_version(layout.path("version", root))
     status = detect_status(root, agent)
     relation = classify_versions(installed_version, source_version)
     if installed_version is None and status != "fresh":
@@ -394,7 +396,7 @@ def diagnose(root: Path, source: Path, agent: str | None, tier: int) -> dict[str
             "version-invalid",
             "version",
             "repairable",
-            f"docs/methodology/VERSION is not a semantic version: {installed_version!r}",
+            f"{layout.relative('version')} is not a semantic version: {installed_version!r}",
         )
 
     platforms = scoped_platforms(root, agent)
@@ -408,10 +410,10 @@ def diagnose(root: Path, source: Path, agent: str | None, tier: int) -> dict[str
             remedy="Pass --agent <claude|codex|opencode|cursor|gemini|trae-work> to select the Skill to restore.",
         )
 
-    # docs/fitness/** is a protected control plane. Repair may only install its
+    # The Fitness control plane is protected. Repair may only install its
     # canonical scaffold when no baseline exists; every later Fitness change
     # needs external human approval bound to the change digest.
-    fitness_baseline = (root / "docs/fitness").is_dir()
+    fitness_baseline = layout.path("fitness", root).is_dir()
 
     actions = source_actions(source, root, tier, status, agent)
     cache_dir = Path(tempfile.mkdtemp(prefix="hek-repair-compile-"))
@@ -427,7 +429,7 @@ def diagnose(root: Path, source: Path, agent: str | None, tier: int) -> dict[str
                     record(findings, "control-plane-drift", "control-plane", "repairable", action.target)
                     add_repair(repairs, action)
                 if (
-                    action.target.startswith("docs/methodology/scripts/")
+                    action.target.startswith(f"{layout.relative('scripts')}/")
                     and action.target.endswith(".py")
                     and target.is_file()
                     and not compiles(target, cache_dir)
@@ -444,7 +446,7 @@ def diagnose(root: Path, source: Path, agent: str | None, tier: int) -> dict[str
                 target = root / action.target
                 if target.exists():
                     continue
-                if action.target.startswith("docs/fitness/") and fitness_baseline:
+                if action.target.startswith(layout.protected_prefix()) and fitness_baseline:
                     record(
                         findings,
                         "fitness-change-requires-approval",
@@ -452,7 +454,7 @@ def diagnose(root: Path, source: Path, agent: str | None, tier: int) -> dict[str
                         "manual",
                         action.target,
                         remedy=(
-                            "docs/fitness/** is protected. Restore it only with external human approval "
+                            f"{layout.protected_prefix()}** is protected. Restore it only with external human approval "
                             "bound to the change digest; repair never rewrites an existing Fitness baseline."
                         ),
                     )
@@ -619,7 +621,7 @@ def run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
     payload["mode"] = "apply"
     payload["read_only"] = False
     payload["results"] = apply_repairs(root, source, actions)
-    if (root / "docs/methodology").is_dir():
+    if layout.path("control_plane", root).is_dir():
         verification = diagnose(root, source, agent, tier)
         payload["verification"] = {
             "status": "passed" if not blocking(verification["findings"]) else "failed",
@@ -627,7 +629,7 @@ def run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
         }
         payload["findings"] = verification["findings"]
     payload["status"] = status_label(payload, applied=True)
-    if (root / "docs/methodology").is_dir():
+    if layout.path("control_plane", root).is_dir():
         receipt = root / REPAIR_RECEIPT
         try:
             receipt.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

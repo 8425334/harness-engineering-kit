@@ -18,7 +18,7 @@ The inner loop may run inside Explore, Spec, Design, Apply, and Verify. It must 
 
 ## Profile policy
 
-Self-Refine is configured in `docs/methodology/profile.yaml` so teams can choose the right amount of process:
+Self-Refine is configured in `.hek/project/profile.yaml` so teams can choose the right amount of process:
 
 | Policy | Meaning |
 |---|---|

@@ -9,17 +9,17 @@ metrics:
     hard_gate: true
     tier: fast
   - name: openspec_config_populated
-    command: python3 docs/fitness/scripts/check_sdd_quality.py --check config-populated
+    command: python3 .hek/fitness/scripts/check_sdd_quality.py --check config-populated
     pattern: "SDD config populated"
     hard_gate: true
     tier: fast
   - name: openspec_change_structure
-    command: python3 docs/fitness/scripts/check_sdd_quality.py --check change-structure
+    command: python3 .hek/fitness/scripts/check_sdd_quality.py --check change-structure
     pattern: "SDD change structure ok"
     hard_gate: false
     tier: fast
   - name: openspec_sync_semantics
-    command: python3 docs/fitness/scripts/check_sdd_quality.py --check sync-semantics --change "$FITNESS_CHANGE_ID"
+    command: python3 .hek/fitness/scripts/check_sdd_quality.py --check sync-semantics --change "$FITNESS_CHANGE_ID"
     pattern: "OpenSpec sync semantics ok"
     hard_gate: true
     tier: fast

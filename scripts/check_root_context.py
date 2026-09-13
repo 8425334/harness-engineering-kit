@@ -6,8 +6,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import layout
 
-REQUIRED_TERMS = ("agent-policy.yaml", "profile.yaml", "ai.json", "AI.md", "resolve_context.py", "check_fitness_protection.py", "engineering", "docs/fitness", "human approval")
+
+# Bare document names stay valid under any layout because they remain substrings
+# of the full path; only the Fitness path is asserted in full.
+REQUIRED_TERMS = ("agent-policy.yaml", "profile.yaml", "ai.json", "AI.md", "resolve_context.py", "check_fitness_protection.py", "engineering", layout.relative("fitness"), "human approval")
 MAX_LINES = 40
 
 

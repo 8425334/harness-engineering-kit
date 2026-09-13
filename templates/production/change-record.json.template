@@ -43,6 +43,6 @@
     "reviewer": "{{REVIEWER}}",
     "approved_at": "{{YYYY-MM-DDTHH:MM:SSZ}}"
   },
-  "audit_log": "docs/methodology/production/audit/{{CHANGE_ID}}.jsonl",
+  "audit_log": ".hek/project/production/audit/{{CHANGE_ID}}.jsonl",
   "events": []
 }

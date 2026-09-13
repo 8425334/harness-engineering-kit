@@ -5,7 +5,7 @@ destructive_operations: approval-required
 secret_output: deny
 workspace:
   readable: ["src/**", "tests/**", "docs/**"]
-  writable: ["src/**", "tests/**", "docs/methodology/production/**"]
+  writable: ["src/**", "tests/**", ".hek/project/production/**"]
   denied: [".env*", "secrets/**", "production-dumps/**"]
 commands:
   allow: []

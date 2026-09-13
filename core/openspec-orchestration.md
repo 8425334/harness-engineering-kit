@@ -27,7 +27,7 @@ OpenSpec creates the change directory and `.openspec.yaml`. Engineering then run
 
 ```bash
 openspec new change <change-id> --schema harness-engineering
-python3 docs/methodology/scripts/init_governance.py <change-id> \
+python3 .hek/kit/scripts/init_governance.py <change-id> \
   --title "..." --mode backend --owner <actor> \
   --trigger native-selection
 ```

@@ -73,7 +73,7 @@ def check_workspace(project_root: Path | str) -> list[str]:
     root = Path(project_root).resolve()
     errors: list[str] = []
     for change_dir in live_change_dirs(root / CHANGES_REL):
-        errors.extend(f"{change_dir.relative_to(root)}: {error}" for error in validate_change(change_dir))
+        errors.extend(f"{change_dir.relative_to(root).as_posix()}: {error}" for error in validate_change(change_dir))
     return errors
 
 

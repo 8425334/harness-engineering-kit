@@ -23,7 +23,7 @@ can match it.
 JVM-centric. Skip or replace if your project does not carry JVM-style code
 snippets in Markdown docs. Self-contained — Python standard library only.
 
-Copy to: docs/fitness/scripts/check_code_block_simple_class_names.py
+Copy to: .hek/fitness/scripts/check_code_block_simple_class_names.py
 """
 # {{CHECK_CODE_BLOCK_SIMPLE_CLASS_NAMES_TEMPLATE}}
 

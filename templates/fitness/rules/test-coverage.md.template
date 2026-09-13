@@ -4,12 +4,12 @@ weight: 20
 tier: normal
 metrics:
   - name: test_file_existence
-    command: python3 docs/fitness/scripts/check_test_coverage.py --check test-file-existence
+    command: python3 .hek/fitness/scripts/check_test_coverage.py --check test-file-existence
     pattern: "Test coverage ok"
     hard_gate: true
     tier: fast
   - name: line_coverage_threshold
-    command: python3 docs/fitness/scripts/check_test_coverage.py --check line-coverage
+    command: python3 .hek/fitness/scripts/check_test_coverage.py --check line-coverage
     pattern: "Test coverage ok"
     hard_gate: true
     tier: normal

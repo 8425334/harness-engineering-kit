@@ -4,7 +4,7 @@ weight: 10
 tier: fast
 metrics:
   - name: architecture_boundary_baseline
-    command: python3 docs/fitness/scripts/check_architecture_boundary.py
+    command: python3 .hek/fitness/scripts/check_architecture_boundary.py
     pattern: "Architecture boundary baseline ok"
     hard_gate: true
     tier: fast
@@ -21,7 +21,7 @@ metrics:
 
 - 基础设施/共享模块（`{{INFRA_MODULE}}`）下不应出现业务包（路径含 `{{INFRA_FORBIDDEN_PART}}`）。
 - 应用/领域模块（`{{APP_MODULE}}`）下不应出现编排入口（`{{APP_FORBIDDEN_GLOB}}`）。
-- `docs/fitness` 必须包含规则手册；只有局部职责显著不同才增加补充 `AI.md`，且必须登记到根 `ai.json`。
+- `.hek/fitness` 必须包含规则手册；只有局部职责显著不同才增加补充 `AI.md`，且必须登记到根 `ai.json`。
 
 ## 后续扩展
 

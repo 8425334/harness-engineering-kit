@@ -4,7 +4,7 @@ weight: 10
 tier: fast
 metrics:
   - name: debug_log_cleanup_check
-    command: python3 docs/fitness/scripts/check_debug_log_cleanup.py
+    command: python3 .hek/fitness/scripts/check_debug_log_cleanup.py
     pattern: "Debug log cleanup ok"
     hard_gate: true
     tier: fast
@@ -14,7 +14,7 @@ metrics:
 
 ## 当前目标
 
-执行 `docs/methodology/core/debug-log-discipline.md` 的阶段 3：单元测试自检通过后，临时调试日志必须清理；保留有意义的框架级日志。
+执行 `.hek/kit/core/debug-log-discipline.md` 的阶段 3：单元测试自检通过后，临时调试日志必须清理；保留有意义的框架级日志。
 
 ## 当前检查
 

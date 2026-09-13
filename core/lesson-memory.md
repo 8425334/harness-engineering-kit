@@ -14,12 +14,12 @@ The source of truth is split by trust level:
 |---|---|---|
 | `evidence/failure-events.jsonl` | Immutable observations from Fitness, phase gates, tests, diffs, or production | Evidence only |
 | `lesson-candidate.json` | Agent-proposed pattern, root cause, prevention, and verification | Pending review |
-| `docs/methodology/lessons/*.json` | Externally approved project lesson | Advisory prevention guidance |
+| `.hek/state/lessons/*.json` | Externally approved project lesson | Advisory prevention guidance |
 | Fitness or policy rules | Deterministic enforcement of a proven recurring pattern | Normative control |
 
 ## Operating contract
 
-Record a failure with `record_failure.py`, including its rule, category, message, paths, signature, and evidence. Use `create_lesson_candidate.py` after Self-Refine identifies a reusable pattern. An authorized reviewer promotes it with `approve_lesson.py`; activation binds the candidate digest and approval reference. The approval script never edits `docs/fitness/**`.
+Record a failure with `record_failure.py`, including its rule, category, message, paths, signature, and evidence. Use `create_lesson_candidate.py` after Self-Refine identifies a reusable pattern. An authorized reviewer promotes it with `approve_lesson.py`; activation binds the candidate digest and approval reference. The approval script never edits `.hek/fitness/**`.
 
 Every non-trivial change runs `preflight_lessons.py` before Explore closes. It records the active lessons matched by task keywords, rules, paths, and scope, including an explicit no-match result. The Engineering Skill must feed those lessons into Self-Refine and the phase plan.
 

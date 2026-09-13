@@ -19,9 +19,9 @@ Verifies the product-requirement governance contract:
 - archived-change reconciliation: archived changes carry a reconciliation
   record, cross-checked against the delivery-evidence ledger
 
-Self-contained, stdlib only. Run: python3 docs/fitness/scripts/check_req_governance.py
+Self-contained, stdlib only. Run: python3 .hek/fitness/scripts/check_req_governance.py
 
-Copy to: docs/fitness/scripts/check_req_governance.py
+Copy to: .hek/fitness/scripts/check_req_governance.py
 """
 # {{CHECK_REQ_GOVERNANCE_TEMPLATE}}
 

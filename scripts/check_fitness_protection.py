@@ -14,8 +14,11 @@ import sys
 from pathlib import Path
 from typing import Mapping
 
+import layout
 
-PROTECTED_PREFIX = "docs/fitness/"
+
+PROTECTED_PREFIX = layout.protected_prefix()
+FITNESS_DIR = layout.relative("fitness")
 APPROVAL_FIELDS = (
     "FITNESS_CHANGE_APPROVED_BY",
     "FITNESS_CHANGE_APPROVAL_SOURCE",
@@ -71,12 +74,12 @@ def parse_name_status(payload: bytes) -> dict[str, str]:
 def collect_changes(project_root: Path, base_ref: str | None) -> dict[str, str]:
     changes: dict[str, str] = {}
     if base_ref:
-        tracked = git(project_root, ["diff", "--name-status", "-z", "--no-renames", base_ref, "--", "docs/fitness"])
+        tracked = git(project_root, ["diff", "--name-status", "-z", "--no-renames", base_ref, "--", FITNESS_DIR])
         if tracked.returncode != 0:
             raise FitnessProtectionError(tracked.stderr.decode("utf-8", errors="replace").strip() or "cannot inspect Fitness changes")
         changes.update(parse_name_status(tracked.stdout))
 
-    untracked = git(project_root, ["ls-files", "-z", "--others", "--exclude-standard", "--", "docs/fitness"])
+    untracked = git(project_root, ["ls-files", "-z", "--others", "--exclude-standard", "--", FITNESS_DIR])
     if untracked.returncode != 0:
         raise FitnessProtectionError(untracked.stderr.decode("utf-8", errors="replace").strip() or "cannot inspect untracked Fitness files")
     for raw_path in untracked.stdout.split(b"\0"):
@@ -92,7 +95,7 @@ def collect_changes(project_root: Path, base_ref: str | None) -> dict[str, str]:
 def baseline_has_fitness(project_root: Path, base_ref: str | None) -> bool:
     if not base_ref:
         return False
-    result = git(project_root, ["ls-tree", "-r", "--name-only", "-z", base_ref, "--", "docs/fitness"])
+    result = git(project_root, ["ls-tree", "-r", "--name-only", "-z", base_ref, "--", FITNESS_DIR])
     if result.returncode != 0:
         raise FitnessProtectionError(result.stderr.decode("utf-8", errors="replace").strip() or "cannot inspect baseline Fitness files")
     return bool(result.stdout.strip(b"\0"))
@@ -102,7 +105,7 @@ def canonical_bootstrap_receipt(project_root: Path, changes: Mapping[str, str]) 
     """Accept first-time Fitness files only when onboarding recorded them."""
     if not changes or any(status != "A" for status in changes.values()):
         return False
-    receipt = project_root / "docs/methodology/onboarding.json"
+    receipt = layout.receipt_path(project_root)
     try:
         payload = json.loads(receipt.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
@@ -277,7 +280,7 @@ def main() -> int:
     elif result["status"] == "PASS":
         print(f"FITNESS PROTECTION OK: {result['reason']}")
     else:
-        print("FITNESS PROTECTION BLOCKED: human approval is required for every docs/fitness change")
+        print(f"FITNESS PROTECTION BLOCKED: human approval is required for every {FITNESS_DIR} change")
         print(f"Approval digest: {result['digest']}")
         print("Protected CI or a human operator must set:")
         for field in APPROVAL_FIELDS:

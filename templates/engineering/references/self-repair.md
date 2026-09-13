@@ -8,7 +8,7 @@ Repair is in scope when any of these is observed, including when the user report
 
 1. **Engineering Skill not loaded** — the project-local Skill is missing, stale, or undiscoverable for the active Agent, the Agent cannot find or select `engineering`, or a required Skill reference is absent.
 2. **Python environment or dependency problem** — no usable Python 3 on `PATH`, an interpreter below the supported minimum, an installed control script that no longer compiles, or a canonical script whose sibling module was removed.
-3. **Harness incomplete** — the installed control plane is missing canonical core documents, control scripts, workflow templates, OpenSpec schema files, workspace directories, or the installed `docs/methodology/VERSION`; or the installed version drifted from the Kit.
+3. **Harness incomplete** — the installed control plane is missing canonical core documents, control scripts, workflow templates, OpenSpec schema files, workspace directories, or the installed `.hek/VERSION`; or the installed version drifted from the Kit.
 
 Do not use repair for an unimplemented feature, a design dispute, or a clean install. A project with no control plane at all is onboarding, not repair.
 
@@ -21,7 +21,7 @@ python3 <kit>/scripts/repair.py --project-root . --source-root <kit> --json
 # Windows: py -3
 ```
 
-Pass `--agent <id>` when the active Agent is known and its project-local Skill must be restored. Without it the engine repairs the Agent recorded in `docs/methodology/onboarding.json`, and otherwise only refreshes Skill trees that already exist. When `--source-root` is omitted the engine uses the Kit path recorded by onboarding; if that fails, ask the user for the Kit checkout and never download a remote installer.
+Pass `--agent <id>` when the active Agent is known and its project-local Skill must be restored. Without it the engine repairs the Agent recorded in `.hek/state/onboarding.json`, and otherwise only refreshes Skill trees that already exist. When `--source-root` is omitted the engine uses the Kit path recorded by onboarding; if that fails, ask the user for the Kit checkout and never download a remote installer.
 
 Read the findings, not just the exit code:
 
@@ -39,12 +39,12 @@ Report the findings and the planned restores, then apply:
 python3 <kit>/scripts/repair.py --project-root . --source-root <kit> --agent <id> --apply --json
 ```
 
-`--apply` is idempotent and per-operation: it restores only canonical Kit resources, recreates missing control-plane directories, re-syncs stale `engineering` Skill trees, and regenerates missing OpenSpec lifecycle Skills when the OpenSpec CLI is available. It writes `docs/methodology/repair.json` as the audit receipt.
+`--apply` is idempotent and per-operation: it restores only canonical Kit resources, recreates missing control-plane directories, re-syncs stale `engineering` Skill trees, and regenerates missing OpenSpec lifecycle Skills when the OpenSpec CLI is available. It writes `.hek/state/repair.json` as the audit receipt.
 
 ## Boundaries
 
 - Repair never rewrites a project-owned fact that already exists: `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`, `ai.json`, `AI.md`, `agent-policy.yaml`, `profile.yaml`, and `openspec/config.yaml` are preserved. A missing fact file is restored from the canonical scaffold and reported so its placeholders are filled from repository evidence.
-- Repair never installs interpreters, runtimes, or packages and never writes outside the project root. It never rewrites an existing `docs/fitness/**` baseline; a missing protected file is reported as a `manual` finding, and the canonical Fitness scaffold is installed only when no baseline exists. A user-level Skill directory is reported as information only; installing there requires the user's separate approval.
+- Repair never installs interpreters, runtimes, or packages and never writes outside the project root. It never rewrites an existing `.hek/fitness/**` baseline; a missing protected file is reported as a `manual` finding, and the canonical Fitness scaffold is installed only when no baseline exists. A user-level Skill directory is reported as information only; installing there requires the user's separate approval.
 - Repair never downgrades an installation. When the installed version is newer than the Kit, it reports the mismatch and stops.
 - If the Kit source cannot be located, stop and ask for the absolute path. Never substitute a guessed or downloaded source.
 - A `manual` finding is not silently bypassed. Report it with its remedy and let the user decide.

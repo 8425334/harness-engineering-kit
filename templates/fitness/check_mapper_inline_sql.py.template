@@ -4,7 +4,7 @@
 XML is the owning location for custom Mapper SQL. Type-safe lambda/MPJ
 expressions remain valid, including string table aliases such as ``"u"``.
 
-Copy to: docs/fitness/scripts/check_mapper_inline_sql.py
+Copy to: .hek/fitness/scripts/check_mapper_inline_sql.py
 """
 # {{CHECK_MAPPER_INLINE_SQL_TEMPLATE}}
 

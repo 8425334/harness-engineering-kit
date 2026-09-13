@@ -7,7 +7,7 @@ requires a declarative mapping framework instead.
 
 Java-only. Skip or replace if your project uses a different language.
 
-Copy to: docs/fitness/scripts/check_manual_object_mapping.py
+Copy to: .hek/fitness/scripts/check_manual_object_mapping.py
 """
 # {{CHECK_MANUAL_OBJECT_MAPPING_TEMPLATE}}
 

@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import layout
 from check_context_docs import validate_project
 
 
@@ -41,11 +42,13 @@ def resolve_context(project_root: Path, targets: list[str], keywords: list[str] 
     if validation_errors:
         raise ContextResolutionError("invalid context documents: " + "; ".join(validation_errors))
 
-    profile = project_root / "docs/methodology/profile.yaml"
+    profile = layout.profile_path(project_root)
     if not profile.is_file():
-        raise ContextResolutionError("trusted context chain is missing docs/methodology/profile.yaml")
+        raise ContextResolutionError(
+            f"trusted context chain is missing {layout.profile_rel()}"
+        )
 
-    index = json.loads((project_root / "ai.json").read_text(encoding="utf-8"))
+    index = json.loads(layout.path("context_index", project_root).read_text(encoding="utf-8"))
     modules = index["modules"]
     modules_by_path = {str(module["path"]): module for module in modules}
     if "." not in modules_by_path:
@@ -95,8 +98,8 @@ def resolve_context(project_root: Path, targets: list[str], keywords: list[str] 
     ]
     load_order = [
         str(index["entrypoints"]["policy"]),
-        "docs/methodology/profile.yaml",
-        "ai.json",
+        layout.profile_rel(),
+        layout.relative("context_index"),
         *(str(module["context"]) for module in selected_modules),
     ]
     return {

@@ -33,7 +33,7 @@ Three JSON files drive the gate (paths configured below):
 
 Callable identity is `relativePath|ownerType|kind|name|comma,joined,params`.
 
-Copy to: docs/fitness/scripts/check_java_parameter_limit.py
+Copy to: .hek/fitness/scripts/check_java_parameter_limit.py
 """
 # {{CHECK_JAVA_PARAMETER_LIMIT_TEMPLATE}}
 
@@ -49,12 +49,12 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 # Configure: relative path to the Java 21 source-file-mode scanner
 # (see the module docstring for the required stdin/stdout protocol).
-SCANNER = PROJECT_ROOT / "docs/fitness/scripts/JavaParameterScanner.java"  # {{SCANNER_PATH}}
+SCANNER = PROJECT_ROOT / ".hek/fitness/scripts/JavaParameterScanner.java"  # {{SCANNER_PATH}}
 # Configure: relative paths to the three JSON files that drive the gate
 # (see the module docstring for the schema of each).
-CONFIG_FILE = PROJECT_ROOT / "docs/fitness/java-parameter-limit.json"  # {{CONFIG_PATH}}
-BASELINE_FILE = PROJECT_ROOT / "docs/fitness/java-parameter-limit-baseline.json"  # {{BASELINE_PATH}}
-EXCEPTIONS_FILE = PROJECT_ROOT / "docs/fitness/java-parameter-limit-exceptions.json"  # {{EXCEPTIONS_PATH}}
+CONFIG_FILE = PROJECT_ROOT / ".hek/fitness/java-parameter-limit.json"  # {{CONFIG_PATH}}
+BASELINE_FILE = PROJECT_ROOT / ".hek/fitness/java-parameter-limit-baseline.json"  # {{BASELINE_PATH}}
+EXCEPTIONS_FILE = PROJECT_ROOT / ".hek/fitness/java-parameter-limit-exceptions.json"  # {{EXCEPTIONS_PATH}}
 
 # Configure: source roots scanned when the config JSON omits `sourceRoots`.
 # Replace these with your project's source module directories.

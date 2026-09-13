@@ -12,7 +12,7 @@ Fitness is not ancillary CI configuration — it is part of the codebase. The AI
 
 ### Protected Control Plane
 
-Project Agents may read and execute `docs/fitness/**`, but must not modify it. There is no change-size exemption: adding, editing, renaming, or deleting any protected file requires external human approval bound to the exact change digest. The only automatic exceptions are canonical first installation when the baseline has no Fitness directory, and a demonstrable repair where every changed file is an existing Python file that fails baseline parsing and passes after the repair.
+Project Agents may read and execute `.hek/fitness/**`, but must not modify it. There is no change-size exemption: adding, editing, renaming, or deleting any protected file requires external human approval bound to the exact change digest. The only automatic exceptions are canonical first installation when the baseline has no Fitness directory, and a demonstrable repair where every changed file is an existing Python file that fails baseline parsing and passes after the repair.
 
 `check_fitness_protection.py` compares the working tree with `HEAD`, or with `--base` / `FITNESS_BASE_REF` in CI. Approval metadata must come from a protected human/CI workflow through `FITNESS_CHANGE_APPROVED_BY`, `FITNESS_CHANGE_APPROVAL_SOURCE`, `FITNESS_CHANGE_APPROVAL_ID`, and the exact `FITNESS_CHANGE_APPROVAL_DIGEST` printed by the blocked check. The digest binds approval to the base commit, complete changed-path set, status, and resulting content. The script proves integrity, not human identity; branch protection and CI permissions must prevent pull-request code from supplying approval variables.
 
@@ -63,10 +63,10 @@ Normal metric failures can be fixed later ("quality degradation"); Hard Gate fai
 
 ### Dimension Organization
 
-One `.md` file per quality dimension, placed under `docs/fitness/`:
+One `.md` file per quality dimension, placed under `.hek/fitness/`:
 
 ```
-docs/fitness/
+.hek/fitness/
 ├── README.md              # Rule manual (overview)
 ├── architecture-boundary.md
 ├── backend-quality.md

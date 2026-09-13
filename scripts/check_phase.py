@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import layout
 from check_agent_policy import validate as validate_agent_policy
 from check_context_docs import validate_context_impact, validate_project as validate_context_docs
 from check_design import validate as validate_design
@@ -112,7 +113,7 @@ def validate_fitness_report(
 
 def fitness_input_digest(project_root: Path, change_dir: Path, stage: str) -> str:
     entries: list[tuple[str, str]] = []
-    rules_dir = project_root / "docs" / "fitness"
+    rules_dir = layout.path("fitness", project_root)
     for path in sorted(rules_dir.glob("*.md")):
         if path.name not in {"README.md", "verification-ledger.md"}:
             entries.append((path.relative_to(project_root).as_posix(), sha256(path)))
@@ -215,10 +216,10 @@ def validate_change_record(record: dict[str, Any], errors: list[str]) -> None:
         errors.append("governance.json project_root must be an existing absolute directory")
         return
     errors.extend(f"root context: {error}" for error in validate_root_context(project_root))
-    errors.extend(f"agent policy: {error}" for error in validate_agent_policy(project_root / "docs/methodology/agent-policy.yaml"))
-    errors.extend(f"profile: {error}" for error in validate_profile(project_root / "docs/methodology/profile.yaml"))
+    errors.extend(f"agent policy: {error}" for error in validate_agent_policy(layout.policy_path(project_root)))
+    errors.extend(f"profile: {error}" for error in validate_profile(layout.profile_path(project_root)))
     try:
-        actual_profile, actual_risk = read_project_profile(project_root / "docs/methodology/profile.yaml")
+        actual_profile, actual_risk = read_project_profile(layout.profile_path(project_root))
     except (OSError, ValueError):
         actual_profile = actual_risk = None  # validate_profile already reported the underlying error
     if actual_profile and record.get("profile") != actual_profile:
@@ -396,7 +397,7 @@ def validate_review(change_dir: Path, record: dict[str, Any], errors: list[str])
         errors.append("every review command requires command and an integer exit_code=0")
     fitness_commands = [
         item for item in commands if isinstance(item, dict)
-        and "docs/fitness/scripts/fitness.py" in str(item.get("command", ""))
+        and layout.fitness_script_rel() in str(item.get("command", ""))
         and command_has_stage(item.get("command"), "review")
     ] if isinstance(commands, list) else []
     if len(fitness_commands) != 1:
@@ -444,8 +445,8 @@ def validate_review(change_dir: Path, record: dict[str, Any], errors: list[str])
 def validate_self_refine(change_dir: Path, record: dict[str, Any], errors: list[str]) -> None:
     """Validate the optional, profile-controlled AI refinement evidence."""
     project_root = Path(str(record.get("project_root", "")))
-    policy = self_refine_policy(project_root / "docs/methodology/profile.yaml")
-    max_iterations = self_refine_max_iterations(project_root / "docs/methodology/profile.yaml")
+    policy = self_refine_policy(layout.profile_path(project_root))
+    max_iterations = self_refine_max_iterations(layout.profile_path(project_root))
     path = change_dir / "self-refine-evidence.json"
     if not path.is_file():
         if policy in {"required", "required-independent"}:
@@ -590,8 +591,8 @@ def validate_sync(change_dir: Path, record: dict[str, Any], errors: list[str]) -
                 errors.append("sync-evidence.json requires one passed sync_semantics check")
             elif not command_has_stage(semantic_checks[0].get("command"), "sync"):
                 errors.append("sync_semantics check command must use Fitness --stage sync")
-            elif "docs/fitness/scripts/fitness.py" not in str(semantic_checks[0].get("command", "")):
-                errors.append("sync_semantics check must run docs/fitness/scripts/fitness.py")
+            elif layout.fitness_script_rel() not in str(semantic_checks[0].get("command", "")):
+                errors.append(f"sync_semantics check must run {layout.fitness_script_rel()}")
             else:
                 if not command_has_option(semantic_checks[0].get("command"), "change") or not command_has_option(semantic_checks[0].get("command"), "report"):
                     errors.append("sync_semantics command must include --change and --report")
@@ -760,7 +761,8 @@ def validate_production_closure(record: dict[str, Any], errors: list[str]) -> No
     if not path.is_absolute():
         errors.append("production_record must be an absolute path")
         return
-    allowed_records = (Path(str(record.get("project_root"))) / "docs/methodology/production/changes").resolve()
+    record_root = Path(str(record.get("project_root", ""))).resolve()
+    allowed_records = (record_root / layout.relative("production_changes")).resolve()
     try:
         path.resolve().relative_to(allowed_records)
     except ValueError:
@@ -785,7 +787,8 @@ def validate_production_closure(record: dict[str, Any], errors: list[str]) -> No
     audit_path = Path(str(audit_log))
     if not audit_path.is_absolute():
         audit_path = Path(str(record.get("project_root"))) / audit_path
-    allowed_audit = (Path(str(record.get("project_root"))) / "docs/methodology/production/audit").resolve()
+    record_root = Path(str(record.get("project_root", ""))).resolve()
+    allowed_audit = (record_root / layout.relative("production_audit")).resolve()
     try:
         audit_path.resolve().relative_to(allowed_audit)
     except ValueError:

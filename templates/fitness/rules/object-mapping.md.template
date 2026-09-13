@@ -4,12 +4,12 @@ weight: 10
 tier: fast
 metrics:
   - name: manual_object_mapping_check
-    command: python3 docs/fitness/scripts/check_manual_object_mapping.py
+    command: python3 .hek/fitness/scripts/check_manual_object_mapping.py
     pattern: "Manual object mapping check ok"
     hard_gate: false
     tier: fast
   - name: manual_object_mapping_selftest
-    command: python3 docs/fitness/scripts/test_manual_object_mapping.py
+    command: python3 .hek/fitness/scripts/test_manual_object_mapping.py
     pattern: "OK"
     hard_gate: true
     tier: fast
@@ -36,7 +36,7 @@ metrics:
 全量审计命令：
 
 ```bash
-python3 docs/fitness/scripts/check_manual_object_mapping.py --all --root {{BACKEND_SOURCE_ROOT}}
+python3 .hek/fitness/scripts/check_manual_object_mapping.py --all --root {{BACKEND_SOURCE_ROOT}}
 ```
 
 ## 推进策略

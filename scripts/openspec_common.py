@@ -3,12 +3,23 @@
 
 from __future__ import annotations
 
+import shutil
 from typing import Any
 
 
 LIFECYCLE_OWNER = "openspec"
 GOVERNANCE_PROVIDER = "harness-engineering"
 REQUIRED_WORKFLOWS = ["explore", "propose", "apply", "verify", "sync", "archive"]
+
+
+def openspec_executable() -> str:
+    """Resolve the OpenSpec CLI for subprocess use.
+
+    Windows resolves a command without an extension by appending only ``.exe``,
+    so the bare name ``openspec`` never reaches the ``.cmd`` shim that npm
+    installs. ``shutil.which`` honours ``PATHEXT`` and returns the real launcher.
+    """
+    return shutil.which("openspec") or "openspec"
 
 
 def orchestration_contract(change_id: str) -> dict[str, Any]:

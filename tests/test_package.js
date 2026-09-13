@@ -15,12 +15,23 @@ function run(command, args, options = {}) {
   });
 }
 
+// Node refuses to spawn the .cmd shim that npm installs on Windows (EINVAL), and
+// shell:true neither escapes arguments nor avoids a deprecation warning. Running
+// npm's own CLI through the current interpreter sidesteps all three problems.
+const npmCli = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+
+function runNpm(args, options = {}) {
+  if (fs.existsSync(npmCli)) {
+    return run(process.execPath, [npmCli, ...args], options);
+  }
+  return run('npm', args, { ...options, shell: process.platform === 'win32' });
+}
+
 test('published package installs and runs without repository-only files', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-package-'));
   try {
-    const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
     const npmEnv = { npm_config_cache: path.join(directory, 'npm-cache') };
-    const packed = run(npm, ['pack', '--json', '--pack-destination', directory], { env: npmEnv });
+    const packed = runNpm(['pack', '--json', '--pack-destination', directory], { env: npmEnv });
     assert.equal(packed.status, 0, packed.stderr);
     const packResults = JSON.parse(packed.stdout);
     assert.equal(packResults.length, 1);
@@ -43,7 +54,14 @@ test('published package installs and runs without repository-only files', () => 
     const archive = path.join(directory, packResults[0].filename);
     const consumer = path.join(directory, 'consumer');
     fs.mkdirSync(consumer);
-    const installed = run(npm, ['install', '--ignore-scripts', '--no-audit', '--no-fund', archive], {
+    // Pin the project root. Without its own package.json npm walks up from the
+    // temp directory and, if any ancestor has one, installs there instead --
+    // silently reporting "up to date" while leaving node_modules absent.
+    fs.writeFileSync(
+      path.join(consumer, 'package.json'),
+      `${JSON.stringify({ name: 'hek-consumer', version: '1.0.0', private: true }, null, 2)}\n`,
+    );
+    const installed = runNpm(['install', '--ignore-scripts', '--no-audit', '--no-fund', archive], {
       cwd: consumer,
       env: npmEnv,
     });
@@ -64,7 +82,7 @@ test('published package installs and runs without repository-only files', () => 
     const plan = JSON.parse(planned.stdout);
     assert.equal(plan.status, 'fresh');
     assert.equal(plan.source_root, packageRoot);
-    assert.ok(plan.actions.some((action) => action.target === 'docs/methodology/agent-policy.yaml'));
+    assert.ok(plan.actions.some((action) => action.target === '.hek/project/agent-policy.yaml'));
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }

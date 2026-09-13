@@ -7,12 +7,12 @@
     {
       "path": ".",
       "summary": "{{ROOT_MODULE_SUMMARY}}",
-      "context": "AI.md",
+      "context": ".hek/context/AI.md",
       "read_when": ["{{ROUTING_KEYWORD}}"]
     }
   ],
   "entrypoints": {
-    "policy": "docs/methodology/agent-policy.yaml",
-    "lifecycle": "docs/methodology/core/change-lifecycle.md"
+    "policy": ".hek/project/agent-policy.yaml",
+    "lifecycle": ".hek/kit/core/change-lifecycle.md"
   }
 }

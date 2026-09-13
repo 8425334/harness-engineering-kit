@@ -10,6 +10,19 @@ const root = path.resolve(__dirname, '..');
 const cli = path.join(root, 'bin', 'harness-engineering-kit.js');
 const cliModule = require(cli);
 
+// Installed layout. These are end-to-end expectations for observable CLI
+// output, so they are stated literally here rather than imported. The
+// authoritative definition is scripts/layout.py, pinned by tests/test_layout.py.
+const HEK = {
+  version: '.hek/VERSION',
+  receipt: '.hek/state/onboarding.json',
+  uninstallReceipt: '.hek/state/uninstall.json',
+  repairReceipt: '.hek/state/repair.json',
+  policy: '.hek/project/agent-policy.yaml',
+  core: '.hek/kit/core',
+  contextIndex: '.hek/context/ai.json',
+};
+
 function run(args, options = {}) {
   return spawnSync(process.execPath, [cli, ...args], {
     cwd: options.cwd || root,
@@ -212,12 +225,38 @@ test('check prints the gate outcome instead of a read-only plan', () => {
   assert.doesNotMatch(checked.stdout, /Read-only plan/);
 });
 
+// The CLI probes HARNESS_PYTHON by spawning it, so the assertion needs an
+// interpreter that actually exists on this platform; a POSIX-only literal such
+// as /usr/bin/python3 is unspawnable on Windows and silently falls back.
+function resolvePythonExecutable() {
+  const candidates = [
+    ['python3', []],
+    ['python', []],
+    ['py', ['-3']],
+  ];
+  for (const [command, prefix] of candidates) {
+    const probe = spawnSync(command, [...prefix, '-c', 'import sys; print(sys.executable)'], {
+      encoding: 'utf8',
+    });
+    if (!probe.error && probe.status === 0) {
+      const resolved = (probe.stdout || '').trim();
+      if (resolved) return resolved;
+    }
+  }
+  return null;
+}
+
 test('agent prompt uses the configured Python executable', () => {
+  const executable = resolvePythonExecutable();
+  assert.ok(executable, 'a Python 3 interpreter is required to assert the configured command');
   const previous = process.env.HARNESS_PYTHON;
-  process.env.HARNESS_PYTHON = '/usr/bin/python3';
+  process.env.HARNESS_PYTHON = executable;
   try {
     const prompt = cliModule.buildAgentPrompt('/tmp/target-project', { sourceRoot: root });
-    assert.match(prompt, /\/usr\/bin\/python3 /);
+    assert.ok(
+      prompt.includes(`${executable} `),
+      `prompt must invoke the configured interpreter ${executable}`,
+    );
   } finally {
     if (previous === undefined) delete process.env.HARNESS_PYTHON;
     else process.env.HARNESS_PYTHON = previous;
@@ -306,7 +345,7 @@ test('init --json without --yes prints the plan and exits 2', () => {
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.read_only, true);
   assert.match(result.stderr, /init --yes/);
-  assert.equal(fs.existsSync(path.join(directory, 'docs/methodology')), false);
+  assert.equal(fs.existsSync(path.join(directory, '.hek')), false);
 });
 
 test('init --json --yes applies and prints one JSON receipt', () => {
@@ -317,8 +356,8 @@ test('init --json --yes applies and prints one JSON receipt', () => {
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.read_only, false);
   assert.ok(Array.isArray(payload.results));
-  assert.ok(payload.results.some((entry) => entry.target === 'docs/methodology/VERSION'));
-  assert.ok(fs.existsSync(path.join(directory, 'docs/methodology/VERSION')));
+  assert.ok(payload.results.some((entry) => entry.target === HEK.version));
+  assert.ok(fs.existsSync(path.join(directory, HEK.version)));
 });
 
 test('init --json --yes runs the post-init check and fails closed on placeholders', () => {
@@ -377,7 +416,7 @@ test('uninstall --json without --yes prints the plan and keeps files', () => {
   const plan = JSON.parse(planned.stdout);
   assert.equal(plan.mode, 'uninstall');
   assert.equal(plan.read_only, true);
-  assert.equal(plan.receipt_source, 'docs/methodology/onboarding.json');
+  assert.equal(plan.receipt_source, HEK.receipt);
   assert.match(planned.stderr, /uninstall --yes/);
   assert.equal(fs.existsSync(path.join(directory, 'AGENTS.md')), true);
   assert.equal(fs.existsSync(path.join(directory, '.agents/skills/engineering')), true);
@@ -399,8 +438,8 @@ test('uninstall --json --yes removes installed assets and prints a receipt', () 
   assert.ok(receipt.results.some((entry) => entry.result === 'removed'));
   assert.equal(fs.existsSync(path.join(directory, 'AGENTS.md')), false);
   assert.equal(fs.existsSync(path.join(directory, '.agents/skills/engineering')), false);
-  assert.equal(fs.existsSync(path.join(directory, 'docs/methodology/onboarding.json')), false);
-  assert.equal(fs.existsSync(path.join(directory, 'docs/methodology/uninstall.json')), true);
+  assert.equal(fs.existsSync(path.join(directory, HEK.receipt)), false);
+  assert.equal(fs.existsSync(path.join(directory, HEK.uninstallReceipt)), true);
 });
 
 test('uninstall --keep-project-facts preserves project configuration', () => {
@@ -420,9 +459,9 @@ test('uninstall --keep-project-facts preserves project configuration', () => {
   const receipt = JSON.parse(applied.stdout);
   assert.equal(receipt.keep_project_facts, true);
   assert.equal(fs.existsSync(path.join(directory, 'AGENTS.md')), true);
-  assert.equal(fs.existsSync(path.join(directory, 'ai.json')), true);
-  assert.equal(fs.existsSync(path.join(directory, 'docs/methodology/agent-policy.yaml')), true);
-  assert.equal(fs.existsSync(path.join(directory, 'docs/methodology/core')), false);
+  assert.equal(fs.existsSync(path.join(directory, HEK.contextIndex)), true);
+  assert.equal(fs.existsSync(path.join(directory, HEK.policy)), true);
+  assert.equal(fs.existsSync(path.join(directory, HEK.core)), false);
 });
 
 test('uninstall explains how to confirm in a non-interactive shell', () => {
@@ -436,7 +475,9 @@ test('uninstall without a receipt never deletes files it cannot verify', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-uninstall-'));
   spawnSync('git', ['init', '-q'], { cwd: directory });
   fs.writeFileSync(path.join(directory, 'AGENTS.md'), '# Project rules\n');
-  fs.writeFileSync(path.join(directory, 'ai.json'), '{"name":"mine"}\n');
+  const contextIndex = path.join(directory, HEK.contextIndex);
+  fs.mkdirSync(path.dirname(contextIndex), { recursive: true });
+  fs.writeFileSync(contextIndex, '{"name":"mine"}\n');
 
   const applied = run([
     'uninstall', '--project-root', directory, '--source-root', root, '--json', '--yes',
@@ -447,7 +488,7 @@ test('uninstall without a receipt never deletes files it cannot verify', () => {
   assert.equal(receipt.receipt_source, 'source-analysis');
   assert.deepEqual(receipt.results.filter((entry) => entry.result === 'removed'), []);
   assert.equal(fs.existsSync(path.join(directory, 'AGENTS.md')), true);
-  assert.equal(fs.existsSync(path.join(directory, 'ai.json')), true);
+  assert.equal(fs.existsSync(path.join(directory, HEK.contextIndex)), true);
 });
 
 test('parses the repair and doctor commands', () => {
@@ -486,7 +527,7 @@ test('doctor prints a read-only diagnosis and never writes', () => {
   assert.equal(typeof diagnosis.environment.python.ok, 'boolean');
   assert.ok(diagnosis.findings.some((finding) => finding.id === 'skill-missing'));
   assert.equal(fs.existsSync(skill), false);
-  assert.equal(fs.existsSync(path.join(directory, 'docs/methodology/repair.json')), false);
+  assert.equal(fs.existsSync(path.join(directory, HEK.repairReceipt)), false);
 });
 
 test('doctor reports a healthy install without findings', () => {
@@ -495,7 +536,7 @@ test('doctor reports a healthy install without findings', () => {
   assert.equal(result.status, 0, result.stdout);
   const diagnosis = JSON.parse(result.stdout);
   assert.ok(diagnosis.status.startsWith('healthy'), diagnosis.status);
-  assert.equal(fs.existsSync(path.join(directory, 'docs/methodology/repair.json')), false);
+  assert.equal(fs.existsSync(path.join(directory, HEK.repairReceipt)), false);
 });
 
 test('repair --json without --yes prints the diagnosis and keeps files', () => {
@@ -513,7 +554,7 @@ test('repair --json without --yes prints the diagnosis and keeps files', () => {
 test('repair --json --yes restores canonical assets and writes a receipt', () => {
   const directory = installHarnessProject('harness-repair-apply-');
   fs.rmSync(path.join(directory, '.agents/skills/engineering'), { recursive: true, force: true });
-  fs.rmSync(path.join(directory, 'docs/methodology/core/change-lifecycle.md'), { force: true });
+  fs.rmSync(path.join(directory, `${HEK.core}/change-lifecycle.md`), { force: true });
 
   const result = run([
     'repair', '--project-root', directory, '--source-root', root, '--json', '--yes',
@@ -525,6 +566,6 @@ test('repair --json --yes restores canonical assets and writes a receipt', () =>
   assert.equal(receipt.status, 'repaired');
   assert.equal(receipt.verification.status, 'passed');
   assert.equal(fs.existsSync(path.join(directory, '.agents/skills/engineering/SKILL.md')), true);
-  assert.equal(fs.existsSync(path.join(directory, 'docs/methodology/core/change-lifecycle.md')), true);
-  assert.equal(fs.existsSync(path.join(directory, 'docs/methodology/repair.json')), true);
+  assert.equal(fs.existsSync(path.join(directory, `${HEK.core}/change-lifecycle.md`)), true);
+  assert.equal(fs.existsSync(path.join(directory, HEK.repairReceipt)), true);
 });

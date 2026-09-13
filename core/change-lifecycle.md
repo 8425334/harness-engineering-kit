@@ -39,7 +39,7 @@ governance gates, and OpenSpec for lifecycle validation:
 ```bash
 openspec status --change <id> --json
 openspec validate <id> --type change --strict --no-interactive
-python3 docs/methodology/scripts/check_phase.py <change-dir> DESIGN
+python3 .hek/kit/scripts/check_phase.py <change-dir> DESIGN
 ```
 
 Approval binds normalized contract artifacts. Apply evidence binds checked

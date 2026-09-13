@@ -130,8 +130,8 @@ def verify(skill: str, project_root: Path, platform: str, source_only: bool = Fa
     methodology_root = source_root.resolve() if source_root else Path(__file__).resolve().parent.parent
     source_dir = methodology_root / "templates" / skill
     if not source_dir.is_dir():
-        # Installed copies live at docs/methodology/scripts/ with no templates/
-        # sibling; they must not emit a wall of misleading "missing file" errors.
+        # Installed copies have no templates/ sibling; they must not emit a wall
+        # of misleading "missing file" errors.
         return {
             "skill": skill,
             "platform": platform,

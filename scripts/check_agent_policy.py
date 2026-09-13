@@ -7,6 +7,8 @@ import re
 import sys
 from pathlib import Path
 
+import layout
+
 
 REQUIRED_SECTIONS = ("project", "authority", "commands", "context", "permissions", "delivery", "methodology")
 REQUIRED_FIELDS = (
@@ -62,7 +64,7 @@ def scalar(content: str, section: str, key: str) -> str | None:
     return values[0] if len(values) == 1 else None
 
 
-CANONICAL_LOCATION = ("docs", "methodology", "agent-policy.yaml")
+CANONICAL_LOCATION = Path(layout.policy_rel()).parts
 
 
 def validate(path: Path) -> list[str]:
@@ -99,8 +101,9 @@ def validate(path: Path) -> list[str]:
         errors.append("context limits must be index_max_bytes=8192 and detail_max_lines=800")
     if scalar(content, "methodology", "engineering_skill") != "engineering":
         errors.append("methodology.engineering_skill must be engineering")
-    if scalar(content, "permissions", "protected_paths") != "[docs/fitness]":
-        errors.append("permissions.protected_paths must protect docs/fitness")
+    expected_protected = f"[{layout.relative('fitness')}]"
+    if scalar(content, "permissions", "protected_paths") != expected_protected:
+        errors.append(f"permissions.protected_paths must be {expected_protected}")
     if scalar(content, "permissions", "fitness_changes") != "human-approval-required":
         errors.append("permissions.fitness_changes must be human-approval-required")
     if scalar(content, "permissions", "network") not in {"deny-by-default", "allowlisted"}:
@@ -110,12 +113,14 @@ def validate(path: Path) -> list[str]:
             errors.append(f"permissions.{field} must be approval-required")
 
     resolved = path.resolve()
-    if resolved.parts[-3:] != CANONICAL_LOCATION:
+    if resolved.parts[-len(CANONICAL_LOCATION):] != CANONICAL_LOCATION:
         # PATH_FIELDS are resolved against the project root, which is only
-        # derivable from the canonical <root>/docs/methodology location.
-        errors.append("agent policy must be located at <project root>/docs/methodology/agent-policy.yaml")
+        # derivable from the canonical location the active layout declares.
+        errors.append(
+            f"agent policy must be located at <project root>/{layout.policy_rel()}"
+        )
     else:
-        project_root = resolved.parents[2]
+        project_root = resolved.parents[len(CANONICAL_LOCATION) - 1]
         for field in PATH_FIELDS:
             value = scalar(content, FIELD_SECTIONS[field], field)
             if value:
@@ -135,7 +140,9 @@ def validate(path: Path) -> list[str]:
 
 
 def main() -> int:
-    path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("docs/methodology/agent-policy.yaml")
+    # Default to the active layout rather than a CWD-relative literal, so the
+    # check still finds the policy when run from a subdirectory.
+    path = Path(sys.argv[1]) if len(sys.argv) > 1 else layout.policy_path()
     errors = validate(path)
     if errors:
         print("AGENT POLICY INVALID")

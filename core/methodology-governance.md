@@ -4,7 +4,7 @@ This document defines the boundaries, safety controls, exceptions, and success m
 
 ## 1. Choose a profile first
 
-The methodology is a set of defaults, not a requirement to use every component. Before initialization, record a profile in the project root (for example, `docs/methodology/profile.yaml`):
+The methodology is a set of defaults, not a requirement to use every component. Before initialization, record a profile in the project root (for example, `.hek/project/profile.yaml`):
 
 | Profile | Use when | Required | Optional |
 |---------|----------|----------|----------|
@@ -83,7 +83,7 @@ Do not claim speed or cost improvement without a sample size, comparison period,
 
 Each rule has an owner, rationale, scope, severity, version, and removal/review date. CI checks that referenced commands, paths, schemas, and skills exist; a scheduled job checks stale documents and expired exceptions. Generated or duplicated rules should have one source of truth. Changes to the methodology itself use the same profile, evidence, and rollback discipline as product changes.
 
-Project Agents may not modify `docs/fitness/**` to make a delivery pass. Every Fitness change, regardless of size, requires digest-bound external human approval except canonical first installation and demonstrable repair of pre-existing Python syntax errors. CI must run `check_fitness_protection.py` outside the mutable Fitness runner and provide a trusted base ref.
+Project Agents may not modify `.hek/fitness/**` to make a delivery pass. Every Fitness change, regardless of size, requires digest-bound external human approval except canonical first installation and demonstrable repair of pre-existing Python syntax errors. CI must run `check_fitness_protection.py` outside the mutable Fitness runner and provide a trusted base ref.
 
 ## 9. Skill availability is an executable contract
 

@@ -9,7 +9,7 @@ the SQL menu/permission catalog.
 Java + annotation-based access control. Adapt the annotation tuples to your
 framework (Sa-Token / Spring Security / etc.).
 
-Copy to: docs/fitness/scripts/check_permission_management.py
+Copy to: .hek/fitness/scripts/check_permission_management.py
 """
 # {{CHECK_PERMISSION_MANAGEMENT_TEMPLATE}}
 

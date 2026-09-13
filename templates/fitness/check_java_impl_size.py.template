@@ -6,7 +6,7 @@ variable definitions, and structural braces) for changed `*Impl.java` files.
 
 Java-only. Skip or replace if your project uses a different language.
 
-Copy to: docs/fitness/scripts/check_java_impl_size.py
+Copy to: .hek/fitness/scripts/check_java_impl_size.py
 """
 # {{CHECK_JAVA_IMPL_SIZE_TEMPLATE}}
 

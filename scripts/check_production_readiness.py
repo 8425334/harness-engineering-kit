@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
+
+import layout
 
 
 REQUIRED = {
@@ -137,7 +139,9 @@ def validate(record: dict[str, Any]) -> list[str]:
     audit_log = record.get("audit_log")
     if isinstance(audit_log, str) and audit_log.strip() and "{{" not in audit_log:
         configured = Path(audit_log)
-        if configured.is_absolute() or ".." in configured.parts:
+        # A leading "/" is absolute on POSIX but merely rooted on Windows, so both
+        # flavours must be rejected explicitly or the gate is platform-dependent.
+        if configured.is_absolute() or PurePosixPath(audit_log).is_absolute() or ".." in configured.parts:
             errors.append("audit_log must be a project-relative path without ..")
 
     state = record.get("state")
@@ -159,7 +163,8 @@ def validate(record: dict[str, Any]) -> list[str]:
 
 
 def main() -> int:
-    path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("docs/methodology/production/changes/change.json")
+    default_record = layout.path("production_changes") / "change.json"
+    path = Path(sys.argv[1]) if len(sys.argv) > 1 else default_record
     if not path.is_file():
         print(f"MISSING: {path}")
         return 2

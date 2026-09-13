@@ -56,40 +56,40 @@ python3 <kit>/scripts/onboard.py --project-root . --source-root <kit> --tier 2 -
 python3 <kit>/scripts/onboard.py --project-root . --source-root <kit> --check --json
 ```
 
-接入后的实际文件位于 `docs/fitness/scripts/` 和 `docs/fitness/`。Java 项目使用 `docs/fitness/scripts/JavaParameterScanner.java`；非 Java 项目可在 Agent 计划中明确排除不适用规则，但不能修改保护脚本绕过门禁。
+接入后的实际文件位于 `.hek/fitness/scripts/` 和 `.hek/fitness/`。Java 项目使用 `.hek/fitness/scripts/JavaParameterScanner.java`；非 Java 项目可在 Agent 计划中明确排除不适用规则，但不能修改保护脚本绕过门禁。
 
 ### 3. 文档基础设施
 
-Tier 2 onboarding 会自动创建规则手册和验证账本（`docs/fitness/README.md`、`docs/fitness/verification-ledger.md`）。只有在不使用 onboarding 的特殊迁移场景，才需要手动补齐这两个文件。职责显著不同的目录如需增加 `AI.md`，必须同时在根 `ai.json` 的 `modules` 中登记。
+Tier 2 onboarding 会自动创建规则手册和验证账本（`.hek/fitness/README.md`、`.hek/fitness/verification-ledger.md`）。只有在不使用 onboarding 的特殊迁移场景，才需要手动补齐这两个文件。职责显著不同的目录如需增加 `AI.md`，必须同时在根 `ai.json` 的 `modules` 中登记。
 
 新增 `AI.md` 后，必须同时在根 `ai.json` 的 `modules` 中登记对应路径、摘要和 `read_when` 路由条件。
 
 ### 4. 替换占位符
 
-用 `grep -rn '{{' docs/fitness/` 列出所有占位符，按下表逐项替换。
+用 `grep -rn '{{' .hek/fitness/` 列出所有占位符，按下表逐项替换。
 
 ### 5. 试运行
 
 ```bash
-python3 docs/fitness/scripts/fitness.py --tier fast --dry-run   # 只打印命令
-python3 docs/fitness/scripts/fitness.py --tier fast              # 实际执行
+python3 .hek/fitness/scripts/fitness.py --tier fast --dry-run   # 只打印命令
+python3 .hek/fitness/scripts/fitness.py --tier fast              # 实际执行
 ```
 
 ## Fitness 层保护
 
-项目 Agent 只能读取和执行 `docs/fitness/**`，不得为了通过门禁而修改规则、脚本、基线或例外。保护不设增量阈值，任意数量、任意大小的新增、修改、重命名和删除都需要人工确认。仅首次标准安装（Git 基线没有 `docs/fitness`）和可证明的既有 Python 语法错误修复自动放行。
+项目 Agent 只能读取和执行 `.hek/fitness/**`，不得为了通过门禁而修改规则、脚本、基线或例外。保护不设增量阈值，任意数量、任意大小的新增、修改、重命名和删除都需要人工确认。仅首次标准安装（Git 基线没有 `.hek/fitness`）和可证明的既有 Python 语法错误修复自动放行。
 
 本地工作区检查：
 
 ```bash
-python3 docs/methodology/scripts/check_fitness_protection.py
+python3 .hek/kit/scripts/check_fitness_protection.py
 ```
 
 CI 必须使用可信 PR 基线执行，例如：
 
 ```bash
 FITNESS_BASE_REF="$TRUSTED_BASE_SHA" \
-  python3 docs/methodology/scripts/check_fitness_protection.py
+  python3 .hek/kit/scripts/check_fitness_protection.py
 ```
 
 需要修改时，先运行门禁取得 `Approval digest`，由人工在受保护环境中确认后注入 `FITNESS_CHANGE_APPROVED_BY`、`FITNESS_CHANGE_APPROVAL_SOURCE`、`FITNESS_CHANGE_APPROVAL_ID` 和完全匹配的 `FITNESS_CHANGE_APPROVAL_DIGEST`。不得把这些值写入仓库、PR 脚本或 Agent 可控制的 CI 配置。

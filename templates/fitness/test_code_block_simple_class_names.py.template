@@ -7,7 +7,7 @@ generics, valid/empty/cross-fence exemption markers, and changed-path
 discovery filtering (ignored / excluded / deleted / archived / generated /
 dependency / non-markdown) without mutating the worktree.
 
-Run: python3 docs/fitness/scripts/test_code_block_simple_class_names.py
+Run: python3 .hek/fitness/scripts/test_code_block_simple_class_names.py
 """
 
 from __future__ import annotations
@@ -264,7 +264,7 @@ def test_is_excluded_filters_archive_and_vcs() -> None:
     expect(checker._is_excluded_path("openspec/changes/archive/2026-01-01-x/proposal.md"), "archive path excluded")
     expect(checker._is_excluded_path(".git/config"), ".git path excluded")
     expect(checker._is_excluded_path("ui/node_modules/pkg/readme.md"), "dependency dir excluded")
-    expect(not checker._is_excluded_path("docs/fitness/README.md"), "fitness docs not excluded")
+    expect(not checker._is_excluded_path(".hek/fitness/README.md"), "fitness docs not excluded")
 
 
 def test_non_markdown_not_collected() -> None:

@@ -6,7 +6,7 @@ that touch changed lines carry a Javadoc comment or a description annotation.
 
 Java-only. Skip or replace if your project uses a different language.
 
-Copy to: docs/fitness/scripts/check_java_documentation_contract.py
+Copy to: .hek/fitness/scripts/check_java_documentation_contract.py
 """
 # {{CHECK_JAVA_DOCUMENTATION_CONTRACT_TEMPLATE}}
 

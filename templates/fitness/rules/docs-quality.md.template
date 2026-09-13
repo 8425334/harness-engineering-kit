@@ -4,7 +4,7 @@ weight: 25
 tier: fast
 metrics:
   - name: fitness_layer_protected
-    command: python3 docs/methodology/scripts/check_fitness_protection.py
+    command: python3 .hek/kit/scripts/check_fitness_protection.py
     pattern: "FITNESS PROTECTION OK"
     hard_gate: true
     tier: fast
@@ -14,32 +14,32 @@ metrics:
     hard_gate: true
     tier: fast
   - name: canonical_agent_policy_valid
-    command: python3 docs/methodology/scripts/check_agent_policy.py
+    command: python3 .hek/kit/scripts/check_agent_policy.py
     pattern: "AGENT POLICY OK"
     hard_gate: true
     tier: fast
   - name: context_index_and_details_valid
-    command: python3 docs/methodology/scripts/check_context_docs.py
+    command: python3 .hek/kit/scripts/check_context_docs.py
     pattern: "CONTEXT DOCS OK"
     hard_gate: true
     tier: fast
   - name: context_routes_resolve
-    command: python3 docs/methodology/scripts/resolve_context.py .
+    command: python3 .hek/kit/scripts/resolve_context.py .
     pattern: "CONTEXT RESOLVED"
     hard_gate: true
     tier: fast
   - name: fitness_rulebook_exists
-    command: test -f docs/fitness/README.md && test -f docs/fitness/verification-ledger.md && echo "fitness docs present"
+    command: test -f .hek/fitness/README.md && test -f .hek/fitness/verification-ledger.md && echo "fitness docs present"
     pattern: "fitness docs present"
     hard_gate: true
     tier: fast
   - name: code_block_simple_class_names
-    command: python3 docs/fitness/scripts/check_code_block_simple_class_names.py
+    command: python3 .hek/fitness/scripts/check_code_block_simple_class_names.py
     pattern: "Code block simple class names ok"
     hard_gate: true
     tier: fast
   - name: code_block_simple_class_names_selftest
-    command: python3 docs/fitness/scripts/test_code_block_simple_class_names.py
+    command: python3 .hek/fitness/scripts/test_code_block_simple_class_names.py
     pattern: "Code block simple class names selftest ok"
     hard_gate: true
     tier: fast
@@ -49,9 +49,9 @@ metrics:
 
 ## 当前目标
 
-- 禁止项目 Agent 修改 `docs/fitness/**`；首次标准安装和可证明的既有 Python 语法修复除外，其他任意规模变更均须人工确认。
+- 禁止项目 Agent 修改 `.hek/fitness/**`；首次标准安装和可证明的既有 Python 语法修复除外，其他任意规模变更均须人工确认。
 - 确保原生 Agent 入口和权威项目策略存在。
-- 确保 `docs/fitness` 自身具备规则手册和验证账本。
+- 确保 `.hek/fitness` 自身具备规则手册和验证账本。
 - 根 `ai.json` 只做轻量索引，路径 `AI.md` 提供详细补充；两者不重复规则。
 - 确保根上下文链能够通过内置解析器确定性组装，不依赖 Agent 猜测路径路由。
 

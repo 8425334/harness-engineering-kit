@@ -4,32 +4,32 @@ weight: 20
 tier: normal
 metrics:
   - name: java_impl_size_limit
-    command: python3 docs/fitness/scripts/check_java_impl_size.py
+    command: python3 .hek/fitness/scripts/check_java_impl_size.py
     pattern: "Java implementation size ok"
     hard_gate: true
     tier: fast
   - name: java_parameter_object_gate
-    command: python3 docs/fitness/scripts/check_java_parameter_limit.py --mode block
+    command: python3 .hek/fitness/scripts/check_java_parameter_limit.py --mode block
     pattern: "Java parameter object gate ok"
     hard_gate: true
     tier: fast
   - name: java_parameter_object_selftest
-    command: python3 docs/fitness/scripts/test_java_parameter_limit.py
+    command: python3 .hek/fitness/scripts/test_java_parameter_limit.py
     pattern: "OK"
     hard_gate: true
     tier: fast
   - name: mapper_inline_sql_guard
-    command: python3 docs/fitness/scripts/check_mapper_inline_sql.py
+    command: python3 .hek/fitness/scripts/check_mapper_inline_sql.py
     pattern: "Mapper inline SQL ok"
     hard_gate: true
     tier: fast
   - name: mapper_inline_sql_selftest
-    command: python3 docs/fitness/scripts/test_mapper_inline_sql.py
+    command: python3 .hek/fitness/scripts/test_mapper_inline_sql.py
     pattern: "OK"
     hard_gate: true
     tier: fast
   - name: mapper_xml_parity
-    command: python3 docs/fitness/scripts/check_mapper_xml_parity.py
+    command: python3 .hek/fitness/scripts/check_mapper_xml_parity.py
     pattern: "Mapper XML parity ok"
     hard_gate: true
     tier: fast

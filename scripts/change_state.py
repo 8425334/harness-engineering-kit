@@ -9,6 +9,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import layout
 from check_production_readiness import rollout_cycles, validate
 from methodology_common import file_lock, write_json
 
@@ -28,7 +29,7 @@ TRANSITIONS = {
     "OBSERVING": {"CLOSED", "ROLLED_BACK"},
     "ROLLED_BACK": {"REMEDIATING", "CLOSED"},
 }
-CANONICAL_SUFFIX = ("docs", "methodology", "production", "changes")
+CANONICAL_SUFFIX = Path(layout.relative("production_changes")).parts
 
 
 def resolve_record_location(record_path: Path) -> Path | None:
@@ -53,7 +54,10 @@ def main() -> int:
     record_path = args.record.resolve()
     project_root = resolve_record_location(record_path)
     if project_root is None:
-        print("BLOCKED: production record must be under docs/methodology/production/changes")
+        print(
+            "BLOCKED: production record must be under "
+            f"{layout.relative('production_changes')}"
+        )
         return 2
     try:
         with file_lock(record_path):
@@ -107,7 +111,7 @@ def main() -> int:
                 print("BLOCKED: all rollout stages must complete in order before OBSERVING")
                 return 2
 
-            allowed_audit = (record_path.parents[1] / "audit").resolve()
+            allowed_audit = layout.path("production_audit", project_root).resolve()
             audit = Path(str(record.get("audit_log", "")))
             if not audit.is_absolute():
                 audit = project_root / audit

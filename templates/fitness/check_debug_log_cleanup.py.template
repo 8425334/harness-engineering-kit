@@ -7,7 +7,7 @@ LOGGER.info) is NOT flagged — those are intentional "important logs" that stay
 
 Multi-language (Java / JS / TS / JSX / Python). Configure patterns per project.
 
-Copy to: docs/fitness/scripts/check_debug_log_cleanup.py
+Copy to: .hek/fitness/scripts/check_debug_log_cleanup.py
 """
 # {{CHECK_DEBUG_LOG_CLEANUP_TEMPLATE}}
 
@@ -49,10 +49,10 @@ FORBIDDEN_DEBUG_PATTERNS = (  # {{FORBIDDEN_DEBUG_PATTERNS}}
 
 # Configure: path keywords that exempt a file from the check.
 # Substring match against git rel_path (which has no leading slash).
-# Use no-leading-slash forms for prefix matches ("docs/fitness/", "scripts/");
+# Use no-leading-slash forms for prefix matches (".hek/fitness/", "scripts/");
 # use leading-slash forms for interior matches ("/test/" avoids matching "latest").
 EXCLUDED_PATH_KEYWORDS = (  # {{EXCLUDED_PATH_KEYWORDS}}
-    "docs/fitness/",
+    ".hek/fitness/",
     "scripts/",
     "__pycache__/",
     "/test/",

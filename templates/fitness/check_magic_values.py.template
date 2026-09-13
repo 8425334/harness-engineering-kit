@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check changed Java files for magic values — hardcoded literals that should be enum constants.
 
-Copy to: docs/fitness/scripts/check_magic_values.py
+Copy to: .hek/fitness/scripts/check_magic_values.py
 """
 # {{CHECK_MAGIC_VALUES_TEMPLATE}}
 

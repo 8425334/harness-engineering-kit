@@ -13,9 +13,12 @@ from pathlib import Path
 
 from check_change_workspace import check_workspace
 from check_execution import validate_execution
-from openspec_common import orchestration_contract
+from openspec_common import openspec_executable, orchestration_contract
 from verify_skill import verify
 
+
+# Resolved once so the Windows .cmd shim is reachable from subprocess.
+OPENSPEC = openspec_executable()
 
 NATIVE_SKILLS = (
     "openspec-explore",
@@ -29,7 +32,12 @@ NATIVE_SKILLS = (
 
 
 def run(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, cwd=cwd, env=env, capture_output=True, text=True, check=False)
+    # OpenSpec emits UTF-8; decoding with the locale codec (e.g. GBK on a Chinese
+    # Windows) raises inside the reader thread and silently truncates stdout.
+    return subprocess.run(
+        command, cwd=cwd, env=env, capture_output=True, text=True,
+        encoding="utf-8", errors="replace", check=False,
+    )
 
 
 def write_json(path: Path, payload: dict[str, object]) -> None:
@@ -62,16 +70,16 @@ def smoke() -> None:
                 raise RuntimeError(f"engineering Skill verification failed for {platform}: {result}")
         environment = {**os.environ, "HOME": str(home), "USERPROFILE": str(home), "OPENSPEC_TELEMETRY": "0"}
         configured = (
-            run(["openspec", "config", "set", "profile", "custom"], repository, environment),
+            run([OPENSPEC, "config", "set", "profile", "custom"], repository, environment),
             run([
-                "openspec", "config", "set", "workflows",
+                OPENSPEC, "config", "set", "workflows",
                 '["propose","explore","apply","update","sync","archive","verify"]',
             ], repository, environment),
         )
         if any(result.returncode != 0 for result in configured):
             raise RuntimeError("could not configure isolated OpenSpec workflow profile")
         initialized = run(
-            ["openspec", "init", str(project), "--tools", "codex", "--profile", "custom", "--no-animation"],
+            [OPENSPEC, "init", str(project), "--tools", "codex", "--profile", "custom", "--no-animation"],
             repository,
             environment,
         )
@@ -84,11 +92,11 @@ def smoke() -> None:
 
         schema_target = project / "openspec/schemas/harness-engineering"
         shutil.copytree(repository / "templates/openspec-schema", schema_target)
-        validated = run(["openspec", "schema", "validate", "harness-engineering", "--json"], project, environment)
+        validated = run([OPENSPEC, "schema", "validate", "harness-engineering", "--json"], project, environment)
         if validated.returncode != 0 or '"valid": true' not in validated.stdout:
             raise RuntimeError(f"schema validation failed: {validated.stdout or validated.stderr}")
 
-        created = run(["openspec", "new", "change", "demo-change", "--schema", "harness-engineering"], project, environment)
+        created = run([OPENSPEC, "new", "change", "demo-change", "--schema", "harness-engineering"], project, environment)
         if created.returncode != 0:
             raise RuntimeError(created.stderr or created.stdout)
         change = project / "openspec/changes/demo-change"
