@@ -13,5 +13,5 @@ OpenSpec 创建 `openspec/changes/<id>/.openspec.yaml` 后，用 `init_governanc
 ```bash
 openspec status --change <id> --json
 openspec validate <id> --type change --strict --no-interactive
-python3 docs/methodology/scripts/check_phase.py <change-dir> DESIGN
+python3 .hek/kit/scripts/check_phase.py <change-dir> DESIGN
 ```

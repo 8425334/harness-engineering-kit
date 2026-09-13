@@ -4,7 +4,7 @@ OpenSpec 直接拥有完整生命周期。Engineering 通过 OpenSpec 1.12.0 生
 
 ```bash
 openspec new change <id> --schema harness-engineering
-python3 docs/methodology/scripts/init_governance.py <id> \
+python3 .hek/kit/scripts/init_governance.py <id> \
   --title "..." --mode backend --owner <actor> --trigger native-selection
 ```
 

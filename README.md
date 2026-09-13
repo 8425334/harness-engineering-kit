@@ -8,24 +8,45 @@ Chinese documentation: [README.zh.md](README.zh.md)
 
 > 🎞️ [Harness Engineering Kit Overview deck (Chinese, 32 slides)](presentations/Harness-Engineering-Kit-全局导览.pptx): a full Why → What → How → Grow → Use tour with RAM/RAD worked examples. Regenerate with `python3 presentations/build_hek_deck.py`.
 
+## Installed layout
+
+Everything Harness installs, other than `openspec/`, lives under a single `.hek/`
+directory. Uninstalling is one directory, and the rest of the repository is never
+written to:
+
+| Directory | Owner | Upgrade behaviour |
+|---|---|---|
+| `.hek/kit/` | Harness | Replaced wholesale |
+| `.hek/fitness/` | Shared | Harness-seeded controls are replaced; checks the project added are left alone |
+| `.hek/project/` | Project | Never overwritten |
+| `.hek/context/` | Project | Never overwritten |
+| `.hek/state/` | Generated | Receipts, lessons, and other run output |
+
+`openspec/` stays at the repository root: OpenSpec resolves its own root from the
+working directory, and the Skills it generates hardcode root-relative paths.
+`hek init` migrates a pre-0.6 installation into this layout. It relocates and
+deletes only inside the superseded `docs/methodology/` tree, preserves any
+destination that already exists, keeps files edited between planning and applying,
+and lists every human follow-up — see [Versioning and Upgrades](docs/versioning.md).
+
 ## Architecture
 
 | Layer | Owns | Must not own |
 |---|---|---|
-| `AGENTS.md` / `CLAUDE.md` | Native authority adapter, safety, required reads, Skill route | Commands, module maps, full methodology |
-| `agent-policy.yaml` | Canonical project facts, commands, permissions, referenced paths | Task-specific design |
-| Root `ai.json` | Compact machine-readable project map and routes to detailed context | Commands, policies, invariants, or detailed rules |
-| Path `AI.md` | Local responsibilities, boundaries, navigation, local verification | Authority over native instructions or policy |
+| `AGENTS.md` / `CLAUDE.md` | Native authority adapter, safety, Skill route, requirement reflection | Commands, module maps, full methodology |
+| `.hek/project/agent-policy.yaml` | Canonical project facts, commands, permissions, referenced paths | Task-specific design |
+| `.hek/context/ai.json` | Compact machine-readable project map and routes to detailed context | Commands, policies, invariants, or detailed rules |
+| `.hek/context/**/AI.md` | Local responsibilities, boundaries, navigation, local verification | Authority over native instructions or policy |
 | `engineering` Skill | Task routing, lifecycle orchestration, evidence and fallback | Project conventions already defined above |
 | Backend/frontend/fullstack profiles | Design and verification specialization | Independent lifecycle or command |
 
-Authority is fixed: system/developer/user → native instruction hierarchy → `agent-policy.yaml` → root `ai.json` → selected path `AI.md` → profile defaults.
+Authority is fixed: system/developer/user → native instruction hierarchy → `.hek/project/agent-policy.yaml` → `.hek/context/ai.json` → selected path `AI.md` → profile defaults.
 
 Before code changes, `resolve_context.py` turns target paths and explicit `read_when` keywords into one fail-closed load order. Root context is mandatory; indexed ancestor `AI.md` files load before child details.
 
 `context_cache.py` derives a stable digest for that exact load order and records provider `hit`, `miss`, or `bypass` outcomes. The long-task reference benchmark enforces a measured target of at least 99.5%; it does not modify host Agent settings or claim provider behavior without telemetry.
 
-`docs/fitness/**` is a protected control plane. Project Agents may read and execute it but may not modify it; every non-bootstrap, non-syntax-repair change requires external human approval bound to the complete change digest, with no size exemption.
+`.hek/fitness/**` is a protected control plane. Project Agents may read and execute it but may not modify it; every non-bootstrap, non-syntax-repair change requires external human approval bound to the complete change digest, with no size exemption.
 
 ## Lifecycle
 
@@ -99,21 +120,21 @@ npx --yes --package github:8425334/harness-engineering-kit hek uninstall --yes
 npx --yes --package github:8425334/harness-engineering-kit hek uninstall --yes --keep-project-facts
 ```
 
-For a desktop Agent without a CLI, first install the project controls with `hek init --direct --yes`, then run `hek handoff --agent workbuddy` or `hek handoff --agent trae-work`. Open the project in that Agent, copy the generated prompt, and let it read the repository's `AGENTS.md`/`CLAUDE.md` and `docs/methodology/agent-policy.yaml`. `handoff` never launches an unknown desktop application and never writes project files.
+For a desktop Agent without a CLI, first install the project controls with `hek init --direct --yes`, then run `hek handoff --agent workbuddy` or `hek handoff --agent trae-work`. Open the project in that Agent, copy the generated prompt, and let it read the repository's `AGENTS.md`/`CLAUDE.md` and `.hek/project/agent-policy.yaml`. `handoff` never launches an unknown desktop application and never writes project files.
 
 Interactive `init` asks for the install scope first (full or lightweight, chosen with the arrow keys when `--tier` is not given), then opens the selected Agent and lets that Agent perform onboarding. The selected Agent receives only its native root adapter (`CLAUDE.md` for Claude Code, `GEMINI.md` for Gemini CLI, and `AGENTS.md` for Codex/OpenCode and compatible Agents) and its matching project Skill. Pick the skip entry in the agent menu for the compatibility deterministic flow, which installs all supported adapters, and it falls back automatically when no agent is installed. Non-interactive runs never launch an external process unless `--open` is supplied, and `--open` there requires `--agent`/`HEK_AGENT`. `--json` switches to machine-readable output: it never opens an agent and never prompts — without `--yes` init prints the read-only plan and exits 2; with `--yes` it applies, checks, and prints one JSON receipt (including an `errors` receipt when apply fails and rolls back). Use `HEK_AGENT` instead of `--agent`, or `--prompt` to customize the first prompt sent to terminal agents (prompts are delivered as a single line so Windows `cmd.exe` cannot truncate them). The default prompt understands and answers directly in the user's language without a Chinese→English→Chinese translation pass. Static rules form a stable prefix, while project paths, tier, Agent, and authorization stay in the dynamic suffix for better context-cache reuse.
 
 A fresh project's placeholders must be filled from real repository facts before the post-init check passes, so an unattended `init --direct --yes` on a fresh project installs the scaffolding and then intentionally exits 2; upgrade runs on an already-configured project pass directly. Use `--no-check` for scaffold-only automation, or open an Agent (`--agent <id> --open --yes`) to complete the fill-and-check loop after the deterministic install.
 
-`hek init` is Agent-driven: it asks for the install scope, selects an installed Agent, opens that Agent's CLI in the resolved project root, and passes the Kit path plus the onboarding contract and selected Agent target. The Agent reads project facts, generates the read-only plan, asks for confirmation, fills project-specific values, applies the canonical script, and runs deterministic checks. Tier 1 (lightweight) installs the core control plane plus the minimal staged Fitness executor and SDD sync rule required by lifecycle gates; the default Tier 2 (full) additionally installs the complete Fitness rule set and lesson memory. Each run writes `docs/methodology/onboarding.json` with the source version, file digests, created/updated/preserved files, and verification result. Use `--direct` only when a headless compatibility install is explicitly wanted; it ignores `--agent` and `HEK_AGENT` and installs all supported adapters.
+`hek init` is Agent-driven: it asks for the install scope, selects an installed Agent, opens that Agent's CLI in the resolved project root, and passes the Kit path plus the onboarding contract and selected Agent target. The Agent reads project facts, generates the read-only plan, asks for confirmation, fills project-specific values, applies the canonical script, and runs deterministic checks. Tier 1 (lightweight) installs the core control plane plus the minimal staged Fitness executor and SDD sync rule required by lifecycle gates; the default Tier 2 (full) additionally installs the complete Fitness rule set and lesson memory. Each run writes `.hek/state/onboarding.json` with the source version, file digests, created/updated/preserved files, and verification result. Use `--direct` only when a headless compatibility install is explicitly wanted; it ignores `--agent` and `HEK_AGENT` and installs all supported adapters.
 
-Version-aware upgrades compare the installed `docs/methodology/VERSION` with the Kit version, synchronize all canonical resources for lower-to-higher upgrades, block downgrades, and report any release-specific migration review. See [Versioning and Upgrades](docs/versioning.md).
+Version-aware upgrades compare the installed `.hek/VERSION` with the Kit version, synchronize all canonical resources for lower-to-higher upgrades, block downgrades, and report any release-specific migration review. See [Versioning and Upgrades](docs/versioning.md).
 
-`hek uninstall` reverses onboarding. It stays read-only until confirmed with `--yes` (or `--apply`), reads the `docs/methodology/onboarding.json` receipt, and deletes only the assets Harness installed whose bytes still match the recorded digests. Files the install preserved, project-owned facts, files edited afterwards, and symlinked targets stay in place and are reported, and directories that become empty are pruned. Each apply writes `docs/methodology/uninstall.json`. Use `--keep-project-facts` to also retain `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`, `ai.json`, `AI.md`, `agent-policy.yaml`, `profile.yaml`, and `openspec/config.yaml`; `--json` prints the machine-readable plan (without `--yes`, exit 2) or the receipt. When no receipt exists it falls back to removing only files that are still byte-identical to the Kit source, and anything it cannot verify is kept.
+`hek uninstall` reverses onboarding. It stays read-only until confirmed with `--yes` (or `--apply`), reads the `.hek/state/onboarding.json` receipt, and deletes only the assets Harness installed whose bytes still match the recorded digests. Files the install preserved, project-owned facts, files edited afterwards, and symlinked targets stay in place and are reported, and directories that become empty are pruned. Each apply writes `.hek/state/uninstall.json`. Use `--keep-project-facts` to also retain `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`, `ai.json`, `AI.md`, `agent-policy.yaml`, `profile.yaml`, and `openspec/config.yaml`; `--json` prints the machine-readable plan (without `--yes`, exit 2) or the receipt. When no receipt exists it falls back to removing only files that are still byte-identical to the Kit source, and anything it cannot verify is kept.
 
 The check fails for an oversized or structurally invalid `ai.json`, unindexed or oversized `AI.md`, missing policy, placeholders, broken referenced paths, invalid task graphs/execution evidence, invalid profiles, missing Skill resources, stale installed Skill content, or unsupported platform adapters. The Engineering Skill is installed and checked for Claude Code, Codex, OpenCode, Cursor, Gemini, and Trae. The legacy `ramer`, `fe-engineering`, and `multi-agent` entries are intentionally not supported.
 
-`hek doctor` and `hek repair` handle a broken conversation-time environment. `doctor` is a read-only diagnosis; `repair` prints the same plan and applies it after `--yes` (or `--apply`). They cover an `engineering` Skill that is missing or stale for the active Agent, a Python runtime or installed control script that is unusable, and a control plane that is incomplete or drifted from the Kit. Repair restores only canonical Kit resources, recreates missing control-plane directories, re-syncs the Skill tree and the OpenSpec lifecycle Skills when their CLI is available, and is idempotent per operation. It never rewrites existing project-owned facts, never installs interpreters or packages, never rewrites an existing `docs/fitness/**` baseline, never downgrades an installation, and never writes outside the project root; anything that needs a human is reported as a `manual` finding with its exact remedy. The Agent scope comes from `--agent`, then the onboarding receipt, then only Skill trees that already exist. Each apply writes `docs/methodology/repair.json`. In an installed project the same engine runs from `docs/methodology/scripts/repair.py`, defaulting `--source-root` to the path recorded by onboarding.
+`hek doctor` and `hek repair` handle a broken conversation-time environment. `doctor` is a read-only diagnosis; `repair` prints the same plan and applies it after `--yes` (or `--apply`). They cover an `engineering` Skill that is missing or stale for the active Agent, a Python runtime or installed control script that is unusable, and a control plane that is incomplete or drifted from the Kit. Repair restores only canonical Kit resources, recreates missing control-plane directories, re-syncs the Skill tree and the OpenSpec lifecycle Skills when their CLI is available, and is idempotent per operation. It never rewrites existing project-owned facts, never installs interpreters or packages, never rewrites an existing `.hek/fitness/**` baseline, never downgrades an installation, and never writes outside the project root; anything that needs a human is reported as a `manual` finding with its exact remedy. The Agent scope comes from `--agent`, then the onboarding receipt, then only Skill trees that already exist. Each apply writes `.hek/state/repair.json`. In an installed project the same engine runs from `.hek/kit/scripts/repair.py`, defaulting `--source-root` to the path recorded by onboarding.
 
 Resolve task context with the installed project controls. See the [CLI Onboarding Playbook](templates/engineering/references/onboarding.md) for the execution contract.
 
@@ -121,11 +142,11 @@ Resolve task context with the installed project controls. See the [CLI Onboardin
 
 ```bash
 openspec new change add-capability --schema harness-engineering
-python3 docs/methodology/scripts/init_governance.py add-capability \
+python3 .hek/kit/scripts/init_governance.py add-capability \
   --title "Add capability" --mode fullstack --owner team \
   --trigger explicit-selection
 
-python3 docs/methodology/scripts/approve_design.py openspec/changes/add-capability \
+python3 .hek/kit/scripts/approve_design.py openspec/changes/add-capability \
   --actor reviewer --source pull-request --approval-id PR-123
 
 openspec status --change add-capability --json

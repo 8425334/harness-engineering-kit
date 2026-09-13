@@ -18,7 +18,7 @@ Explore → Propose（Spec → Design → Approval）→ Apply → Sync → Arch
 
 ## Profile 策略
 
-通过 `docs/methodology/profile.yaml` 配置 Self-Refine，让团队按风险选择流程强度：
+通过 `.hek/project/profile.yaml` 配置 Self-Refine，让团队按风险选择流程强度：
 
 | 策略 | 含义 |
 |---|---|

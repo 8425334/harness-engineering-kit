@@ -52,7 +52,7 @@ PLACEHOLDER_VALUES = {
     "{{DEPENDENCY_RULE}}": "src", "{{LOCAL_TEST_COMMAND_OR_POLICY_REFERENCE}}": "pytest",
     "{{ENTRY_POINTS}}": "src", "{{RELATED_CONTRACTS}}": "none", "{{RULE_OWNER}}": "team",
     "{{METHODOLOGY_OWNER}}": "team", "{{PROJECT_SPECIFIC_DEFINITION_OR_DEFAULT}}": ">2 files",
-    "{{FAST_NORMAL_OR_DEEP}}": "normal", "{{EXCEPTION_RECORD_PATH}}": "docs/methodology/exceptions.md",
+    "{{FAST_NORMAL_OR_DEEP}}": "normal", "{{EXCEPTION_RECORD_PATH}}": ".hek/exceptions.md",
     "{{METHODOLOGY_VERSION}}": SOURCE_VERSION, "{{YYYY-MM-DD}}": "2027-01-01",
 }
 

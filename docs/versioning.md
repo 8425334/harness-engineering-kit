@@ -1,6 +1,6 @@
 # Harness Versioning and Upgrades
 
-Harness uses the Kit's `VERSION` as the release version and the target project's `docs/methodology/VERSION` as the installed version. Versions follow Semantic Versioning (`MAJOR.MINOR.PATCH`). The onboarding plan compares these values before any write.
+Harness uses the Kit's `VERSION` as the release version and the target project's `.hek/VERSION` as the installed version. Versions follow Semantic Versioning (`MAJOR.MINOR.PATCH`). The onboarding plan compares these values before any write.
 
 ## Upgrade rules
 
@@ -9,7 +9,7 @@ Harness uses the Kit's `VERSION` as the release version and the target project's
 - A higher installed version is a `downgrade` and is blocked. Use the newer Kit or make a separately approved rollback plan.
 - A missing version in a truly fresh repository is `fresh`; a missing version in a partial or legacy repository is `unversioned` and blocks automatic apply. A malformed version is `invalid` and also blocks apply.
 
-For `unversioned` or `invalid`, the Agent must identify the actual installed release from repository evidence and obtain confirmation before recording a valid `docs/methodology/VERSION`; it must never guess a baseline just to pass the gate.
+For `unversioned` or `invalid`, the Agent must identify the actual installed release from repository evidence and obtain confirmation before recording a valid `.hek/VERSION`; it must never guess a baseline just to pass the gate.
 
 The install tier is independent of the version relationship. Tier 1 and Tier 2 describe the desired scope of this run. A Tier 1 run still synchronizes all Tier 1 canonical resources; Tier 2 additionally installs Fitness and lesson-memory assets.
 

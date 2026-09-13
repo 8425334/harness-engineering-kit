@@ -58,8 +58,8 @@ Task: 实现 <UserList /> 组件。
 
 检查点：
 
-- **Security Baseline**：AI 生成的代码不能包含 `eval()` 或 `innerHTML`；启用该门禁时配置 `docs/fitness/scripts/check_security_baseline.py`。
-- **Arch Boundary Check**：配置 `docs/fitness/scripts/check_architecture_boundary.py` 检查 Import 路径，确保 ui 层未导入 infrastructure 层。
+- **Security Baseline**：AI 生成的代码不能包含 `eval()` 或 `innerHTML`；启用该门禁时配置 `.hek/fitness/scripts/check_security_baseline.py`。
+- **Arch Boundary Check**：配置 `.hek/fitness/scripts/check_architecture_boundary.py` 检查 Import 路径，确保 ui 层未导入 infrastructure 层。
 - **Log Cleanup**：自动检测 AI 是否残留了 `console.log`。
 
 ## 3. 现代化前端架构设计

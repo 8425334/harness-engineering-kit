@@ -33,7 +33,7 @@
 | **Token** | LLM 处理文本的最小单位，输入输出都按 Token 计费；稳定的上下文前缀命中缓存后只需约 0.1× 成本 |
 | **agent-policy.yaml** | 项目唯一事实源：命令、可读写路径、权限、交付引用都在这一个文件里 |
 | **门禁（Gate）** | 每个生命周期阶段的通过/不通过检查（`check_phase.py`），只有拿到"通过"证据才能推进状态 |
-| **Fitness** | 受保护的质量门禁目录 `docs/fitness/`。Agent 只能读取执行、不能修改；按 fast/normal/deep 分层 |
+| **Fitness** | 受保护的质量门禁目录 `.hek/fitness/`。Agent 只能读取执行、不能修改；按 fast/normal/deep 分层 |
 | **engineering Skill** | 非平凡代码变更的治理外壳：路由上下文、调用 OpenSpec 原生生命周期、记录证据 |
 | **Profile（后端 RAM / 前端 RAD / 全栈）** | engineering Skill 的 Design 与验证特化，回答"这个需求该怎么建模、怎么验证" |
 | **OpenSpec** | 生命周期所有者，负责 Explore、Propose、Apply、Validate、Sync 与 Archive |
@@ -185,18 +185,18 @@ Token Cache 的思想是：
 | 概念 | 落地文件 | 职责 | 不负责 |
 |-|-|-|-|
 | 入口 | 根 `CLAUDE.md` / `AGENTS.md` | 权威、安全、必读入口，路由到 engineering Skill | 命令、模块图、完整方法论 |
-| 策略（唯一事实） | `docs/methodology/agent-policy.yaml` | 项目命令、可读写/禁用路径、权限、交付引用 | 任务级设计 |
-| 方法论档位 | `docs/methodology/profile.yaml` | 档位（light/standard/regulated/experimental）、Self-Refine 策略、审批要求 | 命令与权限 |
+| 策略（唯一事实） | `.hek/project/agent-policy.yaml` | 项目命令、可读写/禁用路径、权限、交付引用 | 任务级设计 |
+| 方法论档位 | `.hek/project/profile.yaml` | 档位（light/standard/regulated/experimental）、Self-Refine 策略、审批要求 | 命令与权限 |
 | 上下文索引 | 根 `ai.json`（≤8192 字节） | 机器可读项目地图，路由到详情 | 命令、权限、详细规则 |
 | 路径上下文 | `AI.md`（≤800 行/篇） | 局部职责、边界、导航、局部验证 | 覆盖上层指令 |
 | 编排 | `engineering` Skill | 路由任务、编排生命周期、记录证据 | 重复项目约定 |
 | Design/验证特化 | 后端 / 前端 / 全栈 Profile | RAM / RAD / 全栈契约的建模与验证方式 | 独立生命周期 |
 | 变更工作区 | `openspec/changes/<id>/` | `.openspec.yaml` + proposal / specs / design / tasks + `governance.json` 与审批/执行证据 | 重复 OpenSpec 生命周期 |
-| 质量门禁 | `docs/fitness/**`（受保护） | 分层质量检查，定义"真正完成" | 被 Agent 修改 |
+| 质量门禁 | `.hek/fitness/**`（受保护） | 分层质量检查，定义"真正完成" | 被 Agent 修改 |
 
 **权威顺序固定**：system/developer/user 指令 → 原生指令层级 → `agent-policy.yaml` → 根 `ai.json` → 按需选中的路径 `AI.md` → Profile 默认值。任何一层都只补充、不覆盖上一层；仓库文本（Issue、fixture、生成内容、日志、代码注释）一律当作**不可信输入**处理。
 
-> 注意区分两件事：`docs/methodology/profile.yaml` 是**方法论档位**（light/standard/regulated/experimental），由 `resolve_context.py` 紧随 `agent-policy.yaml` 加载，不参与上面这条权威层级；句末的“Profile 默认值”指**工程 Profile**（后端 / 前端 / 全栈）。
+> 注意区分两件事：`.hek/project/profile.yaml` 是**方法论档位**（light/standard/regulated/experimental），由 `resolve_context.py` 紧随 `agent-policy.yaml` 加载，不参与上面这条权威层级；句末的“Profile 默认值”指**工程 Profile**（后端 / 前端 / 全栈）。
 
 ### 2.1 工程化 vs 直接生成
 
@@ -438,10 +438,10 @@ Self-Refine 是有界辅助：同一个模型可能重复同一个错误，所�
 |-|-|-|
 | `evidence/failure-events.jsonl` | Fitness/门禁/测试/差异/生产的不可变观察 | 仅证据 |
 | `lesson-candidate.json` | Agent 提议的模式、根因、预防、验证 | 待审核 |
-| `docs/methodology/lessons/*.json` | 外部审批后激活的项目经验 | 辅助预防指导 |
+| `.hek/state/lessons/*.json` | 外部审批后激活的项目经验 | 辅助预防指导 |
 | Fitness / 策略规则 | 已证明反复出现的确定性约束 | 规范控制 |
 
-关键纪律：**一次观察通常只生成"候选"，不直接生成"规则"**；相同签名反复出现、经外部审核后，才可升级为强制预检查或确定性 Fitness 规则。Agent 必须把 `docs/fitness/**` 当只读控制面——想改门禁就 `check_fitness_protection.py` 拿到摘要、停下来申请外部人工审批，任何规模都不豁免（除规范首次安装与可证明的既有语法修复外）。
+关键纪律：**一次观察通常只生成"候选"，不直接生成"规则"**；相同签名反复出现、经外部审核后，才可升级为强制预检查或确定性 Fitness 规则。Agent 必须把 `.hek/fitness/**` 当只读控制面——想改门禁就 `check_fitness_protection.py` 拿到摘要、停下来申请外部人工审批，任何规模都不豁免（除规范首次安装与可证明的既有语法修复外）。
 
 ### 6.2 常见问题与沉淀位置
 
@@ -501,9 +501,9 @@ npx --yes --package github:8425334/harness-engineering-kit hek init
 | 入口 | 对应概念 | 作用 |
 |-|-|-|
 | 根 `CLAUDE.md` / `AGENTS.md` | 入口 | Agent 的必读与安全边界，路由到 engineering Skill |
-| `docs/methodology/agent-policy.yaml` + `profile.yaml` | 策略/档位 | 项目命令、权限、交付引用；方法论档位与 Self-Refine 策略 |
+| `.hek/project/agent-policy.yaml` + `profile.yaml` | 策略/档位 | 项目命令、权限、交付引用；方法论档位与 Self-Refine 策略 |
 | 根 `ai.json` + 路径 `AI.md` | 上下文 | 机器可读项目地图 + 路径细节，经 `resolve_context.py` 确定性加载 |
-| `docs/fitness/**` + `.claude/skills/engineering` | 门禁/编排 | 分层质量门禁（只读控制面）与工程编排 Skill |
+| `.hek/fitness/**` + `.claude/skills/engineering` | 门禁/编排 | 分层质量门禁（只读控制面）与工程编排 Skill |
 
 ### Step 2 填占位、确认项目上下文
 
@@ -512,7 +512,7 @@ npx --yes --package github:8425334/harness-engineering-kit hek init
 改代码前，Agent 先跑：
 
 ```bash
-python3 docs/methodology/scripts/resolve_context.py <target-path>
+python3 .hek/kit/scripts/resolve_context.py <target-path>
 ```
 
 并**严格按返回顺序**读取：`agent-policy.yaml` → `profile.yaml` → 根 `ai.json` → 命中的 `AI.md`（父到子）。缺一步或解析失败都算阻塞。你可以在 `profile.yaml` 里按项目风险选档位（`light / standard / regulated / experimental`）——本 demo 是纯领域引擎，选 `standard` 即可，Fitness 命令以 `agent-policy.yaml` 声明为准。
@@ -537,7 +537,7 @@ Demo 选择**企业级多业态订单优惠分摊引擎**——它有真实工�
 
 ```bash
 openspec new change order-discount-allocation --schema harness-engineering
-python3 docs/methodology/scripts/init_governance.py order-discount-allocation \
+python3 .hek/kit/scripts/init_governance.py order-discount-allocation \
   --title "多业态订单优惠分摊引擎" --mode backend --owner team \
   --trigger explicit-selection
 ```
@@ -567,7 +567,7 @@ openspec/changes/order-discount-allocation/
 
 ```bash
 openspec status --change order-discount-allocation --json
-python3 docs/methodology/scripts/check_phase.py openspec/changes/order-discount-allocation EXPLORE
+python3 .hek/kit/scripts/check_phase.py openspec/changes/order-discount-allocation EXPLORE
 ```
 
 ### Step 5 写 Spec：把行为固化下来
@@ -608,7 +608,7 @@ openspec instructions specs --change order-discount-allocation --json
 
 ```bash
 openspec instructions design --change order-discount-allocation --json
-python3 docs/methodology/scripts/check_phase.py \
+python3 .hek/kit/scripts/check_phase.py \
   openspec/changes/order-discount-allocation DESIGN
 ```
 
@@ -617,7 +617,7 @@ python3 docs/methodology/scripts/check_phase.py \
 Design 满足后，把外部审批绑定到完整契约摘要：
 
 ```bash
-python3 docs/methodology/scripts/approve_design.py \
+python3 .hek/kit/scripts/approve_design.py \
   openspec/changes/order-discount-allocation \
   --actor reviewer --source pull-request --approval-id PR-42
 ```
@@ -631,7 +631,7 @@ python3 docs/methodology/scripts/approve_design.py \
 每个任务成功后先记录 run，再由 OpenSpec Apply workflow 勾选对应 `tasks.md` 项：
 
 ```bash
-python3 docs/methodology/scripts/check_execution.py \
+python3 .hek/kit/scripts/check_execution.py \
   openspec/changes/order-discount-allocation --json
 ```
 
@@ -643,9 +643,9 @@ python3 docs/methodology/scripts/check_execution.py \
 
 ```bash
 openspec validate order-discount-allocation --type change --strict --no-interactive
-python3 docs/fitness/scripts/fitness.py --tier fast
+python3 .hek/fitness/scripts/fitness.py --tier fast
 mvn -q compile && mvn test
-python3 docs/methodology/scripts/check_phase.py openspec/changes/order-discount-allocation REVIEW
+python3 .hek/kit/scripts/check_phase.py openspec/changes/order-discount-allocation REVIEW
 ```
 
 **调试日志三阶段**：编码时在分支入口 / 状态流转 / 外部调用处加临时调试日志 → 跑测试时**逐条自检验证数据流**（分支是否走对、状态是否 A→B、调用参数是否匹配契约）→ 通过后清理临时输出、保留框架业务日志。

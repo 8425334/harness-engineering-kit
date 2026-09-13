@@ -1,6 +1,6 @@
 # coil-backend-api Harness Adaptation
 
-The root `AGENTS.md` and `CLAUDE.md` stay as short native adapters. The project stores Maven/pnpm commands, module paths, writable boundaries, production policy, and methodology references in `docs/methodology/agent-policy.yaml`.
+The root `AGENTS.md` and `CLAUDE.md` stay as short native adapters. The project stores Maven/pnpm commands, module paths, writable boundaries, production policy, and methodology references in `.hek/project/agent-policy.yaml`.
 
 Root `ai.json` gives Agents a compact project map during initialization and routes them to detailed context. Path `AI.md` files exist only for modules whose responsibilities, dependency boundaries, entry points, or local verification differ materially; every one is indexed by root `ai.json`. Both layers supplement native instructions and project policy.
 

@@ -8,24 +8,38 @@ English documentation: [README.md](README.md)
 
 > 🎞️ **[Harness Engineering Kit 全局导览 PPT（中文 · 26 页）](presentations/Harness-Engineering-Kit-全局导览.pptx)**：按 Why → What → How → Grow → Use 展开的上手导览，并穿插 xiaohua_vn / aegis / varhub-risk 真实案例；由 `presentations/build_hek_deck.py` 生成，可随时重新生成。
 
+## 安装形态
+
+除 `openspec/` 外，Harness 安装的一切都在单一的 `.hek/` 目录下。卸载就是删一个目录，仓库其余部分从不被写入：
+
+| 目录 | 归属 | 升级行为 |
+|---|---|---|
+| `.hek/kit/` | Harness | 整体替换 |
+| `.hek/fitness/` | 共用 | Harness 播种的门禁替换；项目自建的门禁不动 |
+| `.hek/project/` | 项目 | 永不覆盖 |
+| `.hek/context/` | 项目 | 永不覆盖 |
+| `.hek/state/` | 生成物 | 回执、经验记忆与运行输出 |
+
+`openspec/` 保持在仓库根：OpenSpec 从工作目录向上解析自己的根，且它生成的 Skill 写死了根相对路径。`hek init` 会把 0.6 之前的安装迁移到该形态——只在被取代的 `docs/methodology/` 树内搬移与删除，目标已存在时保留，计划之后被改动的文件也保留，并把每一项人工事项列出，详见[版本化与升级](docs/versioning.md)。
+
 ## 架构
 
 | 层 | 负责 | 不负责 |
 |---|---|---|
-| `AGENTS.md` / `CLAUDE.md` | 原生权威适配、安全、必读入口、Skill 路由 | 命令、模块图、完整方法论 |
-| `agent-policy.yaml` | 唯一项目事实、命令、权限、引用路径 | 任务级设计 |
-| 根 `ai.json` | 轻量机器可读项目地图，以及详细上下文路由 | 命令、策略、不变量或详细规则 |
-| 路径 `AI.md` | 局部职责、边界、导航、局部验证 | 覆盖原生指令或项目策略 |
+| `AGENTS.md` / `CLAUDE.md` | 原生权威适配、安全、Skill 路由、需求反思 | 命令、模块图、完整方法论 |
+| `.hek/project/agent-policy.yaml` | 唯一项目事实、命令、权限、引用路径 | 任务级设计 |
+| `.hek/context/ai.json` | 轻量机器可读项目地图，以及详细上下文路由 | 命令、策略、不变量或详细规则 |
+| `.hek/context/**/AI.md` | 局部职责、边界、导航、局部验证 | 覆盖原生指令或项目策略 |
 | `engineering` Skill | 任务路由、生命周期编排、证据与降级 | 重复项目约定 |
 | 后端/前端/全栈 Profile | Design 与验证特化 | 独立生命周期或命令 |
 
-权威顺序固定为：system/developer/user → 原生指令层级 → `agent-policy.yaml` → 根 `ai.json` → 按需选中的路径 `AI.md` → Profile 默认值。
+权威顺序固定为：system/developer/user → 原生指令层级 → `.hek/project/agent-policy.yaml` → `.hek/context/ai.json` → 按需选中的路径 `AI.md` → Profile 默认值。
 
 修改代码前，`resolve_context.py` 会把目标路径和显式 `read_when` 关键词解析为唯一、fail-closed 的加载顺序。根上下文强制存在，已登记的祖先 `AI.md` 先于子级详情加载。
 
 `context_cache.py` 会对该精确加载顺序生成稳定指纹，并记录供应商 `hit`、`miss` 或 `bypass`。长程任务参考基准要求实测命中率至少 99.5%；它不会修改宿主 Agent 设置，也不会在没有供应商遥测时冒充命中。
 
-`docs/fitness/**` 是受保护控制面。项目 Agent 只能读取和执行，不能修改；除首次安装和可证明的既有语法修复外，其他变更不论大小，都必须取得与完整变更摘要绑定的外部人工确认。
+`.hek/fitness/**` 是受保护控制面。项目 Agent 只能读取和执行，不能修改；除首次安装和可证明的既有语法修复外，其他变更不论大小，都必须取得与完整变更摘要绑定的外部人工确认。
 
 ## 生命周期
 
@@ -95,19 +109,19 @@ npx --yes --package github:8425334/harness-engineering-kit hek doctor --json
 npx --yes --package github:8425334/harness-engineering-kit hek repair --yes
 ```
 
-无 CLI 的桌面 Agent 先执行 `hek init --direct --yes` 导入项目控制面，再执行 `hek handoff --agent workbuddy` 或 `hek handoff --agent trae-work`。然后在对应 Agent 中打开项目，复制命令生成的提示词，让 Agent 读取项目内的 `AGENTS.md`/`CLAUDE.md` 和 `docs/methodology/agent-policy.yaml`。`handoff` 不会猜测或启动未知桌面应用，也不会写入项目文件。
+无 CLI 的桌面 Agent 先执行 `hek init --direct --yes` 导入项目控制面，再执行 `hek handoff --agent workbuddy` 或 `hek handoff --agent trae-work`。然后在对应 Agent 中打开项目，复制命令生成的提示词，让 Agent 读取项目内的 `AGENTS.md`/`CLAUDE.md` 和 `.hek/project/agent-policy.yaml`。`handoff` 不会猜测或启动未知桌面应用，也不会写入项目文件。
 
 交互式 `init` 会先询问安装范围（未指定 `--tier` 时用方向键选择完整/轻量接入），再启动所选 Agent，由 Agent 完成接入。所选 Agent 只会得到自己的原生根入口（Claude Code 为 `CLAUDE.md`，Gemini CLI 为 `GEMINI.md`，Codex/OpenCode 及兼容 Agent 为 `AGENTS.md`）和对应的项目 Skill，不会同时初始化另一套入口。在 Agent 菜单中选择跳过项即可走兼容性确定性流程，未检测到已安装 Agent 时自动回退。非交互环境不会意外拉起外部程序，使用 `--open` 可显式开启（需配合 `--agent`/`HEK_AGENT`）。`--json` 切换为机器可读输出：从不启动 Agent、也从不交互确认——不带 `--yes` 时打印只读计划并以退出码 2 结束；带 `--yes` 时执行安装、检查并输出单一 JSON 回执（apply 失败回滚时也输出含 `errors` 的回执）。`HEK_AGENT` 可作为 `--agent` 的环境变量替代，`--prompt` 可覆盖传给终端 Agent 的首条提示词（提示词以单行传递，避免 Windows `cmd.exe` 截断）。默认提示词直接按用户语言理解和作答，不做“中文→英文→中文”转译；固定规则放在稳定前缀，项目路径、Tier、Agent 和授权状态集中在末尾，便于上下文缓存复用。
 
 全新项目的占位符必须依据真实仓库事实填写后才能通过接入检查，因此无人值守的 `init --direct --yes` 在全新项目上会先安装脚手架再以退出码 2 结束（fail-closed）；已配置项目的升级则会直接通过。仅需安装脚手架的自动化场景使用 `--no-check`，或在确定性安装后打开 Agent（`--agent <id> --open --yes`）完成"填写-检查"闭环。
 
-`hek init` 采用 Agent 驱动：先选择安装范围与已安装的 Agent，在解析出的项目根目录打开该 Agent 的 CLI，并传入 Kit 路径、接入契约和所选 Agent 目标。由 Agent 读取项目事实、生成只读计划、请求确认、填写项目专属配置、执行 canonical 脚本并运行确定性检查；所选 Agent 只初始化对应的原生上下文入口与项目 Skill。Tier 1（轻量接入）安装核心控制面和生命周期门禁所需的最小 Fitness 执行器及 SDD 同步规则；默认 Tier 2（完整接入）额外安装完整 Fitness 规则和经验记忆。每次接入都会写入 `docs/methodology/onboarding.json`，记录版本、文件摘要、创建/更新/保留的文件和校验结果。只有明确需要无 Agent 的兼容性确定性安装时才使用 `--direct`；它会忽略 `--agent` 和 `HEK_AGENT` 并安装全部兼容入口。
+`hek init` 采用 Agent 驱动：先选择安装范围与已安装的 Agent，在解析出的项目根目录打开该 Agent 的 CLI，并传入 Kit 路径、接入契约和所选 Agent 目标。由 Agent 读取项目事实、生成只读计划、请求确认、填写项目专属配置、执行 canonical 脚本并运行确定性检查；所选 Agent 只初始化对应的原生上下文入口与项目 Skill。Tier 1（轻量接入）安装核心控制面和生命周期门禁所需的最小 Fitness 执行器及 SDD 同步规则；默认 Tier 2（完整接入）额外安装完整 Fitness 规则和经验记忆。每次接入都会写入 `.hek/state/onboarding.json`，记录版本、文件摘要、创建/更新/保留的文件和校验结果。只有明确需要无 Agent 的兼容性确定性安装时才使用 `--direct`；它会忽略 `--agent` 和 `HEK_AGENT` 并安装全部兼容入口。
 
 版本化升级会比较项目已安装版本与 Kit 版本：低版本到高版本同步全部规范资源，同版本仍检查漂移，高版本降级直接阻断，并报告该目标版本声明的特殊迁移事项。详见 [版本化管理](docs/versioning.md)。
 
-`hek uninstall` 用于撤销接入。默认只读，必须用 `--yes`（或 `--apply`）确认后才删除；它读取 `docs/methodology/onboarding.json` 回执，只删除 Harness 安装且内容仍与回执摘要一致的资源。安装时保留、属于项目事实、安装后被修改的文件以及符号链接目标都会原地保留并在回执中列出，清空后的目录会被裁剪。每次执行都会写入 `docs/methodology/uninstall.json`。`--keep-project-facts` 额外保留 `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`、`ai.json`、`AI.md`、`agent-policy.yaml`、`profile.yaml` 和 `openspec/config.yaml`；`--json` 输出机器可读计划（不带 `--yes` 时退出码 2）或回执。没有回执时退化为"只删除仍与 Kit 源文件逐字节一致的文件"，无法校验的一律保留。
+`hek uninstall` 用于撤销接入。默认只读，必须用 `--yes`（或 `--apply`）确认后才删除；它读取 `.hek/state/onboarding.json` 回执，只删除 Harness 安装且内容仍与回执摘要一致的资源。安装时保留、属于项目事实、安装后被修改的文件以及符号链接目标都会原地保留并在回执中列出，清空后的目录会被裁剪。每次执行都会写入 `.hek/state/uninstall.json`。`--keep-project-facts` 额外保留 `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`、`ai.json`、`AI.md`、`agent-policy.yaml`、`profile.yaml` 和 `openspec/config.yaml`；`--json` 输出机器可读计划（不带 `--yes` 时退出码 2）或回执。没有回执时退化为"只删除仍与 Kit 源文件逐字节一致的文件"，无法校验的一律保留。
 
-`hek doctor` 与 `hek repair` 处理对话运行期损坏的环境。`doctor` 只读诊断，`repair` 先输出同一份计划，`--yes`（或 `--apply`）后执行。覆盖三类故障：`engineering` Skill 对当前 Agent 缺失或过期、Python 运行时或已安装控制脚本不可用、控制面不完整或与 Kit 漂移。修复只恢复 Kit 规范资源，重建缺失的控制面目录，在 OpenSpec CLI 可用时重新生成生命周期 Skill，并逐项幂等执行。它绝不覆盖已存在的项目事实文件、不安装解释器或依赖包、不重写已存在的 `docs/fitness/**` 基线、不做降级、不写项目根目录之外；需要人工处理的问题以 `manual` 发现项给出确切补救命令。Agent 范围依次来自 `--agent`、onboarding 回执、已存在的 Skill 目录。每次执行写入 `docs/methodology/repair.json`；安装后同一引擎位于 `docs/methodology/scripts/repair.py`，默认使用 onboarding 记录的 `--source-root`。
+`hek doctor` 与 `hek repair` 处理对话运行期损坏的环境。`doctor` 只读诊断，`repair` 先输出同一份计划，`--yes`（或 `--apply`）后执行。覆盖三类故障：`engineering` Skill 对当前 Agent 缺失或过期、Python 运行时或已安装控制脚本不可用、控制面不完整或与 Kit 漂移。修复只恢复 Kit 规范资源，重建缺失的控制面目录，在 OpenSpec CLI 可用时重新生成生命周期 Skill，并逐项幂等执行。它绝不覆盖已存在的项目事实文件、不安装解释器或依赖包、不重写已存在的 `.hek/fitness/**` 基线、不做降级、不写项目根目录之外；需要人工处理的问题以 `manual` 发现项给出确切补救命令。Agent 范围依次来自 `--agent`、onboarding 回执、已存在的 Skill 目录。每次执行写入 `.hek/state/repair.json`；安装后同一引擎位于 `.hek/kit/scripts/repair.py`，默认使用 onboarding 记录的 `--source-root`。
 
 `ai.json` 超限或结构非法、`AI.md` 未索引或超限、策略缺失、占位符未填、引用路径断裂、任务图/执行证据非法、Profile 非法、Skill 资源缺失、安装内容过期或平台适配不支持都会失败。Engineering Skill 会针对 Claude Code、Codex、OpenCode、Cursor、Gemini 和 Trae 安装并校验。旧 `ramer`、`fe-engineering`、`multi-agent` 入口不再兼容。
 
@@ -117,11 +131,11 @@ npx --yes --package github:8425334/harness-engineering-kit hek repair --yes
 
 ```bash
 openspec new change add-capability --schema harness-engineering
-python3 docs/methodology/scripts/init_governance.py add-capability \
+python3 .hek/kit/scripts/init_governance.py add-capability \
   --title "新增能力" --mode fullstack --owner team \
   --trigger explicit-selection
 
-python3 docs/methodology/scripts/approve_design.py openspec/changes/add-capability \
+python3 .hek/kit/scripts/approve_design.py openspec/changes/add-capability \
   --actor reviewer --source pull-request --approval-id PR-123
 
 openspec status --change add-capability --json

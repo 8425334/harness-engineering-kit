@@ -4,7 +4,7 @@
 
 ## 1. 先选择适用档位
 
-方法论是一组默认值，不要求每个项目启用全部组件。初始化前，在项目根目录记录档位（例如 `docs/methodology/profile.yaml`）：
+方法论是一组默认值，不要求每个项目启用全部组件。初始化前，在项目根目录记录档位（例如 `.hek/project/profile.yaml`）：
 
 | 档位 | 适用场景 | 必须项 | 可选项 |
 |------|----------|--------|--------|
@@ -83,7 +83,7 @@ approval: pull-request-or-ticket-id
 
 每条规则都要有负责人、理由、范围、严重级别、版本和复审/移除日期。CI 应检查引用的命令、路径、Schema 和 Skill 是否存在；定时任务检查过期文档和例外。重复规则应保留唯一事实源。方法论自身的修改也要遵循同样的档位、证据和回滚纪律。
 
-项目 Agent 不得通过修改 `docs/fitness/**` 让交付通过。除标准首次安装和可证明的既有 Python 语法错误修复外，任何规模的 Fitness 变更都必须取得与摘要绑定的外部人工确认。CI 必须在可变的 Fitness runner 之外运行 `check_fitness_protection.py`，并提供可信基线引用。
+项目 Agent 不得通过修改 `.hek/fitness/**` 让交付通过。除标准首次安装和可证明的既有 Python 语法错误修复外，任何规模的 Fitness 变更都必须取得与摘要绑定的外部人工确认。CI 必须在可变的 Fitness runner 之外运行 `check_fitness_protection.py`，并提供可信基线引用。
 
 ## 9. Skill 可用性是可执行契约
 

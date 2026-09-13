@@ -51,7 +51,7 @@ For desktop Agents without a stable CLI (for example WorkBuddy or Trae Work), us
 
 Tier 1 installs the core controls together with the production policy scaffold that `agent-policy.yaml` references. Tier 2 additionally installs Fitness gate scripts, Fitness rules, and lesson-memory templates. Choose Tier 2 for a complete integration unless the user explicitly requests a minimal bootstrap.
 
-The selected tier is the target scope of this run, not evidence that Tier 1 is already installed. During any lower-to-higher-version upgrade, compare and synchronize every Tier 1 canonical resource even when the repository already contains some older Tier 1 files. `--tier 1` only keeps the optional Tier 2 assets out of this run; it must not skip Tier 1 updates. See `docs/versioning.md` for the version relation, downgrade policy, and release migration contract.
+The selected tier is the target scope of this run, not evidence that Tier 1 is already installed. During any lower-to-higher-version upgrade, compare and synchronize every Tier 1 canonical resource even when the repository already contains some older Tier 1 files. `--tier 1` only keeps the optional Tier 2 assets out of this run; it must not skip Tier 1 updates. The plan itself reports the version relation, and `release_migrations` carries the review notes for every release between the installed and target versions; the versioning and migration contract lives in the Kit checkout's `docs/versioning.md`, which is not installed into the project.
 
 ## Safety Boundaries
 

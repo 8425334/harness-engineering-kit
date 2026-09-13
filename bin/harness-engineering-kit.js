@@ -19,12 +19,22 @@ const AGENTS = [
   { id: 'trae-work', label: 'Trae Work', aliases: ['trae', 'trae work'], command: null, kind: 'manual' },
 ];
 
-const DEFAULT_AGENT_PROMPT = '直接按用户语言理解并回答，不做中英中转译。读取当前项目的 AGENTS.md 或 CLAUDE.md 及 docs/methodology/agent-policy.yaml，完成 Harness Engineering Kit 初始化。';
+// Installed layout. The authoritative definition is scripts/layout.py, which the
+// Python side uses; these mirror the few paths the CLI itself names.
+const LAYOUT = {
+  root: '.hek',
+  policy: '.hek/project/agent-policy.yaml',
+  contextIndex: '.hek/context/ai.json',
+  uninstallReceipt: '.hek/state/uninstall.json',
+  repairReceipt: '.hek/state/repair.json',
+};
+
+const DEFAULT_AGENT_PROMPT = `直接按用户语言理解并回答，不做中英中转译。读取当前项目的 AGENTS.md 或 CLAUDE.md 及 ${LAYOUT.policy}，完成 Harness Engineering Kit 初始化。`;
 
 const AGENT_PROMPT_PREFIX = [
   '任务：完成 Harness Engineering Kit 初始化或增量升级',
   '语言：直接按用户语言理解并同语回答，不做中英中转译',
-  '上下文：读取项目事实（AGENTS.md/CLAUDE.md、ai.json、AI.md、项目配置），只加载当前任务需要的事实',
+  `上下文：读取项目事实（AGENTS.md/CLAUDE.md、${LAYOUT.contextIndex}、路径 AI.md、项目配置），只加载当前任务需要的事实`,
   '流程：先执行只读计划，获批后应用并检查',
   '约束：保留现有配置和旧入口；不臆造技术栈、命令、路径或权限；Tier 是本次目标范围，升级须同步全部 Tier 1 核心资源',
   '异常：存在影响结果的歧义、事实冲突或缺少授权时，停止有后果的操作，说明依据并请求确认',
@@ -66,8 +76,8 @@ Options:
   --direct               Run the deterministic installer; --agent and HEK_AGENT are ignored
   --prompt <text>        Initial prompt sent to a terminal agent
   --list-agents          List supported agents and installation status
-  --keep-project-facts   With uninstall, keep root adapters, ai.json, AI.md, policy,
-                         profile, and OpenSpec config
+  --keep-project-facts   With uninstall, keep root adapters, the context index,
+                         policy, profile, and OpenSpec config
   --json                 Machine-readable output: never opens an agent and never prompts;
                          without --yes init prints the plan and exits 2; with --yes it
                          applies, checks, and prints one JSON receipt
@@ -82,9 +92,9 @@ when no agent is installed. A selected Agent receives only its native context en
 and matching Skill. Set HARNESS_PYTHON to select a Python executable explicitly.
 
 The uninstall command is a read-only plan until confirmed: it removes only the
-Harness assets recorded by docs/methodology/onboarding.json, keeps files that were
+Harness assets recorded by the onboarding receipt, keeps files that were
 project-owned or edited after install, prunes directories that become empty, and
-writes docs/methodology/uninstall.json. Use --keep-project-facts to also retain
+writes ${LAYOUT.uninstallReceipt}. Use --keep-project-facts to also retain
 root adapters and project configuration, --yes to apply without prompting, and
 --json for a machine-readable plan or receipt.
 
@@ -699,7 +709,7 @@ function summarizeUninstallReceipt(output) {
       console.log(`  - ${detail}`);
     });
   }
-  console.log('回执: docs/methodology/uninstall.json');
+  console.log(`回执: ${LAYOUT.uninstallReceipt}`);
   return receipt;
 }
 
@@ -812,7 +822,7 @@ function summarizeRepairReceipt(output) {
       console.log(`  - [${finding.severity}] ${finding.id}: ${finding.remedy || finding.detail}`)
     ));
   }
-  console.log('回执: docs/methodology/repair.json');
+  console.log(`回执: ${LAYOUT.repairReceipt}`);
   return receipt;
 }
 

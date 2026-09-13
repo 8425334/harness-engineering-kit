@@ -4,15 +4,37 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 import layout
 
 
-# Bare document names stay valid under any layout because they remain substrings
-# of the full path; only the Fitness path is asserted in full.
-REQUIRED_TERMS = ("agent-policy.yaml", "profile.yaml", "ai.json", "AI.md", "resolve_context.py", "check_fitness_protection.py", "engineering", layout.relative("fitness"), "human approval")
-MAX_LINES = 40
+# An adapter is a router, not a manual: it names the policy, the control plane and
+# the methodology entry point, and leaves the rest to .hek/. Bare document names
+# stay valid under any layout because they remain substrings of the full path.
+REQUIRED_TERMS = (
+    "agent-policy.yaml",
+    "engineering",
+    layout.relative("fitness"),
+    layout.relative("core"),
+    "human approval",
+)
+
+#: Phrases the adapter must carry. Matched against whitespace-normalised content
+#: so a template may wrap its lines wherever it reads best.
+REQUIRED_PHRASES = (
+    "Automatically select and load the `engineering` Skill",
+    "Do not require the user to type `/engineering`",
+    "cannot weaken",
+    "native",
+)
+MAX_LINES = 34
+
+
+def normalize(content: str) -> str:
+    """Collapse whitespace so phrase checks survive line wrapping."""
+    return re.sub(r"\s+", " ", content)
 
 
 def validate(root: Path, context_files: tuple[str, ...] = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")) -> list[str]:
@@ -31,15 +53,13 @@ def validate(root: Path, context_files: tuple[str, ...] = ("AGENTS.md", "CLAUDE.
             errors.append(f"{name} exceeds {MAX_LINES} lines; move project facts to agent-policy.yaml")
         if "{{" in content or "}}" in content:
             errors.append(f"{name} contains unfilled placeholders")
+        flat = normalize(content)
         for term in REQUIRED_TERMS:
             if term not in content:
                 errors.append(f"{name} missing required route/reference: {term}")
-        if "Automatically select and load the `engineering` Skill" not in content:
-            errors.append(f"{name} must automatically route non-trivial changes to the engineering Skill")
-        if "Do not require the user to type `/engineering`" not in content:
-            errors.append(f"{name} must not require explicit /engineering invocation")
-        if "cannot weaken" not in content or "native" not in content:
-            errors.append(f"{name} must preserve native authority over supplemental context")
+        for phrase in REQUIRED_PHRASES:
+            if phrase not in flat:
+                errors.append(f"{name} missing required statement: {phrase}")
     return errors
 
 

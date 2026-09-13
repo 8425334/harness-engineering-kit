@@ -355,7 +355,7 @@ tf = txbox(s, Inches(1.24), Inches(4.9), Inches(9.8), Inches(0.6), anchor=MSO_AN
 p = para(tf, True)
 _run(p, "今天不讲抽象架构，围绕 aegis Agent 走一遍：怎么接入、怎么改动、怎么把失败变成护栏", size=13, bold=True, color=WHITE)
 p = para(tf); _run(p, "  （开箱即用，细节在仓库里）", size=11, color=MUTED)
-chips(s, Inches(1.0), Inches(6.08), 0, ["v0.5.1", "MIT · OpenSpec", "多 Agent 适配", "上下文中英双语"],
+chips(s, Inches(1.0), Inches(6.08), 0, ["v0.6.0", "MIT · OpenSpec", "多 Agent 适配", "上下文中英双语"],
       fill=BG2, color=CYAN, size=12, line=CYAN)
 add_box(s, Inches(0.02), Inches(7.16), prs.slide_width - Inches(0.04), Inches(0.30), fill=BG2)
 tf = txbox(s, Inches(1.0), Inches(6.66), Inches(11.6), Inches(0.4))
@@ -449,8 +449,8 @@ frame_rows = [
     ("① 原则", "LLM 只做理解，确定的部分交给管线", "根 CLAUDE.md · agent-policy.yaml · AI.md", CYAN),
     ("② 流程", "一条受控生命周期：探 → 提 → 做 → 验 → 并 → 存", "openspec/changes/* 生命周期", GREEN),
     ("③ 产物", "proposal / spec / design / tasks 四件套 + 权威规格", "openspec/changes/ · openspec/specs/", PURPLE),
-    ("④ 治理", "审批绑定 + 门禁 + 证据，放行才写码", "docs/fitness/ · execution-evidence", ORANGE),
-    ("⑤ 反哺", "失败先记录，重复问题再固化为规则", "docs/fitness/ · docs/methodology/lessons/", PINK),
+    ("④ 治理", "审批绑定 + 门禁 + 证据，放行才写码", ".hek/fitness/ · execution-evidence", ORANGE),
+    ("⑤ 反哺", "失败先记录，重复问题再固化为规则", ".hek/fitness/ · .hek/state/lessons/", PINK),
 ]
 y = Inches(2.02)
 rh, rg = 0.78, 0.09
@@ -614,7 +614,7 @@ for k, v in ai:
     _run(p, k, size=10.5, bold=True, color=GREEN, name=FONT_M)
     _run(p, "  " + v, size=10.5, color=TEXT)
 footer(s, "How · 上下文")
-notes(s, "上下文落地到 aegis：根 ai.json 做机器路由，实际加载根 AI.md、命中的模块 AI.md，以及 docs/fitness 等受保护规则。重点是路径命中，不是把所有文件塞进 prompt。")
+notes(s, "上下文落地到 aegis：根 ai.json 做机器路由，实际加载根 AI.md、命中的模块 AI.md，以及 .hek/fitness 等受保护规则。重点是路径命中，不是把所有文件塞进 prompt。")
 
 # ---------------- 10 delta specs ----------------
 s = new_slide()
@@ -738,7 +738,7 @@ tf = txbox(s, Inches(0.86), Inches(4.44), Inches(5.6), Inches(0.3))
 p = para(tf, True); _run(p, "② 经验记忆 · ③ Fitness 门禁", size=11, bold=True, color=PINK)
 for t in ["经验记忆：把跨变更『反复失败』沉淀为可检索的预防",
           "Fitness：把『什么时候算做完』编码成可执行规则",
-          "验证通过的经验 → 升级成 Fitness 硬门禁（docs/fitness/）"]:
+          "验证通过的经验 → 升级成 Fitness 硬门禁（.hek/fitness/）"]:
     p = para(tf); p.space_before = Pt(5.5); p.line_spacing = 1.12
     _run(p, "▸ " + t, size=10.6, color=TEXT)
 add_box(s, Inches(6.9), Inches(1.98), Inches(5.8), Inches(4.89), fill=GREEN_P, line=GREEN, shape=MSO_SHAPE.ROUNDED_RECTANGLE, adj=0.07, line_w=1.0)

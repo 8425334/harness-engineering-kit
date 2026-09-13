@@ -66,10 +66,10 @@ Agent 应给出类似以下摘要，而不是直接报告“已完成”：
 Agent 在收到确认后应：
 
 1. 用 `--apply` 执行已确认计划。
-2. 读取仓库事实，填写根 `ai.json`、`AI.md`、`docs/methodology/agent-policy.yaml`、`docs/methodology/profile.yaml` 和 `openspec/config.yaml` 中的占位符。
+2. 读取仓库事实，填写根 `ai.json`、`AI.md`、`.hek/project/agent-policy.yaml`、`.hek/project/profile.yaml` 和 `openspec/config.yaml` 中的占位符。
 3. 对每条命令实际运行一次轻量验证；命令不确定时先停下来询问用户。
 4. 用 `--check --json` 执行根上下文、策略、Profile、稳定上下文缓存参考基准、Fitness 和所选 Agent Skill 校验。
-5. 将结果写入 `docs/methodology/onboarding.json`，并报告未解决占位符、失败检查和后续动作。
+5. 将结果写入 `.hek/state/onboarding.json`，并报告未解决占位符、失败检查和后续动作。
 
 ## 三、增量更新/老版本升级
 
@@ -93,7 +93,7 @@ Agent 在收到确认后应：
 
 这里的 Tier 是“本次执行后的目标安装范围”，不是增量升级的前置条件，也不能据此推断旧版本已经完整安装了 Tier 1。任何低版本到高版本升级，即使项目已有部分 Tier 1 文件，Agent 仍必须比较并同步目标版本的全部 Tier 1 核心资源（方法论文档、控制脚本、workflow 模板、版本文件、Engineering Skill，以及缺失的生产控制脚手架）。`--tier 1` 只表示暂不补装完整 Fitness 规则和经验记忆等 Tier 2 可选资源；生命周期门禁所需的最小 Fitness 执行器与 SDD 同步规则仍会安装。版本关系、降级阻断和特殊发布迁移由 [版本化管理](versioning.md) 统一处理，不在对话文案中硬编码某一对版本号。
 
-如果项目存在旧入口但没有合法的 `docs/methodology/VERSION`，状态应报告为 `unversioned` 或 `invalid` 并停止自动写入；Agent 必须根据仓库证据确认实际基线后再补版本，不能臆造版本号。
+如果项目存在旧入口但没有合法的 `.hek/VERSION`，状态应报告为 `unversioned` 或 `invalid` 并停止自动写入；Agent 必须根据仓库证据确认实际基线后再补版本，不能臆造版本号。
 
 | 检测状态 | Agent 做什么 | 不做什么 |
 |---|---|---|
@@ -129,12 +129,12 @@ python3 <kit>/scripts/onboard.py \
 
 - 所选 Agent 的原生入口（Claude Code 为 `CLAUDE.md`，Gemini CLI 为 `GEMINI.md`，Codex/OpenCode 及兼容 Agent 为 `AGENTS.md`）保持原生指令权威，且能自动路由到 Engineering Skill，无需用户输入 `/engineering`。
 - `ai.json`、`AI.md`、策略、Profile 和 OpenSpec 配置没有未填写占位符。
-- `docs/methodology/VERSION`、方法论脚本、workflow 模板和所选 Agent 对应目录下的 Engineering Skill 已同步。
+- `.hek/VERSION`、方法论脚本、workflow 模板和所选 Agent 对应目录下的 Engineering Skill 已同步。
 - `ai.json`/`AI.md` 引用路径存在，`resolve_context.py` 能解析根路径。
 - `context_cache.py benchmark` 的 1,000 次稳定前缀参考基准达到至少 99.5%；供应商命中率另须用 `context_cache.py report` 基于真实遥测确认。
 - Fitness 保护、策略、Profile 和所选平台 Skill 校验通过；失败项有明确记录。
-- `docs/methodology/onboarding.json` 记录状态、版本、动作、摘要、保留的旧文件和校验结果。
-- 未经用户单独确认，没有删除旧文件、覆盖项目配置、安装依赖、执行生产写入或修改 `docs/fitness/**`。
+- `.hek/state/onboarding.json` 记录状态、版本、动作、摘要、保留的旧文件和校验结果。
+- 未经用户单独确认，没有删除旧文件、覆盖项目配置、安装依赖、执行生产写入或修改 `.hek/fitness/**`。
 
 ## 五、常见追问
 
@@ -156,7 +156,7 @@ python3 <kit>/scripts/onboard.py \
 
 **问：怎么卸载已接入的 Harness 控制面？**
 
-运行 `hek uninstall` 查看只读计划，确认后加 `--yes`（或 `--apply`）；`hek uninstall --plan --json` 输出机器可读计划。它读取 `docs/methodology/onboarding.json` 回执，只删除 Harness 安装且内容仍与回执摘要一致的文件；安装时保留、安装后被修改的文件会原地保留并列出，清空后的目录会被裁剪，每次执行写入 `docs/methodology/uninstall.json`。需要保留 `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`、`ai.json`、`AI.md`、策略、Profile 和 OpenSpec 配置时加 `--keep-project-facts`。没有回执时只删除仍与 Kit 源文件逐字节一致的文件。
+运行 `hek uninstall` 查看只读计划，确认后加 `--yes`（或 `--apply`）；`hek uninstall --plan --json` 输出机器可读计划。它读取 `.hek/state/onboarding.json` 回执，只删除 Harness 安装且内容仍与回执摘要一致的文件；安装时保留、安装后被修改的文件会原地保留并列出，清空后的目录会被裁剪，每次执行写入 `.hek/state/uninstall.json`。需要保留 `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`、`ai.json`、`AI.md`、策略、Profile 和 OpenSpec 配置时加 `--keep-project-facts`。没有回执时只删除仍与 Kit 源文件逐字节一致的文件。
 
 **问：Agent 找不到 Kit 路径怎么办？**
 
