@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import cmp_to_key
 from pathlib import Path
+from typing import Any
 
 try:
     from . import layout
@@ -151,6 +153,13 @@ class Action:
     source: str | None
     target: str
     reason: str
+    #: Project-relative origin for ``move``/``move-tree``. These actions relocate
+    #: content that already exists in the host project, so their origin is a
+    #: target-side path rather than a Kit source path.
+    from_target: str | None = None
+    #: For ``remove``: the digest the file must still carry. A mismatch means the
+    #: project edited it after the plan was produced, so it is kept instead.
+    expected_sha256: str | None = None
 
 
 @dataclass(frozen=True)
@@ -216,7 +225,43 @@ def openspec_tools_for(agent: str | None) -> tuple[str, ...]:
     return (tool,) if tool else ()
 
 
+def installed_version_path(root: Path) -> Path:
+    """Version marker of the *installed* layout, which may still be the legacy one.
+
+    Reading only the active path reported a pre-0.6 project as unversioned, which
+    the transition guard then refused to migrate.
+    """
+    active = layout.path("version", root)
+    if active.is_file():
+        return active
+    legacy = root / layout.relative("version", layout=layout.LEGACY)
+    if layout.relative("control_plane", layout=layout.LEGACY) != layout.relative("control_plane"):
+        if legacy.is_file():
+            return legacy
+    return active
+
+
+def relayout_source(root: Path) -> Path | None:
+    """Return the legacy control-plane root when it needs relocating.
+
+    Probed through the layout table rather than hardcoded paths, so it keeps
+    working if either layout's shape changes again.
+    """
+    legacy_root = layout.relative("control_plane", layout=layout.LEGACY)
+    active_root = layout.relative("control_plane")
+    if legacy_root == active_root:
+        return None
+    candidate = root / legacy_root
+    if not candidate.is_dir() or (root / active_root).exists():
+        return None
+    return candidate
+
+
 def detect_status(root: Path, agent: str | None = None) -> str:
+    # A pre-0.6 installation must migrate before anything else, including when
+    # retired pre-0.5 markers are also present.
+    if relayout_source(root) is not None:
+        return "relayout"
     legacy = any((root / marker).exists() for marker in LEGACY_MARKERS)
     if legacy:
         return "legacy"
@@ -245,6 +290,222 @@ def detect_status(root: Path, agent: str | None = None) -> str:
     if any((root / target).exists() for target in ROOT_FILES.values()):
         return "partial"
     return "fresh"
+
+
+#: Never scanned for legacy path documents, so a migration does not pick up
+#: unrelated `AI.md` files or content it is about to move.
+LEGACY_CONTEXT_EXCLUDES = frozenset({
+    ".git", ".hek", ".claude", ".agents", ".opencode", ".cursor", ".gemini", ".trae",
+    "node_modules", "target", "build", "dist", ".venv", "venv",
+})
+
+
+def _relayout_file_moves() -> list[tuple[str, str]]:
+    """(legacy, active) pairs for single files that relocate rather than reinstall."""
+    legacy = layout.LEGACY
+    pairs = [
+        (layout.policy_rel(layout=legacy), layout.policy_rel()),
+        (layout.profile_rel(layout=legacy), layout.profile_rel()),
+        (layout.relative("context_index", layout=legacy), layout.relative("context_index")),
+        (layout.relative("onboarding_receipt", layout=legacy), layout.relative("onboarding_receipt")),
+    ]
+    for attribute in ("production_policy", "production_readme", "production_template"):
+        pairs.append((layout.relative(attribute, layout=legacy), layout.relative(attribute)))
+    return pairs
+
+
+def _relayout_tree_moves() -> list[tuple[str, str]]:
+    """(legacy, active) pairs for directories relocated wholesale."""
+    legacy = layout.LEGACY
+    return [
+        (layout.relative("fitness", layout=legacy), layout.relative("fitness")),
+        (layout.relative("lessons", layout=legacy), layout.relative("lessons")),
+    ]
+
+
+def _relayout_context_moves(root: Path) -> list[tuple[str, str]]:
+    """(legacy, active) pairs for every path document, the root one included.
+
+    The legacy index is authoritative because it is what the project actually
+    routed by; a directory walk is the fallback when it cannot be read.
+    """
+    index_path = root / layout.relative("context_index", layout=layout.LEGACY)
+    modules: list[str] = []
+    if index_path.is_file():
+        try:
+            payload = json.loads(index_path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                modules = [
+                    str(module["path"])
+                    for module in payload.get("modules") or []
+                    if isinstance(module, dict) and module.get("path") is not None
+                ]
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            modules = []
+    if not modules:
+        for path in sorted(root.rglob("AI.md")):
+            relative = path.relative_to(root)
+            if any(part in LEGACY_CONTEXT_EXCLUDES for part in relative.parts):
+                continue
+            modules.append(relative.parent.as_posix())
+    return [
+        (
+            layout.relative("context_doc", module_path=module, layout=layout.LEGACY),
+            layout.relative("context_doc", module_path=module),
+        )
+        for module in dict.fromkeys(modules)
+    ]
+
+
+def _relayout_removals(root: Path, skipped: list[str]) -> list[Action]:
+    """Delete actions for whatever the moves left behind in the legacy tree.
+
+    Each entry carries the digest seen at plan time, so an apply that finds
+    different content keeps the file and reports ``kept-modified`` instead of
+    deleting something the project changed in between.
+    """
+    base = root / layout.relative("control_plane", layout=layout.LEGACY)
+    if not base.is_dir():
+        return []
+    actions: list[Action] = []
+    for path in sorted(base.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(root).as_posix()
+        if any(relative == entry or relative.startswith(entry) for entry in skipped):
+            continue
+        actions.append(Action(
+            "remove", None, relative, "superseded by the .hek layout",
+            expected_sha256=sha256(path),
+        ))
+    return actions
+
+
+def relayout_path_map() -> list[tuple[str, str]]:
+    """(legacy, active) project-relative prefixes, longest legacy first.
+
+    Longest-first matters: ``docs/methodology/core`` must be repointed before the
+    generic ``docs/methodology`` prefix swallows it.
+    """
+    legacy = layout.LEGACY
+    pairs = [
+        (layout.policy_rel(layout=legacy), layout.policy_rel()),
+        (layout.profile_rel(layout=legacy), layout.profile_rel()),
+    ]
+    for attribute in (
+        "core", "scripts", "change_templates", "compaction", "lessons", "fitness",
+        "production_changes", "production_audit", "production_policy", "production_readme",
+        "production_template", "methodology",
+    ):
+        pairs.append((layout.relative(attribute, layout=legacy), layout.relative(attribute)))
+    return sorted(
+        ((old, new) for old, new in pairs if old and old != new),
+        key=lambda pair: len(pair[0]),
+        reverse=True,
+    )
+
+
+def repoint_path(value: str) -> str:
+    """Rewrite one project-relative path string into the active layout."""
+    for legacy_rel, active_rel in relayout_path_map():
+        value = value.replace(legacy_rel, active_rel)
+    return value
+
+
+def rewrite_policy_paths(text: str) -> str:
+    """Repoint a project policy at the active layout.
+
+    Textual rather than a YAML round-trip so the project's comments, ordering and
+    formatting survive; only paths the layout table can name are touched. The
+    result is a candidate: the caller compares and skips the write if unchanged.
+    """
+    for legacy_rel, active_rel in relayout_path_map():
+        text = text.replace(legacy_rel, active_rel)
+
+    # The control plane writes evidence under .hek/state, so the directory has to
+    # be writable or the first governed change fails on its own permission model.
+    match = re.search(r"^([ \t]*writable_paths:[ \t]*)\[(.*?)\][ \t]*$", text, re.MULTILINE)
+    if match:
+        entries = [item.strip().strip("\"'") for item in match.group(2).split(",") if item.strip()]
+        if layout.HEK.root not in entries:
+            entries.append(layout.HEK.root)
+            rendered = ", ".join(f'"{entry}"' for entry in entries)
+            text = f"{text[:match.start()]}{match.group(1)}[{rendered}]{text[match.end():]}"
+    return text
+
+
+def rewrite_index_references(payload: dict[str, Any]) -> dict[str, Any]:
+    """Repoint an ``ai.json`` index at the active layout.
+
+    Structural rather than textual: the module list is what routes every task, so
+    each entry is recomputed from the layout table instead of string-matched.
+    """
+    modules = payload.get("modules")
+    if isinstance(modules, list):
+        for module in modules:
+            if isinstance(module, dict) and module.get("path") is not None:
+                module["context"] = layout.relative("context_doc", module_path=str(module["path"]))
+    entrypoints = payload.get("entrypoints")
+    if isinstance(entrypoints, dict):
+        if str(entrypoints.get("policy", "")) == layout.policy_rel(layout=layout.LEGACY):
+            entrypoints["policy"] = layout.policy_rel()
+        else:
+            entrypoints["policy"] = repoint_path(str(entrypoints.get("policy", "")))
+        entrypoints["lifecycle"] = repoint_path(str(entrypoints.get("lifecycle", "")))
+    return payload
+
+
+def relayout_plan(root: Path, actions: list[Action]) -> list[Action]:
+    """Turn a fresh-install plan into a migration plan for a pre-0.6 install.
+
+    Moves are emitted first so they occupy their destinations before the normal
+    install actions run; those then report ``preserved`` rather than writing a
+    placeholder over content the project already owns.
+    """
+    moves: list[Action] = []
+    replaced: set[str] = set()
+    skipped: list[str] = []
+
+    def add_move(legacy_rel: str, active_rel: str, reason: str, kind: str = "move") -> None:
+        if not (root / legacy_rel).exists():
+            return
+        moves.append(Action(kind, None, active_rel, reason, from_target=legacy_rel))
+        skipped.append(f"{legacy_rel}/" if kind == "move-tree" else legacy_rel)
+        if kind == "move":
+            replaced.add(active_rel)
+
+    for legacy_rel, active_rel in _relayout_file_moves():
+        add_move(legacy_rel, active_rel, "existing project content")
+
+    # Path documents move before the wholesale trees so a document that happens
+    # to live inside one of them lands under .hek/context instead of following
+    # its directory.
+    for legacy_rel, active_rel in _relayout_context_moves(root):
+        add_move(legacy_rel, active_rel, "existing path context")
+
+    for legacy_rel, active_rel in _relayout_tree_moves():
+        add_move(legacy_rel, active_rel, "existing project content", kind="move-tree")
+
+    # The policy is the one file whose *contents* also point at the old layout,
+    # so it is rewritten after it lands. Run it right after the moves and before
+    # the install actions so the check step sees a coherent policy.
+    policy_target = layout.policy_rel()
+    if any(action.kind == "move" and action.target == policy_target for action in moves):
+        moves.append(Action("rewrite-policy", None, policy_target, "repoint policy at the .hek layout"))
+    index_target = layout.relative("context_index")
+    if any(action.kind == "move" and action.target == index_target for action in moves):
+        moves.append(Action("rewrite-index", None, index_target, "repoint context index at the .hek layout"))
+
+    kept = [action for action in actions if action.target not in replaced]
+    prunes = [
+        Action("prune-empty", None, rel, "legacy layout directory is now unused")
+        for rel in (
+            layout.relative("fitness", layout=layout.LEGACY),
+            layout.relative("control_plane", layout=layout.LEGACY),
+        )
+        if (root / rel).is_dir()
+    ]
+    return moves + kept + _relayout_removals(root, skipped) + prunes
 
 
 def source_actions(source: Path, root: Path, tier: int, status: str, agent: str | None = None) -> list[Action]:
@@ -331,6 +592,8 @@ def source_actions(source: Path, root: Path, tier: int, status: str, agent: str 
         actions.append(Action("report", None, "legacy architecture", "preserve legacy files; route future work to engineering Skill"))
     if (root / "docs/sdd").exists():
         actions.append(Action("report", None, "docs/sdd", "legacy SDD workspace requires manual migration to openspec/changes; no files are deleted automatically"))
+    if status == "relayout":
+        actions = relayout_plan(root, actions)
     return actions
 
 
@@ -418,7 +681,7 @@ def render_plan(
     target_version: str | None = None,
 ) -> dict[str, object]:
     legacy_markers = [marker for marker in LEGACY_MARKERS if (root / marker).exists()]
-    installed_version = installed_version if installed_version is not None else read_version(layout.path("version", root))
+    installed_version = installed_version if installed_version is not None else read_version(installed_version_path(root))
     target_version = target_version if target_version is not None else read_version(source / "VERSION")
     version_relation = classify_versions(installed_version, target_version)
     if installed_version is None and status != "fresh":
@@ -520,6 +783,8 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
     snapshots: dict[Path, tuple[bytes, int]] = {}
     created_files: list[Path] = []
     created_dirs: list[Path] = []
+    #: (origin, destination) pairs recorded so a rollback can relocate them back.
+    moved: list[tuple[Path, Path]] = []
 
     def ensure_dir(directory: Path) -> None:
         missing: list[Path] = []
@@ -562,6 +827,136 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
                     target.write_text(FITNESS_LEDGER_SEED, encoding="utf-8")
                     created_files.append(target)
                     results.append({"target": action.target, "result": "created", "sha256": sha256(target)})
+                continue
+            if action.kind == "move":
+                origin = root / str(action.from_target)
+                target = root / action.target
+                ensure_safe_target(root, origin)
+                ensure_safe_target(root, target)
+                if not origin.is_file():
+                    results.append({"target": action.target, "result": "missing", "from": action.from_target})
+                    continue
+                if target.exists():
+                    # Never overwrite the destination. A populated target means an
+                    # earlier run or a hand-written file, and replacing it would
+                    # discard content the migration cannot reproduce.
+                    results.append({"target": action.target, "result": "preserved", "from": action.from_target})
+                    continue
+                ensure_dir(target.parent)
+                shutil.move(str(origin), str(target))
+                moved.append((origin, target))
+                results.append({
+                    "target": action.target,
+                    "result": "moved",
+                    "from": action.from_target,
+                    "sha256": sha256(target),
+                })
+                continue
+            if action.kind == "move-tree":
+                origin = root / str(action.from_target)
+                target = root / action.target
+                ensure_safe_target(root, origin)
+                ensure_safe_target(root, target)
+                if not origin.is_dir():
+                    results.append({"target": action.target, "result": "missing", "from": action.from_target})
+                    continue
+                ensure_dir(target.parent)
+                tree: dict[str, str] = {}
+                preserved = 0
+                for item in sorted(origin.rglob("*")):
+                    if not item.is_file():
+                        continue
+                    destination = target / item.relative_to(origin)
+                    ensure_safe_target(root, destination)
+                    if destination.exists():
+                        preserved += 1
+                        tree[item.relative_to(origin).as_posix()] = sha256(destination)
+                        continue
+                    ensure_dir(destination.parent)
+                    shutil.move(str(item), str(destination))
+                    moved.append((item, destination))
+                    tree[item.relative_to(origin).as_posix()] = sha256(destination)
+                results.append({
+                    "target": action.target,
+                    "result": "moved",
+                    "from": action.from_target,
+                    "files": len(tree) - preserved,
+                    "preserved": preserved,
+                    "tree": tree,
+                })
+                continue
+            if action.kind == "remove":
+                target = root / action.target
+                ensure_safe_target(root, target)
+                if not target.is_file():
+                    results.append({"target": action.target, "result": "missing"})
+                    continue
+                if action.expected_sha256 and sha256(target) != action.expected_sha256:
+                    # Edited between plan and apply: keep it and say so rather
+                    # than deleting content the user changed.
+                    results.append({"target": action.target, "result": "kept-modified"})
+                    continue
+                snapshot(target)
+                target.unlink()
+                results.append({"target": action.target, "result": "removed"})
+                continue
+            if action.kind == "rewrite-policy":
+                target = root / action.target
+                ensure_safe_target(root, target)
+                if not target.is_file():
+                    results.append({"target": action.target, "result": "missing"})
+                    continue
+                original = target.read_text(encoding="utf-8")
+                updated = rewrite_policy_paths(original)
+                if updated == original:
+                    results.append({"target": action.target, "result": "unchanged"})
+                    continue
+                snapshot(target)
+                target.write_text(updated, encoding="utf-8", newline="")
+                results.append({"target": action.target, "result": "updated", "sha256": sha256(target)})
+                continue
+            if action.kind == "rewrite-index":
+                target = root / action.target
+                ensure_safe_target(root, target)
+                if not target.is_file():
+                    results.append({"target": action.target, "result": "missing"})
+                    continue
+                original = target.read_text(encoding="utf-8")
+                try:
+                    payload = json.loads(original)
+                except (UnicodeError, json.JSONDecodeError):
+                    results.append({"target": action.target, "result": "unreadable"})
+                    continue
+                updated = json.dumps(
+                    rewrite_index_references(payload), ensure_ascii=False, indent=2
+                ) + "\n"
+                if updated == original:
+                    results.append({"target": action.target, "result": "unchanged"})
+                    continue
+                snapshot(target)
+                target.write_text(updated, encoding="utf-8", newline="")
+                results.append({"target": action.target, "result": "updated", "sha256": sha256(target)})
+                continue
+            if action.kind == "prune-empty":
+                # Only ever removes directories that hold no files, deepest
+                # first, so a directory still carrying unexpected content stays.
+                stale = root / action.target
+                if stale.is_dir():
+                    directories = sorted(
+                        (item for item in stale.rglob("*") if item.is_dir()),
+                        key=lambda item: len(item.parts),
+                        reverse=True,
+                    )
+                    for directory in directories:
+                        try:
+                            directory.rmdir()
+                        except OSError:
+                            pass
+                    try:
+                        stale.rmdir()
+                    except OSError:
+                        pass
+                results.append({"target": action.target, "result": "pruned"})
                 continue
             if action.kind == "sync-tree":
                 source_dir = source / "templates/engineering"
@@ -686,6 +1081,16 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
             result = copy_file(source_file, target, overwrite)
             results.append({"target": action.target, "result": result, "sha256": sha256(target)})
     except (OSError, shutil.Error):
+        # Relocate moved content back first: until this runs, the origin paths are
+        # missing, and the created-file cleanup below expects to find the
+        # destinations it recorded.
+        for origin, destination in reversed(moved):
+            if destination.exists() and not origin.exists():
+                try:
+                    origin.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(destination), str(origin))
+                except (OSError, shutil.Error):
+                    pass
         for target, (content, mode) in snapshots.items():
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
@@ -902,7 +1307,7 @@ def render_uninstall_plan(
         "mode": "uninstall",
         "project_root": str(root),
         "source_root": str(source),
-        "installed_version": read_version(layout.path("version", root)) or "unknown",
+        "installed_version": read_version(installed_version_path(root)) or "unknown",
         "source_version": read_version(source / "VERSION") or "unknown",
         "tier": tier,
         "agent": agent or "all",
@@ -1287,13 +1692,15 @@ def main() -> int:
     agent = args.agent
     status = detect_status(root, agent)
     effective_tier = min(args.tier, 2)
-    installed_version = read_version(layout.path("version", root))
+    installed_version = read_version(installed_version_path(root))
     target_version = read_version(source / "VERSION")
     version_relation = classify_versions(installed_version, target_version)
     if installed_version is None and status != "fresh":
         version_relation = "unversioned"
     actions = source_actions(source, root, effective_tier, status, agent)
     plan = render_plan(root, source, effective_tier, status, actions, agent, installed_version, target_version)
+    if status == "relayout":
+        plan["migration_required"] = True
 
     if args.apply and version_relation in {"downgrade", "invalid", "unknown-target", "unversioned"}:
         plan["errors"] = [f"unsupported version transition: {version_relation}"]
@@ -1363,6 +1770,12 @@ def main() -> int:
         print(f"HARNESS ONBOARDING PLAN: {status} project at {root}")
         for action in actions:
             print(f"- {action.kind:9} {action.target} ({action.reason})")
+        if status == "relayout":
+            # Migrating relocates project-owned content and deletes the superseded
+            # tree, so it never runs without an explicit --apply.
+            print("Read-only migration plan: this project still uses the pre-0.6 layout.")
+            print("Review the moves and deletions above, then rerun with --apply to migrate.")
+            return 2
         print("Read-only plan. Ask the user for confirmation, then rerun with --apply.")
     return 0
 

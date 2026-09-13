@@ -502,6 +502,12 @@ function summarizePlan(output) {
     console.log(`迁移清单错误: ${plan.migration_manifest_errors.join('；')}`);
   }
   console.log(`计划: ${actions || '无动作'}`);
+  if (plan.migration_required) {
+    const moves = plan.actions.filter((action) => action.kind === 'move' || action.kind === 'move-tree').length;
+    const removals = plan.actions.filter((action) => action.kind === 'remove').length;
+    console.log(`布局迁移: 本工程仍使用 0.6 之前的布局，本次将搬移 ${moves} 项、删除 ${removals} 项`);
+    console.log('  搬移会保留项目自有内容，目标已存在时不会被覆盖；删除项已在计划中逐条列出');
+  }
   if (plan.release_migrations && plan.release_migrations.length) {
     console.log(`发布迁移: ${plan.release_migrations.length} 项，需按清单人工确认`);
   }

@@ -377,6 +377,24 @@ def diagnose(root: Path, source: Path, agent: str | None, tier: int) -> dict[str
         result["repairs"] = []
         return result
 
+    if status == "relayout":
+        # Repair restores canonical Kit resources; it must never relocate project
+        # content, which is what a migration does. Hand off instead of guessing.
+        record(
+            findings,
+            "relayout-pending",
+            "control-plane",
+            "manual",
+            "this project uses the pre-0.6 layout and must be migrated rather than repaired",
+            remedy=(
+                "Run `hek init --plan` to review the moves and deletions, then "
+                "`hek init --apply`. Repair will not relocate project content."
+            ),
+        )
+        result["findings"] = ordered(findings)
+        result["repairs"] = []
+        return result
+
     if relation == "downgrade":
         record(
             findings,
@@ -550,7 +568,14 @@ def ordered(findings: dict[str, dict[str, object]]) -> list[dict[str, object]]:
 
 
 def serialize(action: Action) -> dict[str, object]:
-    return {"kind": action.kind, "source": action.source, "target": action.target, "reason": action.reason}
+    return {
+        "kind": action.kind,
+        "source": action.source,
+        "target": action.target,
+        "reason": action.reason,
+        "from_target": action.from_target,
+        "expected_sha256": action.expected_sha256,
+    }
 
 
 def deserialize(payload: dict[str, object]) -> Action:
@@ -559,6 +584,8 @@ def deserialize(payload: dict[str, object]) -> Action:
         source=str(payload["source"]) if payload.get("source") else None,
         target=str(payload.get("target")),
         reason=str(payload.get("reason") or "self-repair"),
+        from_target=str(payload["from_target"]) if payload.get("from_target") else None,
+        expected_sha256=str(payload["expected_sha256"]) if payload.get("expected_sha256") else None,
     )
 
 

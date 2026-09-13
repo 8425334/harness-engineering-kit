@@ -42,6 +42,19 @@
         "Verify that the target project has the platform-specific Engineering Skill installed for every supported agent and that its root instruction entry declares automatic routing for non-trivial changes.",
         "Re-run the onboarding check after upgrading so root adapters, platform Skill manifests, and the methodology version are synchronized."
       ]
+    },
+    {
+      "version": "0.6.0",
+      "kind": "structural",
+      "summary": "Relocate every Harness resource except openspec/ into a single .hek/ directory.",
+      "manual_review": [
+        "The migration relocates project-owned content: agent-policy.yaml and profile.yaml move to .hek/project/, ai.json and every indexed AI.md move to .hek/context/ (mirroring their module paths), and docs/fitness/ moves wholesale to .hek/fitness/ so project-added checks survive. Review the plan with `hek init --plan` before applying; a destination that already exists is preserved rather than overwritten, and any file edited between plan and apply is kept and reported as kept-modified.",
+        "The superseded docs/methodology/ tree is deleted, including files retired before 0.5.0 (templates/, i18n/, examples/ and the Kit's own README/CHANGELOG). Nothing outside that directory is removed automatically.",
+        "Add .hek to permissions.writable_paths in agent-policy.yaml. The migration does this for you, but a project that manages the file outside the migration must make the same edit or the control scripts cannot write evidence; the policy is preserved rather than overwritten once it has been filled in.",
+        "Rewrite .github/workflows/** by hand. CI triggers and steps that reference docs/fitness/** now need .hek/fitness/**, and .github is deliberately outside the writable paths so the migration never edits it. This is the only reference the migration cannot fix for you.",
+        "Update context.index_max_bytes to 8192 and context.detail_max_lines to 800 if the project still carries the pre-0.5.1 limits; check_agent_policy.py fails closed until they match.",
+        "References inside openspec/changes/archive/** are intentionally left untouched: they record what was run at the time and rewriting them would falsify the audit trail."
+      ]
     }
   ]
 }
