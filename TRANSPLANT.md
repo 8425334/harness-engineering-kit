@@ -18,7 +18,7 @@ Existing root adapters and project policy/profile files are preserved. Canonical
 Replace every `{{...}}` value in:
 
 - `AGENTS.md` and `CLAUDE.md`: project name only; keep them short.
-- `ai.json`: project name, one-sentence summary, module routes, and canonical entrypoints only; keep it under 4096 bytes.
+- `ai.json`: project name, one-sentence summary, module routes, and canonical entrypoints only; keep it under 8192 bytes.
 - `AI.md`: detailed root responsibilities, boundaries, local verification, and navigation.
 - `docs/methodology/agent-policy.yaml`: real commands, paths, permissions, owners.
 - `docs/methodology/profile.yaml`: risk/profile defaults and review metadata.

@@ -18,8 +18,8 @@ commands:
 context:
   index_document_name: ai.json
   detail_document_name: AI.md
-  index_max_bytes: 4096
-  detail_max_lines: 400
+  index_max_bytes: 8192
+  detail_max_lines: 800
   architecture_overview: docs/methodology/core/harness-engineering.md
   dependency_rules: docs/methodology/core/ddd-modeling.md
 

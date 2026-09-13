@@ -6,8 +6,8 @@ Context quality comes from bounded routing, not bulk loading or duplicated rules
 
 | Artifact | Purpose | Hard boundary |
 |---|---|---|
-| Root `ai.json` | Machine-readable initialization map | Summary and routing only; ≤4096 bytes; no commands, permissions, constraints, or detailed rules |
-| Indexed `AI.md` | Human- and machine-readable path detail | Responsibilities, boundaries, invariants, dependencies, entrypoints, contracts, and local verification; ≤400 lines |
+| Root `ai.json` | Machine-readable initialization map | Summary and routing only; ≤8192 bytes; no commands, permissions, constraints, or detailed rules |
+| Indexed `AI.md` | Human- and machine-readable path detail | Responsibilities, boundaries, invariants, dependencies, entrypoints, contracts, and local verification; ≤800 lines |
 
 There is exactly one root `ai.json`. Its root module (`path: "."`) is mandatory. Every maintained `AI.md` must be registered in its `modules` array with a module path, short summary, exact context path, and 1–8 `read_when` keywords. Before code work, `resolve_context.py` resolves every task path and explicit keyword into one deterministic load order: policy, methodology profile, index, then selected details from parent to child. Child details contain only local differences; ancestor details remain applicable. Neither layer can override native instructions or `agent-policy.yaml`.
 
@@ -27,12 +27,6 @@ Every non-trivial change includes approval-bound `context-impact.json`:
 Signal selection is a semantic design decision bound into approval; deterministic gates verify its mapping and evidence but cannot infer business responsibility from arbitrary code. The approver must reject an unjustified `none` decision.
 
 Preserve decisions and evidence in the change workspace across compaction or handoff. Measure wrong-assumption rate, loading time, repeated reads, intervention rate, and cost/latency; provider caching is an optimization, not a correctness guarantee.
-
-The repository-side cache contract is defined in
-[Context Cache Protocol](context-cache-protocol.md). It stabilizes the ordered
-context prefix and records provider-reported `hit`, `miss`, or `bypass`
-outcomes. It does not change host Agent configuration or claim provider cache
-behavior without telemetry.
 
 The repository-side cache contract is defined in
 [Context Cache Protocol](context-cache-protocol.md). It stabilizes the ordered

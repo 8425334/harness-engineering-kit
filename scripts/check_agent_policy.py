@@ -95,8 +95,8 @@ def validate(path: Path) -> list[str]:
         errors.append("context_documents_are_supplemental must be true")
     if scalar(content, "context", "index_document_name") != "ai.json" or scalar(content, "context", "detail_document_name") != "AI.md":
         errors.append("context documents must be root ai.json plus indexed AI.md details")
-    if scalar(content, "context", "index_max_bytes") != "4096" or scalar(content, "context", "detail_max_lines") != "400":
-        errors.append("context limits must be index_max_bytes=4096 and detail_max_lines=400")
+    if scalar(content, "context", "index_max_bytes") != "8192" or scalar(content, "context", "detail_max_lines") != "800":
+        errors.append("context limits must be index_max_bytes=8192 and detail_max_lines=800")
     if scalar(content, "methodology", "engineering_skill") != "engineering":
         errors.append("methodology.engineering_skill must be engineering")
     if scalar(content, "permissions", "protected_paths") != "[docs/fitness]":

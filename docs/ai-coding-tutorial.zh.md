@@ -28,7 +28,7 @@
 | 术语 | 定义 |
 |-|-|
 | **Agent** | AI 编程助手（如 Claude Code、Codex、Cursor），能读代码、改代码、跑命令 |
-| **上下文（Context）** | Agent 一次会话能"看到"的项目信息。Harness 把它分成两层：根 `ai.json`（机器可读索引，≤4096 字节）+ 被索引的路径 `AI.md`（人类可读细节，≤400 行） |
+| **上下文（Context）** | Agent 一次会话能"看到"的项目信息。Harness 把它分成两层：根 `ai.json`（机器可读索引，≤8192 字节）+ 被索引的路径 `AI.md`（人类可读细节，≤800 行） |
 | **确定性上下文加载** | 改代码前由 `resolve_context.py` 把目标路径解析成**唯一、固定顺序**的加载链，解析失败就拒绝开工（fail-closed） |
 | **Token** | LLM 处理文本的最小单位，输入输出都按 Token 计费；稳定的上下文前缀命中缓存后只需约 0.1× 成本 |
 | **agent-policy.yaml** | 项目唯一事实源：命令、可读写路径、权限、交付引用都在这一个文件里 |
@@ -187,8 +187,8 @@ Token Cache 的思想是：
 | 入口 | 根 `CLAUDE.md` / `AGENTS.md` | 权威、安全、必读入口，路由到 engineering Skill | 命令、模块图、完整方法论 |
 | 策略（唯一事实） | `docs/methodology/agent-policy.yaml` | 项目命令、可读写/禁用路径、权限、交付引用 | 任务级设计 |
 | 方法论档位 | `docs/methodology/profile.yaml` | 档位（light/standard/regulated/experimental）、Self-Refine 策略、审批要求 | 命令与权限 |
-| 上下文索引 | 根 `ai.json`（≤4096 字节） | 机器可读项目地图，路由到详情 | 命令、权限、详细规则 |
-| 路径上下文 | `AI.md`（≤400 行/篇） | 局部职责、边界、导航、局部验证 | 覆盖上层指令 |
+| 上下文索引 | 根 `ai.json`（≤8192 字节） | 机器可读项目地图，路由到详情 | 命令、权限、详细规则 |
+| 路径上下文 | `AI.md`（≤800 行/篇） | 局部职责、边界、导航、局部验证 | 覆盖上层指令 |
 | 编排 | `engineering` Skill | 路由任务、编排生命周期、记录证据 | 重复项目约定 |
 | Design/验证特化 | 后端 / 前端 / 全栈 Profile | RAM / RAD / 全栈契约的建模与验证方式 | 独立生命周期 |
 | 变更工作区 | `openspec/changes/<id>/` | `.openspec.yaml` + proposal / specs / design / tasks + `governance.json` 与审批/执行证据 | 重复 OpenSpec 生命周期 |
@@ -507,7 +507,7 @@ npx --yes --package github:8425334/harness-engineering-kit hek init
 
 ### Step 2 填占位、确认项目上下文
 
-接入只是脚手架，接下来要让 Agent **用仓库事实填掉占位符**：`{{PROJECT_NAME}}`、`agent-policy.yaml` 里的真实命令（测试 / 构建 / Fitness 用什么）、`ai.json` 的项目一句话摘要与模块路由、路径 `AI.md`。`--check` 会用确定性检查保证链路闭合：入口的必读区必须调用 `resolve_context.py`，`ai.json` 必须登记根模块且不超 4096 字节，每条维护中的 `AI.md` 必须被索引。
+接入只是脚手架，接下来要让 Agent **用仓库事实填掉占位符**：`{{PROJECT_NAME}}`、`agent-policy.yaml` 里的真实命令（测试 / 构建 / Fitness 用什么）、`ai.json` 的项目一句话摘要与模块路由、路径 `AI.md`。`--check` 会用确定性检查保证链路闭合：入口的必读区必须调用 `resolve_context.py`，`ai.json` 必须登记根模块且不超 8192 字节，每条维护中的 `AI.md` 必须被索引。
 
 改代码前，Agent 先跑：
 

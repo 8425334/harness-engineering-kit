@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Any
 
 
-MAX_INDEX_BYTES = 4096
-MAX_DETAIL_BYTES = 32768
-MAX_DETAIL_LINES = 400
+MAX_INDEX_BYTES = 8192
+MAX_DETAIL_BYTES = 65536
+MAX_DETAIL_LINES = 800
 MAX_MODULES = 50
 TOP_LEVEL_KEYS = {"schema_version", "kind", "project", "summary", "modules", "entrypoints"}
 MODULE_KEYS = {"path", "summary", "context", "read_when"}

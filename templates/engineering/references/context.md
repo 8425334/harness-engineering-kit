@@ -1,6 +1,6 @@
 # Context Update Decisions
 
-Root `ai.json` is a compact routing index, never a second policy file. It contains only the project summary, module paths, short module summaries, `read_when` keywords, referenced `AI.md` paths, and canonical entrypoints. Keep it within 4096 bytes.
+Root `ai.json` is a compact routing index, never a second policy file. It contains only the project summary, module paths, short module summaries, `read_when` keywords, referenced `AI.md` paths, and canonical entrypoints. Keep it within 8192 bytes.
 
 Indexed `AI.md` files contain detailed local responsibilities, boundaries, invariants, dependencies, entrypoints, contracts, and verification guidance. They remain supplemental to native instructions and `agent-policy.yaml`.
 
