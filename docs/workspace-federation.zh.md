@@ -42,7 +42,7 @@
 
 ### 1.3 非目标
 
-- **不支持工程级嵌套**：unit 的仓根不允许位于另一个 unit 的仓根之内。
+- **不支持工程级嵌套，并强制禁用**：unit 的仓根不允许位于另一个 unit 的仓根之内；1.0.0 新增机械门禁，在任何 AI 编码写入前即阻断，见 §5.10。
 - 不引入中心仓、中心清单、注册中心（可选生成 inventory 见 5.8）。
 - 不引入第二套生命周期：`openspec/` 仍是唯一变更载体，`governance.json` 只做扩展。
 - 不做跨仓自动提交或自动开 PR。
@@ -187,8 +187,9 @@ consumes:
 | I11 | 单任务上下文 `input_bytes` 不超预算；跨工程任务不得加载无关 unit 的 L1 | `check_context_budget` | blocked |
 | I12 | `identity.yaml` 必须被 Git 跟踪 | `git ls-files --error-unmatch` | blocked |
 | I13 | 消费者引用的 provider 版本必须可寻址（tag 存在）且与声明一致 | 消费者 CI 拉取校验 | blocked |
+| I14 | 目标路径的 Git 仓根必须等于承载它的 harness 根；不一致即为越界（覆盖嵌套与跨仓） | `git rev-parse --show-toplevel` + harness 根定位 | blocked |
 
-单仓兼容：仓内不存在 `identity.yaml` 时，I1–I7、I9–I13 全部跳过，行为与 0.6.0 完全一致。
+单仓兼容：仓内不存在 `identity.yaml` 时，I1–I7、I9–I13 全部跳过，行为与 0.6.0 完全一致。**I14 不跳过**——它是 1.0.0 刻意引入的行为变更，对没有 identity 的工程同样生效，因此"仓内嵌了另一个 Git 仓"的存量工程会从可写变为 blocked（见 §5.10 与第 9 节迁移）。
 
 ## 5. 关键流程
 
@@ -293,6 +294,52 @@ breaking 变更：provider 必须在 `publishes[].breaking_policy: semver` 下�
 
 当组织需要"不 checkout 全量仓也能回答谁消费谁"（API 目录、审计）时，可由 `hek workspace discover --json` 的产物发布为 artifact 或写入只读 registry。**该产物必须由工具生成，禁止人工编辑**；它不参与门禁判定（判定仍在 consumer CI）。
 
+### 5.10 嵌套结构门禁（禁用 AI 编码）
+
+目标：在任何代码写入发生前**机械阻断**工程级嵌套下的 AI 编码，不依赖模型自觉，也不依赖人的记忆。
+
+#### 禁止判定
+
+| 编号 | 判定 | 说明 |
+| --- | --- | --- |
+| N1 | 结构嵌套 | 存在两个 Git 仓 A、B，`git_toplevel(B)` 是 `git_toplevel(A)` 的真后代 |
+| N2 | 会话越界 | 会话根 harness H 与目标路径的 `git_toplevel` 不一致（覆盖嵌套与跨兄弟仓两种情形） |
+
+#### 检测准则（强制）
+
+只允许使用 Git 与文件系统事实：
+
+- `git -C <target> rev-parse --show-toplevel`
+- `git -C <target> rev-parse --show-superproject-working-tree`（识别子模块）
+- harness 根 = 从 target 向上找到的第一个含 `.hek/VERSION` 的目录，且该目录必须等于某个 `git_toplevel`
+
+**禁止**依据目录名（`docs/methodology`、`docs/sdd`）、文件名（`ai.json`、`AI.md`、`VERSION`）或 VERSION 文件内容判定归属。
+
+#### 反面教材（真实案例，必须避免复现）
+
+`H:\Project\coil-project\coli-backend-api` 内含另一产品 "AI-Assisted Development Methodology" 1.0.0（2026-07-22 的 5 阶段重组版，目录为 `docs/methodology/{1-specify,2-design,3-implement,4-verify,5-operate}`，自带 `VERSION` = `1.0.0`，`docs/sdd`、`docs/fitness` 亦属该产品）。现有 `scripts/onboard.py` 的 `relayout_source()` 仅凭 `docs/methodology` 目录存在且 `.hek` 不存在，就认定为本 Kit 的旧安装；`installed_version_path()` 随即把该产品的版本号当成本 Kit 的已安装版本，与本 Kit `0.6.0` 比较得出 `downgrade`，最终在第 1705 行以 `HARNESS ONBOARDING BLOCKED: unsupported version transition: downgrade` 阻断全部编码；`scripts/repair.py` 同样以 `version-downgrade` 阻断，并提示"Repair never downgrades an installation"。
+
+而本 Kit 的发布历史中不存在 1.0.0（`VERSION` 历史仅 0.1.0 / 0.3.0 / 0.4.0 / 0.5.0 / 0.5.1 / 0.6.0）。这说明基于名称的归属推断会把无关产品误判成本 Kit 的安装，进而错误阻断。
+
+修复要求：认定 HEK 旧安装必须同时满足 HEK 专属证据——`.hek/VERSION` 存在，或 `docs/methodology/scripts/` 与 `docs/methodology/core/` 同时存在且 `VERSION` 属于已知发布集合。证据不足时按 `fresh` 处理，只产出 warning `legacy.unverified`；`docs/sdd`、`.cursor/skills` 等 `LEGACY_MARKERS` 单独不足以定论。
+
+#### 执行点（四层，缺一不可）
+
+| 层 | 机制 | 失败表现 |
+| --- | --- | --- |
+| 会话入口 | 任何写操作前运行 `hek workspace guard --path <target> --json` | 退出码 2，Agent 停止并报告 |
+| Skill 门禁 | `engineering` Skill 的 preflight 强制调用 guard，未通过不得进入 Apply | 拒绝进入 Apply |
+| 机械门禁 | hooks 模板增加写操作拦截（PreToolUse 类），越界写入直接 deny | 工具调用被拒 |
+| 事后门禁 | unit CI 跑 `hek workspace verify`，可选 pre-commit | 退出码 2 |
+
+#### 诊断码
+
+`nested.detected`、`boundary.cross-repo`、`harness.mismatch`、`legacy.unverified`（warning）、`nesting.waived`（信息）。
+
+#### 例外通道
+
+默认零例外。只有"拆分嵌套结构"的迁移变更可申请一次性豁免：需外部人工审批、绑定变更摘要、写明退出路径与截止时间，证据写入 `.hek/state/waivers/nested-<id>.json`。豁免期内 guard 返回 `nesting.waived` 且不阻断，但 `verify` 仍报 blocked——两者语义不同：**guard 管"现在能不能改"，verify 管"结构是否合规"**。是否保留该通道见 §12.5。
+
 ## 6. 工具面（CLI）
 
 ### 6.1 命令
@@ -303,6 +350,7 @@ breaking 变更：provider 必须在 `publishes[].breaking_policy: semver` 下�
 | `hek workspace verify [--root <dir>]... [--json]` | 校验 I1–I7、I10、I12 | P0 |
 | `hek workspace context <path> [--json]` | 回答路径归属、应加载上下文、是否跨工程、预估字节数 | P0 |
 | `hek workspace exec <unit> -- <cmd...>` | 切到 unit 根启动 CLI，注入 `HEK_UNIT` / `HEK_WORKSPACE` | P0 |
+| `hek workspace guard --path <path> [--json]` | 写入前门禁：判定是否嵌套或越界，blocked 即禁止编码（I14、§5.10） | P0 |
 | `hek workspace compat --contract <id> [--json]` | 消费者侧兼容校验，产出 `.hek/state/compat-<id>.json` | P1 |
 | `hek workspace graph [--json]` | 打印契约图的邻接表 | P1 |
 | `hek workspace run <unit>|all <fast_test|test|build|fitness>` | 聚合执行（仅限独立结构） | P2 |
@@ -328,14 +376,16 @@ breaking 变更：provider 必须在 `publishes[].breaking_policy: semver` 下�
 | --- | --- |
 | `scripts/workspace.py` | `load_identity(unit_root: Path) -> Identity`；`discover(roots: list[Path], depth: int = 1) -> Projection`；`validate_projection(projection) -> list[Diagnostic]`；`digest_units(units) -> str`；`unit_scoped_path(payload) -> tuple[str, str]`（解析并校验 I7） |
 | `scripts/check_identity.py` | `validate(unit_root: Path) -> list[str]`；CLI `--root`，退出码 0/2 |
-| `scripts/workspace_ctl.py` | `main(argv) -> int`；子命令 `discover/verify/context/exec/compat/graph/run/pin` |
+| `scripts/workspace_ctl.py` | `main(argv) -> int`；子命令 `discover/verify/context/exec/guard/compat/graph/run/pin` |
+| `scripts/workspace_guard.py` | `git_toplevel(path: Path) -> Path`；`locate_harness_root(path: Path) -> Path or None`；`detect_nesting(roots: list[Path]) -> list[Diagnostic]`；`guard(target: Path, session_root: Path or None) -> list[Diagnostic]` |
+| `templates/hooks/deny-nested-write.json.template` | 写操作拦截（PreToolUse 类）；沿用 `templates/compaction/settings-hooks.json.template` 的安装通道 |
 | `templates/identity.yaml.template` | 占位符：`{{WORKSPACE_ID}}`、`{{UNIT_ID}}`、`{{UNIT_KIND}}`、`{{REPO_URL}}` |
 | `templates/fitness/check_contract_pin.py.template` | 校验 `consumes` 的 snapshot 与声明版本一致（I13 的本地部分） |
 | `templates/fitness/check_context_budget.py.template` | 校验单任务 `input_bytes` 与跨 unit 上下文引用（I11） |
 | `templates/ci/workspace-compat.yml.template` | 消费者侧兼容校验 workflow |
 | `core/workspace-federation.md`（及 `i18n/zh/core/` 对应文件） | 第 2、4、5 节的运行时摘要，供 `ai.json` 的 `entrypoints` 引用 |
 | `tests/test_workspace.py`、`tests/test_workspace_ctl.py` | 见第 8 节 |
-| `tests/fixtures/workspace/**` | 夹具：`single/`、`pair-ok/`、`pair-orphan/`、`nested/`、`version-mismatch/`、`untracked-identity/` |
+| `tests/fixtures/workspace/**` | 夹具：`single/`、`pair-ok/`、`pair-orphan/`、`nested/`、`nested-cross/`、`foreign-methodology/`、`version-mismatch/`、`untracked-identity/`、`cycle/` |
 
 ### 7.2 修改
 
@@ -343,6 +393,9 @@ breaking 变更：provider 必须在 `publishes[].breaking_policy: semver` 下�
 | --- | --- | --- |
 | `scripts/layout.py` | 新增 `identity_rel()` 返回 `.hek/project/identity.yaml`、新增 `contracts_dir` 访问器 | 低，纯新增 |
 | `scripts/onboard.py` | `--check` 末尾追加 identity 校验（缺失则跳过）；新增 `--unit-id` 用于生成 identity 草稿；`project_root()`（第 179 行）三态判定（§5.3 第 4 条） | 中，必须保证无 identity 时行为字节级一致 |
+| `scripts/onboard.py`（安装判定） | 收紧 `relayout_source()` 与 `installed_version_path()`：认定旧安装必须同时满足 HEK 专属证据（`.hek/VERSION`，或 `docs/methodology/scripts/` 与 `docs/methodology/core/` 同时存在且 VERSION 属于已知发布集合），否则按 `fresh` 处理并只产出 `legacy.unverified` warning（见 §5.10 反面教材） | 高，直接改变存量工程的判定结果 |
+| `scripts/check_agent_policy.py` | 增加 I14 边界校验：`writable_paths` 中任一条目解析后的 `git_toplevel` 必须等于本 harness 根 | 中，含嵌套仓的存量策略会变红 |
+| `templates/engineering/SKILL.md` | preflight 增加 guard 调用，未通过不得进入 Apply | 中，影响所有非平凡变更入口 |
 | `scripts/resolve_context.py` | 输出新增 `unit_id`、`cross_unit` 字段；跨 harness root 时 fail-closed 并提示改用 workspace change | 中，返回结构新增字段，调用方需同步 |
 | `scripts/check_change_workspace.py` | 校验 `governance.workspace`：字段集合、`role` 枚举、`breaking` 与 `derived_from` 的联动、`verification` 文件存在性 | 中，旧 change 无该键时跳过 |
 | `scripts/openspec_common.py` | 保持 `orchestration_contract()` 不变；新增 `workspace_contract()` 供校验复用 | 高，禁止改动现有严格比较逻辑 |
@@ -385,6 +438,11 @@ breaking 变更：provider 必须在 `publishes[].breaking_policy: semver` 下�
 | `test_discover_layout_independent` | 同一组 unit 放在两种不同目录结构下，`digest` 相同 |
 | `test_discover_single_unit_skips_federation` | `single/` 无诊断，输出为空 workspace |
 | `test_verify_nested_blocked` | `nested/` 报 `unit.nested` 且退出码 2 |
+| `test_guard_blocks_nested_write` | 嵌套路径上 `guard` 返回 `nested.detected` 且退出码 2 |
+| `test_guard_blocks_cross_repo_write` | 在 A 的会话中 guard B 仓路径返回 `boundary.cross-repo` |
+| `test_guard_allows_own_repo` | 平级独立仓在各自会话内 guard 退出码 0 |
+| `test_foreign_methodology_not_legacy` | `foreign-methodology/`（自带 `docs/methodology/VERSION=1.0.0` 的无关产品）不得判定为 HEK 旧安装；状态为 `fresh`，只产出 `legacy.unverified` warning |
+| `test_nesting_waiver_scoped` | 有效豁免下 guard 返回 `nesting.waived` 且不阻断，但 `verify` 仍 blocked |
 | `test_verify_orphan_contract` | `pair-orphan/` 报 `contract.orphan` |
 | `test_verify_cycle_blocked` | `cycle/` 报 `contract.cycle` |
 | `test_verify_version_mismatch` | `version-mismatch/` 报 `kit.version-mismatch` |
@@ -407,9 +465,11 @@ breaking 变更：provider 必须在 `publishes[].breaking_policy: semver` 下�
 
 | 从 | 到 | 动作 |
 | --- | --- | --- |
-| 0.6.0 单仓安装 | 1.0.0 单仓 | 无需动作；identity 缺失即跳过联邦逻辑 |
+| 0.6.0 单仓安装（仓内无独立仓） | 1.0.0 单仓 | 无需动作；identity 缺失即跳过联邦逻辑 |
+| 0.6.0 单仓安装（仓内嵌有独立 Git 仓） | 联邦 | I14 的 guard 会阻断 AI 编码；必须先把子仓移出父仓目录成为平级仓。过渡期见 §12.5 豁免通道 |
+| 含无关产品目录的工程（如自带 `VERSION=1.0.0` 的 `docs/methodology`、`docs/sdd`） | 联邦 | 按 §5.10 证据化收紧后判定为 `fresh`，只产出 `legacy.unverified` warning；不再被误判为 HEK 旧安装，也不再出现无法满足的 `downgrade` 阻断 |
 | 多个平级独立仓 | 联邦 | 各仓新增 `.hek/project/identity.yaml`（`hek onboard --unit-id <id>` 生成草稿），补 `.gitignore` 片段 |
-| 工程级嵌套（异仓） | 联邦 | 子仓移出父仓目录成为平级仓，各自装 harness，补 identity；父仓从权限中移除子仓路径 |
+| 工程级嵌套（异仓） | 联邦 | 子仓移出父仓目录成为平级仓，各自装 harness，补 identity；父仓从权限中移除子仓路径。迁移期间由 `nesting.waived` 豁免放行，`verify` 仍报 blocked 直到拆分完成 |
 | 中心 `workspace.yaml` 草案 | 联邦 | 删除中心文件；把其中的 unit 与契约信息分别落到各 unit 的 identity |
 | vendored 完整 kit | 版本 pin | 保留 `.hek/project`、`.hek/context`、`.hek/fitness`；`.hek/kit` 由 pin 版本获取。离线要求高时可保留 vendored 拷贝，但必须由 pin 生成并校验 digest |
 
@@ -419,7 +479,7 @@ breaking 变更：provider 必须在 `publishes[].breaking_policy: semver` 下�
 
 ### P0：自描述与聚合
 
-交付：`workspace.py`、`check_identity.py`、`workspace_ctl.py` 的 `discover/verify/context/exec`、`identity.yaml.template`、`.gitignore` 片段、`core/workspace-federation.md`、夹具与 8.2 中 P0 相关用例。
+交付：`workspace.py`、`workspace_guard.py`、`check_identity.py`、`workspace_ctl.py` 的 `discover/verify/context/exec/guard`、`identity.yaml.template`、`templates/hooks/deny-nested-write.json.template`、`.gitignore` 片段、`core/workspace-federation.md`、`onboard.py` 安装判定的证据化收紧（§5.10 反面教材）、夹具与 8.2 中 P0 相关用例。
 
 验收命令与期望：
 
@@ -429,6 +489,9 @@ python scripts/workspace_ctl.py discover --root tests/fixtures/workspace/pair-ok
 python scripts/workspace_ctl.py verify --root tests/fixtures/workspace/nested --json        # 退出码 2，code=unit.nested
 python scripts/workspace_ctl.py context tests/fixtures/workspace/pair-ok/backend-api/src/x.java --json   # 含 unit_id、cross_unit=false
 python scripts/workspace_ctl.py exec backend-api -- python -c "import os;print(os.getcwd())"            # 输出 unit 根
+python scripts/workspace_ctl.py guard --path tests/fixtures/workspace/nested/backend-api/backend-ui/src/x.ts --json   # 退出码 2，code=nested.detected
+python scripts/workspace_ctl.py guard --path tests/fixtures/workspace/pair-ok/backend-api/src/x.java --json           # 退出码 0
+python scripts/onboard.py --project-root tests/fixtures/workspace/foreign-methodology --plan --json                  # status=fresh，含 legacy.unverified warning，无 downgrade
 ```
 
 P0 判定标准：单仓夹具全部通过且既有测试（`tests/test_onboard.py`、`tests/test_layout.py`）无回归。
@@ -452,7 +515,8 @@ P0 判定标准：单仓夹具全部通过且既有测试（`tests/test_onboard.
 | 让每人在本地跑 `hek init` | 编排层随人漂移 | 安装是一次性提交动作；`.hek/` 随 clone 分发 |
 | identity 未提交 | 他人视角缺失该 unit | I12 |
 | 手写中心清单 | 第二权威，必然滞后 | 只允许生成式 inventory，禁止参与门禁 |
-| 允许工程级嵌套 | 父仓 CI 覆盖不到子仓 | I4 直接 blocked |
+| 允许工程级嵌套 | 父仓 CI 覆盖不到子仓，且改动无法原子提交 | 结构上 I4 blocked；编码前 I14 + `hek workspace guard` 直接禁止 AI 编码（§5.10） |
+| 用目录名判断"是不是本 Kit 的安装" | 把无关产品误判为旧安装，产生无法满足的 downgrade 阻断 | 只认 Git 归属与 HEK 专属证据（§5.10 反面教材） |
 | 用 `--add-dir` 在一个会话里横跨多个 unit | 指令根与相对路径基准错乱 | 默认 unit 根开会话；`--add-dir` 仅用于读契约 |
 | 把契约当文档写 | 体积膨胀、无法 diff | 契约只放机器可读产物，配 snapshot |
 | 各 unit 的 kit 版本不一致 | 门禁时真时假 | I10 + `pin` |
@@ -466,3 +530,5 @@ P0 判定标准：单仓夹具全部通过且既有测试（`tests/test_onboard.
 12.3 **`compat` 的比对深度**：推荐先做结构级 diff（新增字段通过、删除/改类型 blocked），不引入运行时集成测试。若契约不含机器可读 schema，则降级为"人工审批 + 版本号校验"。
 
 12.4 **CI 平台**：模板以 GitHub Actions 为默认（仓库现有 `.github/workflows/ci.yml`）。若实际使用其他平台，只改 `templates/ci/` 而不动门禁逻辑。
+
+12.5 **嵌套门禁的例外通道**：推荐保留"仅限拆分嵌套结构的迁移变更"的一次性豁免（§5.10），理由是存量嵌套工程需要一个受控过渡期。若要求绝对零例外，则删除该通道，并把 guard 与 verify 的语义合并（两者都 blocked）。
