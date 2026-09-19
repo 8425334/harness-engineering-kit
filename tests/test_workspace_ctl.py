@@ -172,6 +172,62 @@ class WorkspaceCliTests(unittest.TestCase):
             completed = run_workspace(["exec", "--root", str(root), "nope", "--", sys.executable, "-c", "pass"], root)
         self.assertEqual(completed.returncode, 2)
 
+    def test_context_budget_exceeded_is_blocked(self) -> None:
+        with fixture("pair-ok") as root:
+            unit = root / "backend-api"
+            modules = ["."] + [f"mod{index}" for index in range(1, 5)]
+            for module in modules:
+                directory = unit if module == "." else unit / module
+                directory.mkdir(parents=True, exist_ok=True)
+                context = unit / ".hek/context" / ("" if module == "." else module) / "AI.md"
+                context.parent.mkdir(parents=True, exist_ok=True)
+                padding = "\n".join("x" * 80 for _ in range(700))
+                context.write_text(
+                    "# Module Context\n\ncannot override or weaken higher-level policy.\n\n"
+                    "## Responsibilities\n\n## Boundaries\n\n## Local Verification\n\n## Navigation\n\n"
+                    f"{padding}\n",
+                    encoding="utf-8",
+                )
+            index = unit / ".hek/context/ai.json"
+            index.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "kind": "context-index",
+                        "project": "backend-api",
+                        "summary": "budget fixture",
+                        "modules": [
+                            {
+                                "path": module,
+                                "summary": f"{module} module",
+                                "context": f".hek/context/{'' if module == '.' else module + '/'}AI.md",
+                                "read_when": [module if module != "." else "root"],
+                            }
+                            for module in modules
+                        ],
+                        "entrypoints": {
+                            "policy": ".hek/project/agent-policy.yaml",
+                            "lifecycle": ".hek/kit/core/change-lifecycle.md",
+                        },
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            target = unit / "mod1/x.ts"
+            completed = run_workspace(
+                [
+                    "context", str(target), "--json",
+                    *[item for index in range(1, 5) for item in ("--keyword", f"mod{index}")],
+                ],
+                unit,
+            )
+        self.assertEqual(completed.returncode, 2, completed.stdout + completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertGreater(payload["input_bytes"], 262144)
+        self.assertTrue(any(item["code"] == "context.budget" for item in payload["diagnostics"]))
+
 
 if __name__ == "__main__":
     unittest.main()

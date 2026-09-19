@@ -171,6 +171,17 @@ class ProjectionTests(unittest.TestCase):
             code, _ = workspace.verify([root])
             self.assertEqual(code, 2)
 
+    def test_duplicate_unit_id_is_rejected(self) -> None:
+        with fixture("pair-ok") as root:
+            identity = root / "backend-ui/.hek/project/identity.yaml"
+            identity.write_text(
+                identity.read_text(encoding="utf-8").replace("unit_id: backend-ui", "unit_id: backend-api"),
+                encoding="utf-8",
+            )
+            code, projection = workspace.verify([root])
+        self.assertEqual(code, 2)
+        self.assertTrue(any(item.code == "identity.duplicate" for item in projection.diagnostics))
+
     def test_spec_reference_must_match_local_change(self) -> None:
         with fixture("pair-ok") as root:
             governance = root / "backend-ui/openspec/changes/backend-ui-update-export/governance.json"

@@ -21,7 +21,7 @@ Before a consequential action, follow `.hek/kit/core/requirement-reflection.md`.
 
 ## Route
 
-1. Run `resolve_context.py` for every target path and explicit task keyword, then read the returned order exactly.
+1. Run `resolve_context.py` for every target path and explicit task keyword, then read the returned order exactly. When the repository has `.hek/project/identity.yaml`, run `hek workspace guard --path <target> --session-root . --json` for every write target first: exit code 2 means the target is nested inside, or belongs to, another unit — stop and report it instead of entering Apply.
 2. Classify the scope as backend, frontend, or fullstack and read only the matching reference.
 3. Run `preflight_lessons.py` before implementation planning closes. Complete `context-impact.json` for non-trivial work and use `context_cache.py` for stable-prefix telemetry.
 4. Select the native OpenSpec Skill that matches the user's action:

@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "kind": "workspace-federation-evidence",
+  "captured_at": "2026-09-19",
+  "fixture": "tests/fixtures/workspace/__init__.py::build('triple-ok')",
+  "note": "The fixture is materialized into a fresh temporary directory, so the absolute root path is ephemeral. The digest is layout-independent and therefore reproducible: the same three units produce the same digest under any clone layout.",
+  "commands": [
+    {
+      "command": "hek workspace verify --root <triple-ok> --json",
+      "exit_code": 0
+    },
+    {
+      "command": "openspec validate workspace-federation-refactor --strict",
+      "exit_code": 0,
+      "output": "Change 'workspace-federation-refactor' is valid"
+    },
+    {
+      "command": "python -m unittest discover -s tests -p \"test_*.py\"",
+      "exit_code": 0,
+      "output": "Ran 167 tests ... OK"
+    },
+    {
+      "command": "node --test tests/test_cli.js tests/test_package.js tests/test_workspace_cli.js",
+      "exit_code": 0,
+      "output": "tests 48 / pass 48 / fail 0"
+    },
+    {
+      "command": "python scripts/verify_skill.py engineering --source-only && python scripts/smoke_test_skills.py",
+      "exit_code": 0,
+      "output": "SKILL PASS: engineering (claude); SKILL SMOKE PASS"
+    }
+  ],
+  "projection": {
+    "schema_version": 1,
+    "kind": "workspace-projection",
+    "workspace_id": "coil-platform",
+    "roots": [
+      "<ephemeral temp directory>"
+    ],
+    "digest": "sha256:f8919aa6c676f207d5e16227becdba44656f295a9b66769d4284f507d8ac1c88",
+    "units": [
+      {
+        "unit_id": "backend-api",
+        "root_index": 0,
+        "path": "backend-api",
+        "harness_root": "backend-api",
+        "kit_version": "1.0.0",
+        "identity_sha256": "ca960a70cc4d1cfef06e0205e9829ba7f314e978938b39c6dc4f5eabd352d928",
+        "tracked": true,
+        "repo_url": "ssh://git@example.com/coil/backend-api.git"
+      },
+      {
+        "unit_id": "backend-ui",
+        "root_index": 0,
+        "path": "backend-ui",
+        "harness_root": "backend-ui",
+        "kit_version": "1.0.0",
+        "identity_sha256": "5f4cf2672ab4e0821f1d5802472cc86a3b0e9cd8bf6a5e4b58b4e874c891f293",
+        "tracked": true,
+        "repo_url": "ssh://git@example.com/coil/backend-ui.git"
+      },
+      {
+        "unit_id": "client-api",
+        "root_index": 0,
+        "path": "client-api",
+        "harness_root": "client-api",
+        "kit_version": "1.0.0",
+        "identity_sha256": "24be79cfd35d008235a2a6fe0a5a1fac07fbbf8ba31c0e164c2c4e4169d03d4a",
+        "tracked": true,
+        "repo_url": "ssh://git@example.com/coil/client-api.git"
+      }
+    ],
+    "contracts": [
+      {
+        "contract": "backend-api-http",
+        "provider": "backend-api",
+        "consumers": ["backend-ui", "client-api"],
+        "version": "1.5.0",
+        "artifact": "contracts/openapi.yaml",
+        "format": "openapi-3.1",
+        "breaking_policy": "additive-only"
+      },
+      {
+        "contract": "backend-ui-static",
+        "provider": "backend-ui",
+        "consumers": [],
+        "version": "1.0.0",
+        "artifact": "contracts/manifest.json",
+        "format": "static-manifest",
+        "breaking_policy": "additive-only"
+      },
+      {
+        "contract": "client-api-http",
+        "provider": "client-api",
+        "consumers": [],
+        "version": "1.0.0",
+        "artifact": "contracts/openapi.yaml",
+        "format": "openapi-3.1",
+        "breaking_policy": "additive-only"
+      }
+    ],
+    "diagnostics": [],
+    "status": "pass"
+  },
+  "assertions": [
+    "three units each own one local OpenSpec change with at least one specs/**/*.md",
+    "governance.json.workspace.related_changes in all three units references all three units and their local specs",
+    "the workspace root owns no openspec/changes/, no specs/ and no workspace-spec.md",
+    "no blocked or warning diagnostics"
+  ]
+}
