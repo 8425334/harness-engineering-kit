@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import layout
+from workspace_guard import existing_ancestor, git_toplevel
 
 
 REQUIRED_SECTIONS = ("project", "authority", "commands", "context", "permissions", "delivery", "methodology")
@@ -136,6 +137,35 @@ def validate(path: Path) -> list[str]:
                 else:
                     if not referenced.is_file():
                         errors.append(f"referenced path does not exist: {field}={value}")
+        errors.extend(boundary_errors(project_root, content))
+    return errors
+
+
+def boundary_errors(project_root: Path, content: str) -> list[str]:
+    """Invariant I14: a writable path must not resolve into another repository.
+
+    A nested unit inside the writable paths would let a session write code that
+    its own CI, evidence chain and approvals never cover.
+    """
+    errors: list[str] = []
+    toplevel = git_toplevel(project_root)
+    if toplevel is None:
+        return errors
+    for raw in section_values(content, "permissions", "writable_paths"):
+        for value in raw.strip().strip("[]").split(","):
+            entry = value.strip().strip("'\"")
+            if not entry or "{{" in entry:
+                continue
+            configured = Path(entry)
+            if configured.is_absolute():
+                continue
+            referenced = existing_ancestor(project_root / configured)
+            entry_toplevel = git_toplevel(referenced)
+            if entry_toplevel is not None and entry_toplevel != toplevel:
+                errors.append(
+                    f"writable path leaves this harness: {entry} belongs to {entry_toplevel} "
+                    f"(expected {toplevel})"
+                )
     return errors
 
 

@@ -11,6 +11,7 @@ from typing import Any
 
 import layout
 from check_context_docs import validate_project
+from workspace_guard import git_toplevel
 
 
 class ContextResolutionError(ValueError):
@@ -102,8 +103,34 @@ def resolve_context(project_root: Path, targets: list[str], keywords: list[str] 
         layout.relative("context_index"),
         *(str(module["context"]) for module in selected_modules),
     ]
+    # Federation fields: which unit owns this resolution, and whether the task
+    # path escaped into a different repository. A cross-unit target fails closed
+    # instead of silently loading one project's context for another's code.
+    unit_id: str | None = None
+    identity_path = project_root / layout.identity_rel()
+    if identity_path.is_file():
+        try:
+            from workspace import load_identity
+
+            unit_id = str(load_identity(project_root).get("unit_id"))
+        except (OSError, UnicodeError, ValueError):
+            unit_id = None
+    project_toplevel = git_toplevel(project_root)
+    cross_unit = False
+    for target in normalized_targets:
+        candidate = target if Path(target).is_absolute() else project_root / target
+        target_toplevel = git_toplevel(candidate)
+        if project_toplevel is not None and target_toplevel is not None and target_toplevel != project_toplevel:
+            cross_unit = True
+    if cross_unit:
+        raise ContextResolutionError(
+            "target belongs to a different unit repository; open a session in that unit or file a "
+            "workspace change instead of loading foreign context"
+        )
     return {
         "schema_version": 1,
+        "unit_id": unit_id,
+        "cross_unit": cross_unit,
         "project_root": str(project_root),
         "targets": normalized_targets,
         "keywords": normalized_keywords,

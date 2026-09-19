@@ -18,3 +18,7 @@ __pycache__/
 # Temporary files
 *.tmp
 *.bak
+
+# Harness local caches (never commit; receipts and evidence stay tracked)
+.hek/state/workspace-projection.json
+.hek/state/*.cache.json

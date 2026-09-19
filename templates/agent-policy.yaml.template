@@ -40,3 +40,10 @@ delivery:
 methodology:
   lifecycle: .hek/kit/core/change-lifecycle.md
   engineering_skill: engineering
+
+# Optional federation pointer. Identity and contract edges live in
+# .hek/project/identity.yaml; these values only name this unit. Uncomment and
+# replace with the real ids when the project joins a workspace.
+# workspace:
+#   workspace_id: coil-platform
+#   unit_id: backend-ui

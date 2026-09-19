@@ -1,5 +1,5 @@
 name: engineering
-version: 0.6.0
+version: 1.0.0
 entry: SKILL.md
 platforms: [claude, codex, opencode, cursor, gemini, trae]
 routes: [backend, frontend, fullstack, api, database, ui, cross-module]

@@ -115,6 +115,14 @@ LEGACY_MARKERS = (
     "docs/methodology/core/ramer-cycle.md",
 )
 
+#: Versions this Kit shipped *under the legacy* ``docs/methodology`` layout.
+#: Ownership may only be inferred from a legacy tree when it carries HEK-specific
+#: evidence *and* its version is in this set; a product with its own
+#: ``docs/methodology/VERSION = 1.0.0`` must not be mistaken for a HEK install
+#: (spec section 5.10). 1.0.0 is deliberately absent: that release only ever used
+#: the ``.hek/`` layout, so it cannot be legacy evidence.
+KNOWN_HEK_RELEASES = ("0.1.0", "0.3.0", "0.4.0", "0.5.0", "0.5.1", "0.6.0")
+
 JAVA_SCANNER = "templates/fitness/JavaParameterScanner.java.template"
 
 # Kit-development scripts that must not be installed into target projects:
@@ -176,6 +184,29 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+class WorkspaceRootError(ValueError):
+    """The requested root is a workspace (many units), not a single project."""
+
+
+def looks_like_workspace_root(directory: Path) -> bool:
+    """True when ``directory`` only contains other Git repositories.
+
+    Orchestration roots must never be mistaken for a project: ``--unit-id`` (or
+    an explicit ``--project-root``) is required so the installer never writes a
+    control plane at the workspace level.
+    """
+    try:
+        children = list(directory.iterdir())
+    except OSError:
+        return False
+    repositories = [
+        child
+        for child in children
+        if child.is_dir() and ((child / ".git").is_dir() or (child / ".git").is_file())
+    ]
+    return len(repositories) >= 2
+
+
 def project_root(value: Path | None) -> Path:
     if value:
         return value.resolve()
@@ -188,7 +219,42 @@ def project_root(value: Path | None) -> Path:
         )
         return Path(result.stdout.strip()).resolve()
     except (OSError, subprocess.CalledProcessError):
-        return Path.cwd().resolve()
+        current = Path.cwd().resolve()
+        if looks_like_workspace_root(current):
+            raise WorkspaceRootError(
+                "current directory contains multiple Git units; run the command with an explicit "
+                "--project-root <unit> (or `hek workspace exec <unit> -- hek init`)"
+            )
+        return current
+
+
+def render_identity_template(template: str, *, unit_id: str, workspace_id: str, unit_kind: str, repo_url: str) -> str:
+    """Fill the identity draft with everything derivable from the repository."""
+    replacements = {
+        "{{WORKSPACE_ID}}": workspace_id,
+        "{{UNIT_ID}}": unit_id,
+        "{{UNIT_KIND}}": unit_kind,
+        "{{REPO_URL}}": repo_url,
+    }
+    rendered = template
+    for placeholder, value in replacements.items():
+        rendered = rendered.replace(placeholder, value)
+    return rendered
+
+
+def git_remote_url(root: Path) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "config", "--get", "remote.origin.url"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except OSError:
+        return "{{REPO_URL}}"
+    return result.stdout.strip() or "{{REPO_URL}}"
 
 
 def agent_target(agent: str | None) -> dict[str, str | None] | None:
@@ -236,9 +302,37 @@ def installed_version_path(root: Path) -> Path:
         return active
     legacy = root / layout.relative("version", layout=layout.LEGACY)
     if layout.relative("control_plane", layout=layout.LEGACY) != layout.relative("control_plane"):
-        if legacy.is_file():
+        if legacy.is_file() and hek_install_evidence(root):
             return legacy
     return active
+
+
+def hek_install_evidence(root: Path) -> bool:
+    """True only when HEK-specific evidence proves this is one of our installs.
+
+    Directory names such as ``docs/methodology`` are not evidence: an unrelated
+    product shipping the same tree would otherwise be adopted and blocked by the
+    version guard. Evidence is ``.hek/VERSION`` or a legacy tree that carries
+    both ``scripts/`` and ``core/`` with a version this Kit actually released.
+    """
+    if (root / layout.relative("version")).is_file():
+        return True
+    legacy_root = root / layout.relative("control_plane", layout=layout.LEGACY)
+    if not (legacy_root / "scripts").is_dir() or not (legacy_root / "core").is_dir():
+        return False
+    version = read_version(legacy_root / "VERSION")
+    return version in KNOWN_HEK_RELEASES
+
+
+def legacy_unverified(root: Path) -> bool:
+    """A ``docs/methodology`` tree that is not provably a HEK installation."""
+    candidate = root / layout.relative("control_plane", layout=layout.LEGACY)
+    return candidate.is_dir() and not hek_install_evidence(root)
+
+
+def identity_check_required(root: Path) -> bool:
+    """Federation checks stay off until a unit opts in with an identity file."""
+    return (root / layout.identity_rel()).is_file()
 
 
 def relayout_source(root: Path) -> Path | None:
@@ -254,6 +348,8 @@ def relayout_source(root: Path) -> Path | None:
     candidate = root / legacy_root
     if not candidate.is_dir() or (root / active_root).exists():
         return None
+    if not hek_install_evidence(root):
+        return None
     return candidate
 
 
@@ -262,6 +358,11 @@ def detect_status(root: Path, agent: str | None = None) -> str:
     # retired pre-0.5 markers are also present.
     if relayout_source(root) is not None:
         return "relayout"
+    # ``docs/methodology`` without HEK-specific evidence is some other product's
+    # tree; its markers must not turn the project into an unmigratable "legacy"
+    # install. Treat it as fresh and report ``legacy.unverified`` instead.
+    if legacy_unverified(root):
+        return "fresh"
     legacy = any((root / marker).exists() for marker in LEGACY_MARKERS)
     if legacy:
         return "legacy"
@@ -508,8 +609,19 @@ def relayout_plan(root: Path, actions: list[Action]) -> list[Action]:
     return moves + kept + _relayout_removals(root, skipped) + prunes
 
 
-def source_actions(source: Path, root: Path, tier: int, status: str, agent: str | None = None) -> list[Action]:
+def source_actions(
+    source: Path,
+    root: Path,
+    tier: int,
+    status: str,
+    agent: str | None = None,
+    unit_id: str | None = None,
+) -> list[Action]:
     actions: list[Action] = []
+    if unit_id:
+        actions.append(
+            Action("create-identity", "templates/identity.yaml.template", layout.identity_rel(), "unit identity draft")
+        )
     for relative, target in root_files_for(agent).items():
         destination = root / target
         if destination.is_file():
@@ -533,6 +645,10 @@ def source_actions(source: Path, root: Path, tier: int, status: str, agent: str 
         if relative.is_file():
             target_name = relative.name.replace(".template", "")
             actions.append(Action("sync", str(relative.relative_to(source)), f"{layout.relative('compaction')}/{target_name}", "portable compaction recovery resource"))
+    for relative in sorted((source / "templates/hooks").glob("*.template")):
+        target_name = relative.name.replace(".template", "")
+        target = f"{layout.relative('methodology')}/hooks/{target_name}"
+        actions.append(Action("sync", str(relative.relative_to(source)), target, "structural write guard hook"))
     actions.extend(
         Action("mkdir", None, target, "Harness workspace directory")
         for target in (
@@ -681,6 +797,18 @@ def render_plan(
     target_version: str | None = None,
 ) -> dict[str, object]:
     legacy_markers = [marker for marker in LEGACY_MARKERS if (root / marker).exists()]
+    warnings: list[dict[str, str]] = []
+    if legacy_unverified(root):
+        warnings.append(
+            {
+                "code": "legacy.unverified",
+                "message": (
+                    f"{layout.relative('control_plane', layout=layout.LEGACY)} exists but carries no "
+                    "HEK-specific evidence; treating the project as fresh. Directory names never "
+                    "decide ownership."
+                ),
+            }
+        )
     installed_version = installed_version if installed_version is not None else read_version(installed_version_path(root))
     target_version = target_version if target_version is not None else read_version(source / "VERSION")
     version_relation = classify_versions(installed_version, target_version)
@@ -707,6 +835,7 @@ def render_plan(
         "read_only": True,
         "legacy_files_preserved": True,
         "legacy_markers": legacy_markers,
+        "warnings": warnings,
         "actions": [action.__dict__ for action in actions],
     }
 
@@ -778,7 +907,13 @@ def validate_action_sources(source: Path, actions: list[Action], agent: str | No
     return errors
 
 
-def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[str, str]]:
+def apply_actions(
+    root: Path,
+    source: Path,
+    actions: list[Action],
+    *,
+    identity: dict[str, str] | None = None,
+) -> list[dict[str, str]]:
     results: list[dict[str, str]] = []
     snapshots: dict[Path, tuple[bytes, int]] = {}
     created_files: list[Path] = []
@@ -1075,6 +1210,23 @@ def apply_actions(root: Path, source: Path, actions: list[Action]) -> list[dict[
             source_file = source / action.source
             target = root / action.target
             ensure_safe_target(root, target)
+            if action.kind == "create-identity":
+                if target.exists():
+                    results.append({"target": action.target, "result": "preserved"})
+                    continue
+                values = identity or {}
+                rendered = render_identity_template(
+                    source_file.read_text(encoding="utf-8"),
+                    unit_id=values.get("unit_id", ""),
+                    workspace_id=values.get("workspace_id", "{{WORKSPACE_ID}}"),
+                    unit_kind=values.get("unit_kind", "backend"),
+                    repo_url=values.get("repo_url", "{{REPO_URL}}"),
+                )
+                ensure_dir(target.parent)
+                target.write_text(rendered, encoding="utf-8")
+                created_files.append(target)
+                results.append({"target": action.target, "result": "created", "sha256": sha256(target)})
+                continue
             overwrite = action.kind == "sync"
             snapshot(target)
             ensure_dir(target.parent)
@@ -1610,6 +1762,10 @@ def run_check(root: Path, source: Path, agent: str | None = None) -> tuple[int, 
         ("check_fitness_protection.py", ["check_fitness_protection.py", "--root", str(root)]),
         ("check_change_workspace.py", ["check_change_workspace.py", "--root", str(root)]),
     ]
+    # A single repository without an identity keeps the pre-federation behaviour:
+    # the check is skipped rather than failing on a file the project never had.
+    if identity_check_required(root):
+        checks.append(("check_identity.py", ["check_identity.py", "--root", str(root)]))
     checks.extend(
         (
             f"verify_skill.py ({platform})",
@@ -1660,6 +1816,7 @@ def main() -> int:
     parser.add_argument("--source-root", "--source", dest="source_root", type=Path, help="Harness kit checkout; defaults to this script's repository")
     parser.add_argument("--agent", choices=tuple(AGENT_TARGETS))
     parser.add_argument("--tier", type=int, choices=(1, 2), default=2)
+    parser.add_argument("--unit-id", help="Draft .hek/project/identity.yaml for this workspace unit")
     parser.add_argument("--name", help=argparse.SUPPRESS)
     parser.add_argument("--stack", help=argparse.SUPPRESS)
     parser.add_argument("--plan", action="store_true", help="print a read-only plan (default)")
@@ -1671,7 +1828,11 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args()
 
-    root = project_root(args.project_root)
+    try:
+        root = project_root(args.project_root)
+    except WorkspaceRootError as exc:
+        print(f"HARNESS ONBOARDING ERROR: {exc}", file=sys.stderr)
+        return 2
     source = (args.source_root or Path(__file__).resolve().parents[1]).resolve()
     if not (source / "templates").is_dir() or not (source / "scripts").is_dir():
         print(f"HARNESS ONBOARDING ERROR: invalid kit source: {source}", file=sys.stderr)
@@ -1697,7 +1858,11 @@ def main() -> int:
     version_relation = classify_versions(installed_version, target_version)
     if installed_version is None and status != "fresh":
         version_relation = "unversioned"
-    actions = source_actions(source, root, effective_tier, status, agent)
+    unit_id = args.unit_id.strip() if args.unit_id else None
+    if unit_id and not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,63}", unit_id):
+        print("HARNESS ONBOARDING ERROR: --unit-id must match ^[a-z0-9][a-z0-9-]{1,63}$", file=sys.stderr)
+        return 2
+    actions = source_actions(source, root, effective_tier, status, agent, unit_id)
     plan = render_plan(root, source, effective_tier, status, actions, agent, installed_version, target_version)
     if status == "relayout":
         plan["migration_required"] = True
@@ -1723,8 +1888,18 @@ def main() -> int:
             return 2
         plan["read_only"] = False
         plan["confirmed_at"] = datetime.now(timezone.utc).isoformat()
+        identity_values = (
+            {
+                "unit_id": unit_id,
+                "workspace_id": root.name,
+                "unit_kind": "backend",
+                "repo_url": git_remote_url(root),
+            }
+            if unit_id
+            else None
+        )
         try:
-            plan["results"] = apply_actions(root, source, actions)
+            plan["results"] = apply_actions(root, source, actions, identity=identity_values)
         except (OSError, shutil.Error) as exc:
             plan["errors"] = [f"apply failed and rolled back: {exc}"]
             if args.as_json:

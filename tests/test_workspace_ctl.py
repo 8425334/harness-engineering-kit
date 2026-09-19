@@ -1,0 +1,177 @@
+"""CLI contract tests for ``scripts/workspace_ctl.py``."""
+
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+import sys
+import unittest
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "tests"))
+
+from fixtures.workspace import build, fixture  # noqa: E402
+
+
+GIT = shutil.which("git")
+SCRIPT = REPO / "scripts/workspace_ctl.py"
+
+
+def run_workspace(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+
+@unittest.skipUnless(GIT, "git is required to materialize workspace fixtures")
+class WorkspaceCliTests(unittest.TestCase):
+    def test_discover_json_reports_units_and_contracts(self) -> None:
+        with fixture("pair-ok") as root:
+            completed = run_workspace(["discover", "--root", str(root), "--json"], root)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertEqual(payload["kind"], "workspace-projection")
+        self.assertEqual([unit["unit_id"] for unit in payload["units"]], ["backend-api", "backend-ui"])
+        self.assertEqual(len(payload["contracts"]), 2)
+        self.assertEqual(payload["diagnostics"], [])
+
+    def test_verify_nested_exits_two(self) -> None:
+        with fixture("nested") as root:
+            completed = run_workspace(["verify", "--root", str(root), "--json"], root)
+        self.assertEqual(completed.returncode, 2)
+        payload = json.loads(completed.stdout)
+        self.assertEqual(payload["status"], "blocked")
+        self.assertTrue(any(item["code"] == "unit.nested" for item in payload["diagnostics"]))
+
+    def test_verify_triple_ok_passes_with_three_local_specs(self) -> None:
+        with fixture("triple-ok") as root:
+            completed = run_workspace(["verify", "--root", str(root), "--json"], root)
+        self.assertEqual(completed.returncode, 0, completed.stdout)
+        payload = json.loads(completed.stdout)
+        self.assertEqual(payload["status"], "pass")
+        self.assertEqual(len(payload["units"]), 3)
+        self.assertEqual(payload["diagnostics"], [])
+        self.assertFalse((root / "workspace-spec.md").exists())
+
+    def test_verify_orphan_and_cycle_and_version_exit_two(self) -> None:
+        for name in ("pair-orphan", "cycle", "version-mismatch"):
+            with self.subTest(fixture=name):
+                with fixture(name) as root:
+                    completed = run_workspace(["verify", "--root", str(root)], root)
+                self.assertEqual(completed.returncode, 2)
+                self.assertIn("BLOCKED", completed.stdout)
+
+    def test_context_reports_unit_and_cross_unit(self) -> None:
+        with fixture("pair-ok") as root:
+            unit = root / "backend-api"
+            target = unit / "src/x.java"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("class X {}\n", encoding="utf-8")
+            completed = run_workspace(["context", str(target), "--json"], unit)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            payload = json.loads(completed.stdout)
+            self.assertEqual(payload["unit_id"], "backend-api")
+            self.assertFalse(payload["cross_unit"])
+            self.assertGreater(payload["input_bytes"], 0)
+            self.assertIn(".hek/context/AI.md", payload["load_order"])
+            # A target owned by another unit fails closed rather than loading it.
+            foreign = run_workspace(["context", str(root / "backend-ui/openspec"), "--json"], unit)
+            self.assertEqual(foreign.returncode, 2)
+
+    def test_exec_sets_env_and_cwd(self) -> None:
+        with fixture("pair-ok") as root:
+            completed = run_workspace(
+                [
+                    "exec", "--root", str(root), "backend-api", "--",
+                    sys.executable, "-c",
+                    "import os;print(os.getcwd());print(os.environ.get('HEK_UNIT'));print(os.environ.get('HEK_WORKSPACE'))",
+                ],
+                root,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            lines = completed.stdout.strip().splitlines()
+            self.assertEqual(Path(lines[0]).resolve(), (root / "backend-api").resolve())
+            self.assertEqual(lines[1], "backend-api")
+            self.assertEqual(lines[2], "coil-platform")
+
+    def test_guard_blocks_nested_and_allows_own_repo(self) -> None:
+        with fixture("nested") as root:
+            nested_target = root / "backend-api/backend-ui/src/x.ts"
+            nested_target.parent.mkdir(parents=True, exist_ok=True)
+            nested_target.write_text("export {}\n", encoding="utf-8")
+            blocked = run_workspace(
+                ["guard", "--path", str(nested_target), "--session-root", str(root / "backend-api"), "--json"],
+                root,
+            )
+            self.assertEqual(blocked.returncode, 2)
+            self.assertEqual(json.loads(blocked.stdout)["diagnostics"][0]["code"], "nested.detected")
+        with fixture("pair-ok") as root:
+            own = root / "backend-api/src/x.java"
+            own.parent.mkdir(parents=True, exist_ok=True)
+            own.write_text("class X {}\n", encoding="utf-8")
+            allowed = run_workspace(
+                ["guard", "--path", str(own), "--session-root", str(root / "backend-api"), "--json"],
+                root,
+            )
+            self.assertEqual(allowed.returncode, 0, allowed.stdout)
+
+    def test_guard_blocks_cross_repo_write(self) -> None:
+        with fixture("pair-ok") as root:
+            foreign = root / "backend-ui/src/x.ts"
+            foreign.parent.mkdir(parents=True, exist_ok=True)
+            foreign.write_text("export {}\n", encoding="utf-8")
+            completed = run_workspace(
+                ["guard", "--path", str(foreign), "--session-root", str(root / "backend-api"), "--json"],
+                root,
+            )
+        self.assertEqual(completed.returncode, 2)
+        self.assertEqual(json.loads(completed.stdout)["diagnostics"][0]["code"], "boundary.cross-repo")
+
+    def test_compat_tracks_provider_artifact_changes(self) -> None:
+        with fixture("pair-ok") as root:
+            consumer = root / "backend-ui"
+            passing = run_workspace(["compat", "--root", str(root), "--contract", "backend-api-http", "--json"], consumer)
+            self.assertEqual(passing.returncode, 0, passing.stdout + passing.stderr)
+            self.assertEqual(json.loads(passing.stdout)["verdict"], "pass")
+            self.assertTrue((consumer / ".hek/state/compat-backend-api-http.json").is_file())
+
+            artifact = root / "backend-api/contracts/openapi.yaml"
+            artifact.write_text('{"openapi":"3.1.0","info":{"version":"2.0.0"}}\n', encoding="utf-8")
+            failing = run_workspace(["compat", "--root", str(root), "--contract", "backend-api-http", "--json"], consumer)
+            self.assertEqual(failing.returncode, 2)
+            self.assertEqual(json.loads(failing.stdout)["verdict"], "fail")
+
+            snapshot = consumer / ".hek/project/contracts/backend-api-http.snapshot.json"
+            snapshot.write_text(artifact.read_text(encoding="utf-8"), encoding="utf-8")
+            updated = run_workspace(["compat", "--root", str(root), "--contract", "backend-api-http", "--json"], consumer)
+            self.assertEqual(updated.returncode, 0, updated.stdout)
+            self.assertEqual(json.loads(updated.stdout)["verdict"], "pass")
+
+    def test_graph_and_pin(self) -> None:
+        with fixture("triple-ok") as root:
+            graph = run_workspace(["graph", "--root", str(root), "--json"], root)
+            self.assertEqual(graph.returncode, 0, graph.stderr)
+            adjacency = json.loads(graph.stdout)
+            self.assertEqual(adjacency["backend-ui"], ["backend-api"])
+            self.assertEqual(adjacency["backend-api"], [])
+            pinned = run_workspace(["pin", "--root", str(root), "--json"], root)
+            self.assertEqual(pinned.returncode, 0, pinned.stderr)
+            self.assertEqual(json.loads(pinned.stdout)["version"], "1.0.0")
+        with fixture("version-mismatch") as root:
+            self.assertEqual(run_workspace(["pin", "--root", str(root)], root).returncode, 2)
+
+    def test_unknown_unit_exec_is_blocked(self) -> None:
+        with fixture("pair-ok") as root:
+            completed = run_workspace(["exec", "--root", str(root), "nope", "--", sys.executable, "-c", "pass"], root)
+        self.assertEqual(completed.returncode, 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

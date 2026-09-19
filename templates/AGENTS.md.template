@@ -30,4 +30,5 @@ state the finding and evidence, give the best option, and ask.
 
 `.hek/` holds the whole methodology: lifecycle, context resolution, evidence, lessons,
 and production controls. Start at `.hek/kit/core/harness-engineering.md`. `hek doctor`
-diagnoses the control plane and `hek repair` restores it.
+diagnoses the control plane and `hek repair` restores it. Multi-unit work follows
+`.hek/kit/core/workspace-federation.md`; `hek workspace guard` runs before writes.

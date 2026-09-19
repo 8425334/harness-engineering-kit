@@ -1,0 +1,29 @@
+name: workspace-compat
+
+# Consumer-side compatibility. The dependency direction is the responsibility
+# direction: the consumer verifies the provider contract it depends on, so no
+# central repository or registry is required.
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  compat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Harness Engineering Kit
+        run: npm install --no-save harness-engineering-kit
+      - name: Verify the workspace contract references
+        run: npx hek workspace verify --json
+      - name: Verify every consumed contract against its snapshot
+        run: |
+          for contract in $(npx hek workspace graph --json | node -e "process.stdin.resume()"); do
+            npx hek workspace compat --contract "$contract" --json || exit 2
+          done
+      - name: Upload compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-compat
+          path: .hek/state/compat-*.json

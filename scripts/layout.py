@@ -187,6 +187,8 @@ def relative(attribute: str, *, module_path: str | None = None, layout: Layout |
 
 POLICY_NAME = "agent-policy.yaml"
 PROFILE_NAME = "profile.yaml"
+IDENTITY_NAME = "identity.yaml"
+CONTRACTS_DIR_NAME = "contracts"
 
 
 def policy_rel(*, layout: Layout | None = None) -> str:
@@ -199,12 +201,30 @@ def profile_rel(*, layout: Layout | None = None) -> str:
     return f"{relative('policy_dir', layout=layout)}/{PROFILE_NAME}"
 
 
+def identity_rel(*, layout: Layout | None = None) -> str:
+    """Project-relative path of the unit self-description (federation identity)."""
+    return f"{relative('policy_dir', layout=layout)}/{IDENTITY_NAME}"
+
+
+def contracts_dir_rel(*, layout: Layout | None = None) -> str:
+    """Project-relative directory holding local contract snapshots."""
+    return f"{relative('policy_dir', layout=layout)}/{CONTRACTS_DIR_NAME}"
+
+
 def policy_path(root: Path | str | None = None, *, layout: Layout | None = None) -> Path:
     return project_root(root) / policy_rel(layout=layout)
 
 
 def profile_path(root: Path | str | None = None, *, layout: Layout | None = None) -> Path:
     return project_root(root) / profile_rel(layout=layout)
+
+
+def identity_path(root: Path | str | None = None, *, layout: Layout | None = None) -> Path:
+    return project_root(root) / identity_rel(layout=layout)
+
+
+def contracts_dir(root: Path | str | None = None, *, layout: Layout | None = None) -> Path:
+    return project_root(root) / contracts_dir_rel(layout=layout)
 
 
 def protected_prefix(*, layout: Layout | None = None) -> str:

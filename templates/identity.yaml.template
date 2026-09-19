@@ -1,0 +1,16 @@
+# Unit self-description (workspace federation).
+#
+# Only identity and contract edges live here: commands, permissions and context
+# configuration stay in agent-policy.yaml so a shared fact has exactly one
+# authority. Regenerate a draft with `hek init --unit-id <id>` and fill the
+# remaining placeholders from repository facts.
+schema_version: 1
+kind: harness-unit
+
+workspace_id: "{{WORKSPACE_ID}}"
+unit_id: "{{UNIT_ID}}"
+unit_kind: "{{UNIT_KIND}}"
+repo_url: "{{REPO_URL}}"
+
+publishes: []
+consumes: []

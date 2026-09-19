@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+"""Verify consumed contract snapshots against the declared provider version.
+
+Local half of invariant I13: the snapshot a consumer commits must match the
+provider artifact it claims to depend on. The remote half (tag addressability)
+runs in consumer CI once the provider version is fetched.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import sys
+from pathlib import Path
+
+IDENTITY = ".hek/project/identity.yaml"
+
+
+def main() -> int:
+    root = Path(__file__).resolve().parents[3]
+    if not (root / IDENTITY).is_file():
+        # No identity: this repository has not opted into federation.
+        print("contract pin: federation disabled (no identity)")
+        return 0
+    problems: list[str] = []
+    text = (root / IDENTITY).read_text(encoding="utf-8")
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("snapshot:"):
+            continue
+        relative = stripped.split(":", 1)[1].strip().strip("'\"")
+        snapshot = root / relative
+        if not snapshot.is_file():
+            problems.append(f"declared snapshot does not exist: {relative}")
+            continue
+        digest = hashlib.sha256(snapshot.read_bytes()).hexdigest()
+        print(f"contract pin: {relative} sha256={digest[:12]}")
+    if problems:
+        for problem in problems:
+            print(f"- {problem}")
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

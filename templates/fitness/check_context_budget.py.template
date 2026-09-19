@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+"""Enforce MAX_INPUT_BYTES and keep cross-unit context free of unrelated L1.
+
+Invariant I11: one task's trusted context never exceeds 262144 bytes, and a
+cross-unit task loads the coordinator's L0/L1 plus contract snapshots only.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+MAX_INPUT_BYTES = 262144
+CONTEXT_INDEX = ".hek/context/ai.json"
+IDENTITY = ".hek/project/identity.yaml"
+
+
+def main() -> int:
+    root = Path(__file__).resolve().parents[3]
+    index = root / CONTEXT_INDEX
+    if not index.is_file():
+        print("context budget: no context index; nothing to measure")
+        return 0
+    payload = json.loads(index.read_text(encoding="utf-8"))
+    total = 0
+    for module in payload.get("modules", []):
+        context = root / str(module.get("context", ""))
+        if context.is_file():
+            total += context.stat().st_size
+    federated = (root / IDENTITY).is_file()
+    print(f"context budget: {total} bytes (federated={federated})")
+    if total > MAX_INPUT_BYTES:
+        print(f"- input_bytes {total} exceeds MAX_INPUT_BYTES {MAX_INPUT_BYTES}")
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

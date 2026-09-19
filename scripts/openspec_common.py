@@ -11,6 +11,46 @@ LIFECYCLE_OWNER = "openspec"
 GOVERNANCE_PROVIDER = "harness-engineering"
 REQUIRED_WORKFLOWS = ["explore", "propose", "apply", "verify", "sync", "archive"]
 
+#: Workspace federation adds one optional ``workspace`` section to
+#: ``governance.json``. It references unit-local changes and specs; it never
+#: carries spec content, which would create a second authority.
+WORKSPACE_ROLES = ("provider", "consumer", "independent")
+WORKSPACE_KEYS = (
+    "workspace_id",
+    "unit_id",
+    "role",
+    "change_id",
+    "derived_from",
+    "related_changes",
+    "contracts",
+)
+WORKSPACE_REQUIRED_KEYS = ("workspace_id", "unit_id", "role")
+RELATED_CHANGE_KEYS = ("unit", "change_id", "specs")
+RELATED_CHANGE_REQUIRED_KEYS = ("unit", "change_id", "specs")
+SPEC_REFERENCE_KEYS = ("unit", "path")
+CONTRACT_KEYS = ("contract", "provider", "from_version", "to_version", "breaking", "deprecated_until", "verification")
+CONTRACT_REQUIRED_KEYS = ("contract", "provider", "from_version", "to_version", "breaking")
+
+
+def workspace_contract() -> dict[str, object]:
+    """Return the canonical field contract of ``governance.json.workspace``.
+
+    ``orchestration_contract`` is deliberately untouched: it is compared with a
+    strict equality check, so adding keys there would invalidate every existing
+    change. This contract is additive and only consulted when the optional
+    ``workspace`` key is present.
+    """
+    return {
+        "keys": list(WORKSPACE_KEYS),
+        "required_keys": list(WORKSPACE_REQUIRED_KEYS),
+        "roles": list(WORKSPACE_ROLES),
+        "related_change_keys": list(RELATED_CHANGE_KEYS),
+        "related_change_required_keys": list(RELATED_CHANGE_REQUIRED_KEYS),
+        "spec_reference_keys": list(SPEC_REFERENCE_KEYS),
+        "contract_keys": list(CONTRACT_KEYS),
+        "contract_required_keys": list(CONTRACT_REQUIRED_KEYS),
+    }
+
 
 def openspec_executable() -> str:
     """Resolve the OpenSpec CLI for subprocess use.

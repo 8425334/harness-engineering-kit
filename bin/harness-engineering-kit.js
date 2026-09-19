@@ -47,7 +47,12 @@ const TIER_CHOICES = [
 ];
 
 const KEY_HINT = '（↑/↓ 移动，Enter 确认，Ctrl+C 取消）';
-const VALUE_OPTIONS = new Set(['--agent', '--prompt', '--project-root', '--source-root', '--tier']);
+const VALUE_OPTIONS = new Set([
+  '--agent', '--prompt', '--project-root', '--source-root', '--tier',
+  '--root', '--depth', '--contract', '--unit', '--path', '--session-root', '--unit-id',
+]);
+
+const WORKSPACE_COMMANDS = new Set(['discover', 'verify', 'context', 'exec', 'guard', 'compat', 'graph', 'run', 'pin']);
 
 function usage() {
   return `Harness Engineering Kit ${metadata.version}
@@ -62,10 +67,23 @@ Usage:
   harness-engineering-kit handoff [options] Generate a prompt for a desktop Agent without CLI
   harness-engineering-kit agents [options]  List supported AI agents
 
+Workspace federation:
+  harness-engineering-kit workspace discover [--root <dir>]... [--depth N] [--refresh] [--json]
+  harness-engineering-kit workspace verify [--root <dir>]... [--json]
+  harness-engineering-kit workspace context <path> [--json]
+  harness-engineering-kit workspace exec <unit> -- <cmd...>
+  harness-engineering-kit workspace guard --path <path> [--session-root <dir>] [--json]
+  harness-engineering-kit workspace compat --contract <id> [--json]
+  harness-engineering-kit workspace graph [--json]
+  harness-engineering-kit workspace run <unit>|all <fast_test|test|build|fitness>
+  harness-engineering-kit workspace pin [--version X] [--json]
+
 Options:
   --project-root <path>  Target project (default: current Git root/current directory)
   --source-root <path>   Kit source (default: installed package)
   --tier <1|2>           Install scope: 1 = lightweight, 2 = full (default: 2)
+  --unit-id <id>         Draft .hek/project/identity.yaml for this workspace unit
+  --root <path>          Workspace root for a workspace subcommand; repeat to combine roots
   --yes                  Apply init or repair without an interactive confirmation
   --apply                Apply init without an interactive confirmation
   --plan                 Make init or repair read-only
@@ -112,7 +130,14 @@ never writes outside the project root. doctor is the read-only equivalent. Use
 function applyOption(result, name, value) {
   if (!value || value.startsWith('-')) throw new Error(`${name} requires a value`);
   if (name === '--tier' && !['1', '2'].includes(value)) throw new Error('--tier must be 1 or 2');
+  if (name === '--depth' && !/^\d+$/.test(value)) throw new Error('--depth must be a positive integer');
   const optionName = name.slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+  if (name === '--root') {
+    // `--root` accumulates: repeated flags select several roots, and a later
+    // flag must never silently drop an earlier one.
+    result.options.root = [...(result.options.root || []), value];
+    return;
+  }
   result.options[optionName] = value;
 }
 
@@ -121,6 +146,10 @@ function parseArgs(argv) {
   const args = [...argv];
   while (args.length) {
     const token = args.shift();
+    if (token === '--') {
+      result.options.rest = [...args];
+      break;
+    }
     if (!result.command && !token.startsWith('-')) {
       result.command = token;
       continue;
@@ -146,6 +175,9 @@ function parseArgs(argv) {
     else if (token === '--keep-project-facts') result.options.keepProjectFacts = true;
     else if (VALUE_OPTIONS.has(token)) {
       applyOption(result, token, args.shift());
+    } else if (result.command === 'workspace' && !token.startsWith('-')) {
+      if (!result.options.subcommand) result.options.subcommand = token;
+      else result.options.positionals = [...(result.options.positionals || []), token];
     } else {
       throw new Error(`unknown option: ${token}`);
     }
@@ -437,10 +469,76 @@ function baseArgs(options) {
     if (agent) args.push('--agent', agent.id);
   }
   if (options.tier) args.push('--tier', options.tier);
+  if (options.unitId) args.push('--unit-id', options.unitId);
   if (options.uninstall) args.push('--uninstall');
   if (options.keepProjectFacts) args.push('--keep-project-facts');
   if (options.json) args.push('--json');
   return args;
+}
+
+// Workspace subcommands. The Python entry point stays the single source of
+// logic; this wrapper only shapes argv and forwards the exit code.
+function workspaceArgs(options) {
+  const subcommand = options.subcommand;
+  if (!WORKSPACE_COMMANDS.has(subcommand)) {
+    throw new Error(`workspace requires one of ${[...WORKSPACE_COMMANDS].join(', ')}`);
+  }
+  const args = [subcommand];
+  const roots = options.root || [];
+  const positionals = options.positionals || [];
+  const common = () => {
+    roots.forEach((root) => args.push('--root', path.resolve(root)));
+    if (options.depth) args.push('--depth', String(options.depth));
+  };
+  if (subcommand !== 'context' && subcommand !== 'guard') common();
+  if (options.json) args.push('--json');
+  if (subcommand === 'discover' && options.refresh) args.push('--refresh');
+  if (subcommand === 'context') {
+    if (!positionals.length) throw new Error('workspace context requires a <path>');
+    args.push(positionals[0]);
+  }
+  if (subcommand === 'exec') {
+    if (!positionals.length) throw new Error('workspace exec requires a <unit>');
+    args.push(positionals[0], '--');
+    if (!Array.isArray(options.rest) || !options.rest.length) {
+      throw new Error('workspace exec requires `-- <cmd...>`');
+    }
+    args.push(...options.rest);
+  }
+  if (subcommand === 'guard') {
+    if (!options.path) throw new Error('workspace guard requires --path <path>');
+    args.push('--path', path.resolve(options.path));
+    if (options.sessionRoot) args.push('--session-root', path.resolve(options.sessionRoot));
+  }
+  if (subcommand === 'compat') {
+    if (!options.contract) throw new Error('workspace compat requires --contract <id>');
+    args.push('--contract', options.contract);
+  }
+  if (subcommand === 'run') {
+    if (positionals.length < 2) throw new Error('workspace run requires <unit>|all and a stage');
+    args.push(positionals[0], positionals[1]);
+  }
+  if (subcommand === 'pin' && options.version) args.push('--version', options.version);
+  return args;
+}
+
+function runWorkspace(options) {
+  const interpreter = findPython();
+  const script = path.join(path.resolve(options.sourceRoot || packageRoot), 'scripts', 'workspace_ctl.py');
+  if (!fs.existsSync(script) || !fs.statSync(script).isFile()) {
+    throw new Error(`Harness source is missing scripts/workspace_ctl.py: ${path.dirname(script)}`);
+  }
+  const completed = spawnSync(interpreter.command, [...interpreter.args, script, ...workspaceArgs(options)], {
+    cwd: path.resolve(options.projectRoot || process.cwd()),
+    encoding: 'utf8',
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      ...(options.sessionRoot ? { HEK_SESSION_ROOT: path.resolve(options.sessionRoot) } : {}),
+    },
+  });
+  if (completed.error) throw completed.error;
+  return typeof completed.status === 'number' ? completed.status : 2;
 }
 
 function invoke(modes, options, capture = false) {
@@ -900,6 +998,7 @@ async function main(argv = process.argv.slice(2)) {
     if (parsed.command === 'repair') return await runRepair(parsed.options);
     if (parsed.command === 'doctor') return await runRepair(parsed.options, true);
     if (parsed.command === 'handoff') return runHandoff(parsed.options);
+    if (parsed.command === 'workspace') return runWorkspace(parsed.options);
     if (parsed.command === 'plan') return invoke('plan', { ...parsed.options, json: true, forwardAgent: true }).status || 0;
     if (parsed.command === 'check') return invoke('check', parsed.options).status || 0;
     throw new Error(`unknown command: ${parsed.command}`);
@@ -932,6 +1031,7 @@ module.exports = {
   repairArgs,
   runRepair,
   runUninstall,
+  runWorkspace,
   selectAgent,
   selectTier,
   selectWithArrows,
@@ -940,4 +1040,5 @@ module.exports = {
   summarizeDiagnosis,
   summarizeRepairReceipt,
   usage,
+  workspaceArgs,
 };
