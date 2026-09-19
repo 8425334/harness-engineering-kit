@@ -109,6 +109,23 @@ npx --yes --package github:8425334/harness-engineering-kit hek doctor --json
 npx --yes --package github:8425334/harness-engineering-kit hek repair --yes
 ```
 
+### 工作区联邦
+
+多个相互独立的工程可以协同，不引入中心仓。每个 unit 在自身仓内提交 `.hek/project/identity.yaml`，组级视图按需实时投影：
+
+```bash
+npx --yes --package github:8425334/harness-engineering-kit hek init --unit-id backend-api --yes
+npx --yes --package github:8425334/harness-engineering-kit hek workspace discover --root .. --json
+npx --yes --package github:8425334/harness-engineering-kit hek workspace verify --root .. --json
+npx --yes --package github:8425334/harness-engineering-kit hek workspace context src/api/order.ts --json
+npx --yes --package github:8425334/harness-engineering-kit hek workspace guard --path src/api/order.ts --session-root . --json
+npx --yes --package github:8425334/harness-engineering-kit hek workspace exec backend-api -- hek check
+npx --yes --package github:8425334/harness-engineering-kit hek workspace compat --contract backend-api-http --json
+npx --yes --package github:8425334/harness-engineering-kit hek workspace graph --json
+```
+
+`discover` 与 `verify` 以 JSON 输出 unit、契约边和诊断，blocked 时退出码为 2。`guard` 只依据 Git 事实判定写入目标是否属于当前会话，嵌套仓或平级兄弟仓会在任何代码写入前被阻断。工程级嵌套不再支持；拆分迁移可使用一次性、带截止时间的豁免，但 `verify` 在结构真正拆分前始终报 blocked。每个参与 unit 各自持有一个 OpenSpec change 和 spec——A、B、C 三个工程参与时存在三份通过 `governance.json.workspace.related_changes` 关联的本地 spec，workspace 根永不持有 spec。详见[工作区联邦](core/workspace-federation.md)。
+
 无 CLI 的桌面 Agent 先执行 `hek init --direct --yes` 导入项目控制面，再执行 `hek handoff --agent workbuddy` 或 `hek handoff --agent trae-work`。然后在对应 Agent 中打开项目，复制命令生成的提示词，让 Agent 读取项目内的 `AGENTS.md`/`CLAUDE.md` 和 `.hek/project/agent-policy.yaml`。`handoff` 不会猜测或启动未知桌面应用，也不会写入项目文件。
 
 交互式 `init` 会先询问安装范围（未指定 `--tier` 时用方向键选择完整/轻量接入），再启动所选 Agent，由 Agent 完成接入。所选 Agent 只会得到自己的原生根入口（Claude Code 为 `CLAUDE.md`，Gemini CLI 为 `GEMINI.md`，Codex/OpenCode 及兼容 Agent 为 `AGENTS.md`）和对应的项目 Skill，不会同时初始化另一套入口。在 Agent 菜单中选择跳过项即可走兼容性确定性流程，未检测到已安装 Agent 时自动回退。非交互环境不会意外拉起外部程序，使用 `--open` 可显式开启（需配合 `--agent`/`HEK_AGENT`）。`--json` 切换为机器可读输出：从不启动 Agent、也从不交互确认——不带 `--yes` 时打印只读计划并以退出码 2 结束；带 `--yes` 时执行安装、检查并输出单一 JSON 回执（apply 失败回滚时也输出含 `errors` 的回执）。`HEK_AGENT` 可作为 `--agent` 的环境变量替代，`--prompt` 可覆盖传给终端 Agent 的首条提示词（提示词以单行传递，避免 Windows `cmd.exe` 截断）。默认提示词直接按用户语言理解和作答，不做“中文→英文→中文”转译；固定规则放在稳定前缀，项目路径、Tier、Agent 和授权状态集中在末尾，便于上下文缓存复用。

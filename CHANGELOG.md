@@ -21,6 +21,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Uninstall no longer deletes anything it cannot verify: the no-receipt fallback compares every candidate against the current Kit source and leaves non-matching files in place, OpenSpec Skill directories whose digests are missing from an older receipt are kept instead of removed unverified, and symlinked target paths are reported as kept rather than aborting the whole run.
 - Uninstall prunes emptied directory trees bottom-up, so a leftover empty subdirectory no longer fails the run with `Directory not empty`, and a receipt that cannot be written is reported as a structured error instead of an uncaught traceback.
 
+## [1.0.0] — 2026-09-19
+
+### Added
+- **Workspace federation.** Multiple independent Git units now cooperate without a central repository. Each unit self-describes its identity and contract edges in a committed `.hek/project/identity.yaml`, and `hek workspace discover` projects the group view at request time (rooted in the units, cached in `.hek/state/workspace-projection.json`, keyed by a layout-independent content digest). The projection is a view, never a second authority.
+- **Per-unit specs and change references.** Every participating unit opens its own OpenSpec change with at least one local spec, and a cross-unit change set links them through `governance.json.workspace.related_changes`. When A, B and C participate there are three local specs, and the workspace root must not own `openspec/changes/`, `specs/` or `workspace-spec.md`.
+- **`hek workspace` CLI.** `discover`, `verify`, `context`, `exec`, `guard`, `compat`, `graph`, `run` and `pin`, all backed by `scripts/workspace_ctl.py` with the Kit's usual `0`/`2` exit codes. The Node CLI forwards arguments to that Python entry point: `--root` accumulates, positionals are preserved, and `exec <unit> -- <cmd...>` passes the command through untouched.
+- **Mechanical boundary guard (I14).** `hek workspace guard --path ... --session-root ...` decides ownership from Git and filesystem facts only, never from directory names. A nested unit or a cross-repository write returns exit code 2, so engineering-level nesting is blocked before any AI write instead of relying on the model to remember.
+- **Contract graph validation.** `consumes`/`publishes` edges are aggregated into a graph checked for orphan consumers, provider URL mismatches, duplicate providers and cycles. `hek workspace compat --contract <id>` writes consumer-side evidence to `.hek/state/compat-<id>.json` and `hek workspace graph` prints the adjacency list.
+- Added `core/workspace-federation.md` (and its `i18n/zh` counterpart), a write-guard hook template, a consumer compatibility CI workflow template, and `check_contract_pin.py` / `check_context_budget.py` Fitness templates. `hek init --unit-id <id>` drafts `.hek/project/identity.yaml`.
+
+### Changed
+- **Engineering-level nesting is no longer supported.** A unit repository inside another unit repository must be split into siblings. A one-off waiver bound to a change digest and an expiry (`.hek/state/waivers/nested-<id>.json`) lets the migration proceed, but `verify` still reports blocked until the structure is actually split: the guard answers "may I write now", verify answers "is the structure compliant".
+- Installation ownership is now evidence-based. A tree that merely contains `docs/methodology` (or `docs/sdd`) is no longer adopted as an HEK installation; it is treated as a fresh project with a `legacy.unverified` warning unless it carries HEK-specific evidence (`.hek/VERSION`, or both `docs/methodology/scripts/` and `docs/methodology/core/` with a version this Kit actually released). This removes the downgrade block caused by an unrelated product shipping its own `docs/methodology/VERSION = 1.0.0`.
+- `check_agent_policy.py` fails closed when a `permissions.writable_paths` entry resolves into a different Git repository than the harness root, and `resolve_context.py` reports `unit_id` / `cross_unit` and fails closed instead of loading one unit's context chain for another unit's target.
+- `governance.json` gained an optional `workspace` section (validated by `check_change_workspace.py`) whose `related_changes` references unit-local changes and specs without copying their content.
+
+### Removed
+- `docs/workspace-federation.zh.md` moved to `docs/spec/workspace-federation.zh.md` as the requirements baseline for this change.
+
 ## [0.5.1] — 2026-09-08
 
 ### Changed

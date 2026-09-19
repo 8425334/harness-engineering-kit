@@ -13,6 +13,10 @@ For `unversioned` or `invalid`, the Agent must identify the actual installed rel
 
 The install tier is independent of the version relationship. Tier 1 and Tier 2 describe the desired scope of this run. A Tier 1 run still synchronizes all Tier 1 canonical resources; Tier 2 additionally installs Fitness and lesson-memory assets.
 
+## 1.0.0
+
+1.0.0 adds workspace federation: several independent Git units cooperate without a central repository, each owning its own `.hek/project/identity.yaml`, OpenSpec change and specs. Applying it to a project with engineering-level nesting (one unit repository inside another) is blocked until the units are split into siblings; the migration may use a one-off, time-boxed waiver at `.hek/state/waivers/nested-<id>.json`, but `hek workspace verify` keeps reporting blocked until the structure is compliant. Installation ownership is decided by evidence rather than directory names, so a tree that merely contains `docs/methodology` is treated as fresh with a `legacy.unverified` warning instead of being adopted and blocked by a downgrade.
+
 ## Release migrations
 
 Normal upgrades are data-free resource synchronization and do not require a version-specific script. A release that needs manual review or a structural migration adds one entry to `migrations/releases.json` keyed by its target version. The onboarding plan reports matching release entries and their manual decisions; it never deletes legacy files or rewrites project-owned facts automatically.

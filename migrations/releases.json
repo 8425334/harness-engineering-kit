@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "policy": {
-    "version_source": "docs/methodology/VERSION",
+    "version_source": ".hek/VERSION",
     "upgrade": "low-to-high-only",
     "same_version": "run-drift-check",
     "downgrade": "blocked"
@@ -54,6 +54,18 @@
         "Rewrite .github/workflows/** by hand. CI triggers and steps that reference docs/fitness/** now need .hek/fitness/**, and .github is deliberately outside the writable paths so the migration never edits it. This is the only reference the migration cannot fix for you.",
         "Update context.index_max_bytes to 8192 and context.detail_max_lines to 800 if the project still carries the pre-0.5.1 limits; check_agent_policy.py fails closed until they match.",
         "References inside openspec/changes/archive/** are intentionally left untouched: they record what was run at the time and rewriting them would falsify the audit trail."
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "kind": "structural",
+      "summary": "Add workspace federation: per-unit identity, live projection, contract graph, cross-unit spec references, and a mechanical boundary guard that disables engineering-level nesting.",
+      "manual_review": [
+        "Engineering-level nesting is no longer supported. A unit repository inside another unit repository must be moved out to a sibling location and installed as its own harness; until then `hek workspace guard` blocks writes and `hek workspace verify` reports unit.nested. A one-off, externally approved waiver at .hek/state/waivers/nested-<id>.json covers the split migration only; verify still reports blocked until the split is done.",
+        "Each participating unit needs its own .hek/project/identity.yaml (draft it with `hek init --unit-id <id>`), committed with the code. Multi-unit changes reference each participating unit's local OpenSpec change and specs through governance.json.workspace.related_changes; a single workspace-level spec is not an acceptable substitute.",
+        "Installation ownership is now decided by evidence, not directory names. A tree that merely contains docs/methodology without HEK-specific evidence (a .hek/VERSION, or both docs/methodology/scripts/ and docs/methodology/core/ with a released version) is treated as a fresh project with a legacy.unverified warning instead of being adopted and blocked by a downgrade.",
+        "agent-policy.yaml permissions.writable_paths must not point into another Git repository; check_agent_policy.py now fails closed on a writable path whose repository differs from the harness root.",
+        "Add the .hek/state/workspace-projection.json and .hek/state/*.cache.json entries to .gitignore: the projection is a cache and must never be committed, while receipts and compat-*.json evidence stay tracked for audit."
       ]
     }
   ]
