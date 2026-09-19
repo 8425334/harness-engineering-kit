@@ -48,6 +48,7 @@ unit 指一个可独立构建、独立验证、独立交付的 Git 仓；federat
 | `hek workspace graph [--json]` | 契约图邻接表 |
 | `hek workspace run <unit>\|all <fast_test\|test\|build\|fitness>` | 本地聚合执行 |
 | `hek workspace pin [--version X]` | 记录并校验 Kit 版本 pin |
+| `hek workspace status [--root <dir>]... [--json]` | 报告哪个 unit 未接入、哪个 consumer 落后于 provider |
 
 退出码与 Kit 其余部分一致：`0` 通过，`2` blocked。
 

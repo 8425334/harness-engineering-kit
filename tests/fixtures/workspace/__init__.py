@@ -31,6 +31,7 @@ KNOWN_FIXTURES = (
     "pair-uncloned",
     "nested",
     "nested-no-identity",
+    "nested-cross",
     "foreign-methodology",
     "version-mismatch",
     "untracked-identity",
@@ -640,6 +641,58 @@ def materialize(name: str, destination: Path) -> Path:
                 role="independent",
                 change_id=ui_change,
                 related=[related_entry("backend-ui", ui_change, [spec_path(ui_change, "export")])],
+            ),
+        )
+        return destination
+
+    if name == "nested-cross":
+        # A nested unit *and* a sibling unit in one fixture: nesting is a
+        # structural violation regardless of who owns the session, while a
+        # sibling write is a boundary violation of a different kind.
+        api_change = "backend-api-add-export"
+        ui_change = "backend-ui-update-export"
+        client_change = "client-api-adapt-export"
+        build_unit(
+            destination / "backend-api",
+            workspace_id=workspace_id,
+            unit_id="backend-api",
+            repo_url=api_url,
+            change_id=api_change,
+            workspace=workspace_section(
+                workspace_id=workspace_id,
+                unit_id="backend-api",
+                role="independent",
+                change_id=api_change,
+                related=[related_entry("backend-api", api_change, [spec_path(api_change, "export")])],
+            ),
+        )
+        build_unit(
+            destination / "backend-api/backend-ui",
+            workspace_id=workspace_id,
+            unit_id="backend-ui",
+            unit_kind="frontend",
+            repo_url=ui_url,
+            change_id=ui_change,
+            workspace=workspace_section(
+                workspace_id=workspace_id,
+                unit_id="backend-ui",
+                role="independent",
+                change_id=ui_change,
+                related=[related_entry("backend-ui", ui_change, [spec_path(ui_change, "export")])],
+            ),
+        )
+        build_unit(
+            destination / "client-api",
+            workspace_id=workspace_id,
+            unit_id="client-api",
+            repo_url=client_url,
+            change_id=client_change,
+            workspace=workspace_section(
+                workspace_id=workspace_id,
+                unit_id="client-api",
+                role="independent",
+                change_id=client_change,
+                related=[related_entry("client-api", client_change, [spec_path(client_change, "export")])],
             ),
         )
         return destination

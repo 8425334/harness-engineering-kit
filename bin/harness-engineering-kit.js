@@ -52,7 +52,7 @@ const VALUE_OPTIONS = new Set([
   '--root', '--depth', '--contract', '--unit', '--path', '--session-root', '--unit-id',
 ]);
 
-const WORKSPACE_COMMANDS = new Set(['discover', 'verify', 'context', 'exec', 'guard', 'compat', 'graph', 'run', 'pin']);
+const WORKSPACE_COMMANDS = new Set(['discover', 'verify', 'context', 'exec', 'guard', 'compat', 'graph', 'run', 'pin', 'status']);
 
 function usage() {
   return `Harness Engineering Kit ${metadata.version}
@@ -77,6 +77,7 @@ Workspace federation:
   harness-engineering-kit workspace graph [--json]
   harness-engineering-kit workspace run <unit>|all <fast_test|test|build|fitness>
   harness-engineering-kit workspace pin [--version X] [--json]
+  harness-engineering-kit workspace status [--root <dir>]... [--json]
 
 Options:
   --project-root <path>  Target project (default: current Git root/current directory)

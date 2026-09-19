@@ -294,6 +294,27 @@ class GuardTests(unittest.TestCase):
             diagnostics = workspace_guard.guard(target, root / "backend-api")
         self.assertEqual([item.code for item in diagnostics], ["boundary.cross-repo"])
 
+    def test_nested_and_cross_are_distinguished(self) -> None:
+        """`nested-cross` carries both violations; the guard names the right one."""
+        with fixture("nested-cross") as root:
+            nested_target = root / "backend-api/backend-ui/src/x.ts"
+            sibling_target = root / "client-api/src/x.ts"
+            for target in (nested_target, sibling_target):
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("export {}\n", encoding="utf-8")
+            session = root / "backend-api"
+            self.assertEqual(
+                [item.code for item in workspace_guard.guard(nested_target, session)],
+                ["nested.detected"],
+            )
+            self.assertEqual(
+                [item.code for item in workspace_guard.guard(sibling_target, session)],
+                ["boundary.cross-repo"],
+            )
+            code, projection = workspace.verify([root])
+        self.assertEqual(code, 2)
+        self.assertTrue(any(item.code == "unit.nested" for item in projection.diagnostics))
+
     def test_nesting_waiver_is_scoped(self) -> None:
         with fixture("nested") as root:
             waivers = root / "backend-api/.hek/state/waivers"

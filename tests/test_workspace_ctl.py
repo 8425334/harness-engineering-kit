@@ -172,6 +172,32 @@ class WorkspaceCliTests(unittest.TestCase):
             completed = run_workspace(["exec", "--root", str(root), "nope", "--", sys.executable, "-c", "pass"], root)
         self.assertEqual(completed.returncode, 2)
 
+    def test_status_reports_consumer_lag(self) -> None:
+        with fixture("pair-ok") as root:
+            aligned = run_workspace(["status", "--root", str(root), "--json"], root)
+            self.assertEqual(aligned.returncode, 0, aligned.stderr)
+            payload = json.loads(aligned.stdout)
+            self.assertEqual(payload["status"], "pass")
+            self.assertEqual(len(payload["units"]), 2)
+            self.assertEqual(payload["not_onboarded"], [])
+            self.assertEqual([item["state"] for item in payload["consumers"]], ["ok"])
+
+            (root / "backend-api/contracts/VERSION").write_text("2.0.0\n", encoding="utf-8")
+            lagging = run_workspace(["status", "--root", str(root), "--json"], root)
+            self.assertEqual(lagging.returncode, 0, lagging.stderr)
+            entry = json.loads(lagging.stdout)["consumers"][0]
+            self.assertEqual(entry["state"], "behind")
+            self.assertEqual(entry["published"], "2.0.0")
+            self.assertEqual(entry["unit_id"], "backend-ui")
+
+    def test_status_lists_units_without_identity(self) -> None:
+        with fixture("pair-ok") as root:
+            (root / "backend-ui/.hek/project/identity.yaml").unlink()
+            completed = run_workspace(["status", "--root", str(root), "--json"], root)
+        self.assertEqual(completed.returncode, 2)
+        payload = json.loads(completed.stdout)
+        self.assertTrue(any(item["code"] == "identity.missing" for item in payload["not_onboarded"]))
+
     def test_context_budget_exceeded_is_blocked(self) -> None:
         with fixture("pair-ok") as root:
             unit = root / "backend-api"

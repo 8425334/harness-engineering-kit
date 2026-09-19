@@ -122,9 +122,10 @@ npx --yes --package github:8425334/harness-engineering-kit hek workspace guard -
 npx --yes --package github:8425334/harness-engineering-kit hek workspace exec backend-api -- hek check
 npx --yes --package github:8425334/harness-engineering-kit hek workspace compat --contract backend-api-http --json
 npx --yes --package github:8425334/harness-engineering-kit hek workspace graph --json
+npx --yes --package github:8425334/harness-engineering-kit hek workspace status --root .. --json
 ```
 
-`discover` 与 `verify` 以 JSON 输出 unit、契约边和诊断，blocked 时退出码为 2。`guard` 只依据 Git 事实判定写入目标是否属于当前会话，嵌套仓或平级兄弟仓会在任何代码写入前被阻断。工程级嵌套不再支持；拆分迁移可使用一次性、带截止时间的豁免，但 `verify` 在结构真正拆分前始终报 blocked。每个参与 unit 各自持有一个 OpenSpec change 和 spec——A、B、C 三个工程参与时存在三份通过 `governance.json.workspace.related_changes` 关联的本地 spec，workspace 根永不持有 spec。详见[工作区联邦](core/workspace-federation.md)。
+`discover` 与 `verify` 以 JSON 输出 unit、契约边和诊断，blocked 时退出码为 2；`status` 回答哪个 unit 未接入、哪个 consumer 的声明范围已不接受 provider 发布的版本。`guard` 只依据 Git 事实判定写入目标是否属于当前会话，嵌套仓或平级兄弟仓会在任何代码写入前被阻断。工程级嵌套不再支持；拆分迁移可使用一次性、带截止时间的豁免，但 `verify` 在结构真正拆分前始终报 blocked。每个参与 unit 各自持有一个 OpenSpec change 和 spec——A、B、C 三个工程参与时存在三份通过 `governance.json.workspace.related_changes` 关联的本地 spec，workspace 根永不持有 spec。详见[工作区联邦](core/workspace-federation.md)。
 
 无 CLI 的桌面 Agent 先执行 `hek init --direct --yes` 导入项目控制面，再执行 `hek handoff --agent workbuddy` 或 `hek handoff --agent trae-work`。然后在对应 Agent 中打开项目，复制命令生成的提示词，让 Agent 读取项目内的 `AGENTS.md`/`CLAUDE.md` 和 `.hek/project/agent-policy.yaml`。`handoff` 不会猜测或启动未知桌面应用，也不会写入项目文件。
 

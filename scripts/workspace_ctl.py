@@ -25,6 +25,7 @@ from workspace import (
     load_identity,
     parse_identity,
     resolve_contract_version,
+    version_satisfies,
     verify,
 )
 from workspace_guard import (
@@ -388,6 +389,90 @@ def cmd_pin(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_status(args: argparse.Namespace) -> int:
+    """Scale-out report: which unit is not onboarded, which consumer lags."""
+    roots = _roots(args.root)
+    projection = discover(roots, args.depth)
+    contracts = {item["contract"]: item for item in projection.contracts}
+
+    not_onboarded = [
+        {"unit_id": item.unit_id, "code": item.code, "message": item.message}
+        for item in projection.diagnostics
+        if item.code in {"identity.missing", "unit.no-harness", "identity.schema", "identity.untracked"}
+    ]
+    units = [
+        {
+            "unit_id": unit.unit_id,
+            "kit_version": unit.kit_version,
+            "harness_root": unit.harness_rel,
+            "identity_tracked": unit.tracked,
+            "unit_kind": unit.unit_kind,
+        }
+        for unit in projection.units
+    ]
+    consumers: list[dict[str, object]] = []
+    for unit in projection.units:
+        for consume in unit.consumes:
+            contract = str(consume["contract"])
+            provider = contracts.get(contract)
+            declared = str(consume.get("version", ""))
+            actual = provider["version"] if provider else None
+            if provider is None:
+                state, reason = "unresolved", "provider is not visible in this checkout"
+            elif actual is None:
+                state, reason = "unknown", "provider version source is not readable"
+            else:
+                satisfied = version_satisfies(str(actual), declared)
+                if satisfied is True:
+                    state, reason = "ok", "declared range accepts the published version"
+                elif satisfied is False:
+                    state, reason = "behind", "declared range does not accept the published version"
+                else:
+                    state, reason = "unknown", "range is not decidable locally"
+            consumers.append(
+                {
+                    "unit_id": unit.unit_id,
+                    "contract": contract,
+                    "provider": provider["provider"] if provider else None,
+                    "declared": declared,
+                    "published": actual,
+                    "state": state,
+                    "reason": reason,
+                }
+            )
+
+    payload = {
+        "schema_version": 1,
+        "kind": "workspace-status",
+        "workspace_id": projection.workspace_id,
+        "digest": projection.digest,
+        "status": "blocked" if has_blocked(projection.diagnostics) else "pass",
+        "units": units,
+        "not_onboarded": not_onboarded,
+        "consumers": consumers,
+        "diagnostics": [item.as_dict() for item in projection.diagnostics],
+    }
+    if args.as_json:
+        _print_json(payload)
+    else:
+        print(f"WORKSPACE STATUS {payload['status'].upper()}: {projection.workspace_id or '(none)'}")
+        print(f"Units: {len(units)}")
+        for unit in units:
+            print(f"  - {unit['unit_id']} kit={unit['kit_version']} harness={unit['harness_root'] or '-'}")
+        if not_onboarded:
+            print(f"Not onboarded: {len(not_onboarded)}")
+            for item in not_onboarded:
+                print(f"  - {item['code']}: {item['message']}")
+        lagging = [item for item in consumers if item["state"] != "ok"]
+        print(f"Consumers: {len(consumers)} ({len(lagging)} needing attention)")
+        for item in lagging:
+            print(
+                f"  - {item['unit_id']} {item['contract']}: {item['state']} "
+                f"(declared {item['declared']}, published {item['published']})"
+            )
+    return 2 if has_blocked(projection.diagnostics) else 0
+
+
 # --------------------------------------------------------------------------
 # Argument parsing
 # --------------------------------------------------------------------------
@@ -451,6 +536,10 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     pin_parser.add_argument("--version")
     pin_parser.set_defaults(handler=cmd_pin)
 
+    status_parser = subparsers.add_parser("status", help="Report onboarding and consumer-version lag")
+    _common(status_parser)
+    status_parser.set_defaults(handler=cmd_status)
+
     return parser.parse_args(argv)
 
 
@@ -461,7 +550,7 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit as exc:  # argparse already printed usage
         return int(exc.code or 2)
     if not getattr(parsed, "handler", None):
-        print("usage: hek workspace <discover|verify|context|exec|guard|compat|graph|run|pin>", file=sys.stderr)
+        print("usage: hek workspace <discover|verify|context|exec|guard|compat|graph|run|pin|status>", file=sys.stderr)
         return 2
     try:
         return parsed.handler(parsed)

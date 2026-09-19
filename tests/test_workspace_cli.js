@@ -52,6 +52,10 @@ test('parses workspace subcommands, repeated --root, and the exec separator', ()
 
   const run = cliModule.parseArgs(['workspace', 'run', 'all', 'test']);
   assert.deepEqual(run.options.positionals, ['all', 'test']);
+
+  const status = cliModule.parseArgs(['workspace', 'status', '--root', 'a', '--json']);
+  assert.equal(status.options.subcommand, 'status');
+  assert.deepEqual(cliModule.workspaceArgs(status.options).slice(0, 4), ['status', '--root', path.resolve('a'), '--json']);
 });
 
 test('forwards workspace arguments to the Python entry point', () => {

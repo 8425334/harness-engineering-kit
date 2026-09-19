@@ -302,6 +302,59 @@ def is_semver_range(value: str) -> bool:
     return True
 
 
+def _semver_tuple(value: str) -> tuple[int, int, int] | None:
+    match = re.match(r"^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?", value.strip())
+    if not match:
+        return None
+    return (int(match.group(1)), int(match.group(2) or 0), int(match.group(3) or 0))
+
+
+def _range_token_satisfied(target: tuple[int, int, int], token: str) -> bool | None:
+    """Evaluate one range token; ``None`` means the token is not decidable."""
+    match = re.fullmatch(r"(\^|~|>=|<=|>|<|=)?\s*(.+)", token.strip())
+    if not match:
+        return None
+    operator = match.group(1) or "="
+    raw = match.group(2).strip()
+    if raw in {"*", "x", "X"} or raw.lower().endswith((".x", ".*")):
+        return True
+    bound = _semver_tuple(raw)
+    if bound is None:
+        return None
+    if operator == "^":
+        return target[0] == bound[0] and target >= bound
+    if operator == "~":
+        return target[:2] == bound[:2] and target >= bound
+    if operator == ">=":
+        return target >= bound
+    if operator == "<=":
+        return target <= bound
+    if operator == ">":
+        return target > bound
+    if operator == "<":
+        return target < bound
+    # A bare version pins exactly the precision it states: "1.5" means any 1.5.z.
+    precision = len([part for part in raw.lstrip("vV").split(".") if part != ""])
+    return target[:precision] == bound[:precision]
+
+
+def version_satisfies(version: str, expression: str) -> bool | None:
+    """Whether ``version`` satisfies ``expression``; ``None`` when undecidable."""
+    target = _semver_tuple(version)
+    if target is None or not isinstance(expression, str) or not expression.strip():
+        return None
+    for alternative in expression.split("||"):
+        tokens = alternative.split()
+        if not tokens:
+            continue
+        results = [_range_token_satisfied(target, token) for token in tokens]
+        if any(result is None for result in results):
+            return None
+        if all(results):
+            return True
+    return False
+
+
 def unit_scoped_path(payload: Any) -> tuple[str, str]:
     """Parse and validate an I7 ``{"unit": ..., "path": ...}`` reference."""
     if not isinstance(payload, dict):

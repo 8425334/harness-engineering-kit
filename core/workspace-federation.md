@@ -55,6 +55,7 @@ cross-unit change; it only stores references.
 | `hek workspace graph [--json]` | Contract adjacency list |
 | `hek workspace run <unit>\|all <fast_test\|test\|build\|fitness>` | Checkout-local aggregated run |
 | `hek workspace pin [--version X]` | Record and verify the Kit version pin |
+| `hek workspace status [--root <dir>]... [--json]` | Report which unit is not onboarded and which consumer lags its provider |
 
 Exit codes match the rest of the Kit: `0` pass, `2` blocked.
 
