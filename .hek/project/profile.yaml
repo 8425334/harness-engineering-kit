@@ -1,0 +1,25 @@
+version: 2
+profile: standard
+project_risk: medium
+owner: "harness-engineering-kit maintainers"
+
+non_trivial_definition: "any change under scripts/, core/, templates/, bin/, or a governed OpenSpec change"
+
+evidence:
+  required_gates: ["fast"]
+  approval: external-reference-required
+  production: linked-record-required
+
+self_refine:
+  policy: required
+  max_iterations: 3
+
+exceptions:
+  record_path: ".hek/state/exceptions.jsonl"
+  owner_required: true
+  expiry_required: true
+
+review:
+  rule_owner: "harness-engineering-kit maintainers"
+  methodology_version: "1.0.0"
+  next_review: "2027-03-31"

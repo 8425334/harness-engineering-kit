@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "change_id": "workspace-federation-refactor",
+  "title": "工作区联邦重构：per-unit spec、契约图与边界门禁",
+  "profile": "standard",
+  "risk": "medium",
+  "skill": "engineering",
+  "mode": "backend",
+  "trigger": "explicit-selection",
+  "delivery_scope": "technical",
+  "production_record": null,
+  "project_root": "H:\\Project\\harness-engineering-kit",
+  "owner": "harness-engineering-kit maintainers",
+  "orchestration": {
+    "change_id": "workspace-federation-refactor",
+    "lifecycle_owner": "openspec",
+    "governance_provider": "harness-engineering",
+    "workflows": [
+      "explore",
+      "propose",
+      "apply",
+      "verify",
+      "sync",
+      "archive"
+    ],
+    "governance": [
+      "context",
+      "requirement-reflection",
+      "approval",
+      "execution-evidence",
+      "fitness",
+      "production"
+    ]
+  },
+  "created_at": "2026-09-19T17:49:18.475586+00:00",
+  "updated_at": "2026-09-19T17:49:18.475586+00:00",
+  "events": [
+    {
+      "event": "skill.triggered",
+      "change_id": "workspace-federation-refactor",
+      "skill": "engineering",
+      "mode": "backend",
+      "trigger": "explicit-selection",
+      "phase": "EXPLORE",
+      "actor": "harness-engineering-kit maintainers",
+      "reason": null,
+      "at": "2026-09-19T17:49:18.475586+00:00"
+    }
+  ]
+}

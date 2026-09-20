@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "kind": "context-index",
+  "project": "Harness Engineering Kit",
+  "summary": "Repository-native controls for AI-assisted software changes: onboarding, OpenSpec governance, fitness gates, lesson memory, and workspace federation.",
+  "modules": [
+    {
+      "path": ".",
+      "summary": "Kit root: installed layout, control-plane entrypoints, versioning, and the workspace federation model.",
+      "context": ".hek/context/AI.md",
+      "read_when": ["harness-engineering-kit", "methodology", "workspace federation"]
+    },
+    {
+      "path": "scripts",
+      "summary": "Deterministic control scripts: onboarding, checks, workspace federation, repair, and evidence records.",
+      "context": ".hek/context/scripts/AI.md",
+      "read_when": ["control script", "onboard", "workspace_ctl"]
+    },
+    {
+      "path": "tests",
+      "summary": "Python and Node contract tests plus the workspace federation fixtures built in temporary directories.",
+      "context": ".hek/context/tests/AI.md",
+      "read_when": ["unittest", "node test", "workspace fixture"]
+    }
+  ],
+  "entrypoints": {
+    "policy": ".hek/project/agent-policy.yaml",
+    "lifecycle": "core/change-lifecycle.md"
+  }
+}
