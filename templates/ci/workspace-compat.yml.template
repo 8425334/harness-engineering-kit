@@ -2,7 +2,11 @@ name: workspace-compat
 
 # Consumer-side compatibility. The dependency direction is the responsibility
 # direction: the consumer verifies the provider contract it depends on, so no
-# central repository or registry is required.
+#
+# This workflow runs in a consumer repository and therefore checks out only that
+# repository: `compat` is the consumer gate. The aggregated `verify` needs every
+# participating unit to be visible, so it belongs in the separate job below,
+# which is opt-in because it requires all member repositories.
 on:
   pull_request:
   workflow_dispatch:
@@ -14,16 +18,25 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Harness Engineering Kit
         run: npm install --no-save harness-engineering-kit
-      - name: Verify the workspace contract references
-        run: npx hek workspace verify --json
-      - name: Verify every consumed contract against its snapshot
-        run: |
-          for contract in $(npx hek workspace graph --json | node -e "process.stdin.resume()"); do
-            npx hek workspace compat --contract "$contract" --json || exit 2
-          done
+      - name: Verify every consumed contract against its snapshot and version range
+        run: npx hek workspace compat --all --json
       - name: Upload compatibility evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: workspace-compat
           path: .hek/state/compat-*.json
+
+  aggregate:
+    # Optional: needs a checkout of every participating unit. Paths below assume
+    # sibling working copies; adjust the checkout step to your own layout.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: unit-under-review
+      - name: Install Harness Engineering Kit
+        run: npm install --no-save harness-engineering-kit
+      - name: Verify the federation invariants across every visible unit
+        run: npx hek workspace verify --root . --json

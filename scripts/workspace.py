@@ -21,10 +21,12 @@ from workspace_guard import (
     WARNING,
     Diagnostic,
     find_repos,
+    git_superproject,
     git_toplevel,
     git_tracked,
     has_blocked,
     locate_harness_root,
+    nesting_pairs,
     nested_repos_inside,
     sort_diagnostics,
 )
@@ -284,21 +286,26 @@ def normalize_unit_path(value: str) -> str | None:
     return "/".join(parts)
 
 
+#: Semver core with no leading zeros (``01.2.3`` is not a valid version).
+_SEMVER_CORE = r"(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){0,2}(?:[-+][0-9A-Za-z.\-]+)?"
+_SEMVER_WILDCARD = r"(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*))*\.[xX*]|[xX*]|\*"
+_RANGE_TOKEN = re.compile(rf"^(?:\^|~|>=|<=|>|<|=)?(?:{_SEMVER_CORE}|{_SEMVER_WILDCARD})$")
+
+
 def is_semver_range(value: str) -> bool:
-    """Accept the semver range forms the Kit documents (``^1.4.0``, ``>=1.0``)."""
+    """Accept the semver range forms the Kit documents (``^1.4.0``, ``>=1.0``).
+
+    Rejects leading zeros, which are invalid in semver and were previously
+    accepted (``01.2.3``).
+    """
     if not isinstance(value, str) or not value.strip():
         return False
     for alternative in value.split("||"):
         tokens = alternative.strip().split()
         if not tokens:
             return False
-        for token in tokens:
-            match = re.fullmatch(r"(\^|~|>=|<=|>|<|=)?\s*(.+)", token)
-            if not match:
-                return False
-            version = match.group(2).strip()
-            if not re.fullmatch(r"v?\d+(\.\d+)?(\.\d+)?([-+][0-9A-Za-z.\-]+)?|v?\d+(\.\d+)?(\.\d+)?\.?[xX*]|x|\*", version):
-                return False
+        if any(not _RANGE_TOKEN.match(token) for token in tokens):
+            return False
     return True
 
 
@@ -344,7 +351,10 @@ def version_satisfies(version: str, expression: str) -> bool | None:
     if target is None or not isinstance(expression, str) or not expression.strip():
         return None
     for alternative in expression.split("||"):
-        tokens = alternative.split()
+        # ``>= 1.0`` and ``>=1.0`` must mean the same thing here; the validator
+        # only accepts the compact form, so normalise before tokenising.
+        normalized = re.sub(r"(\^|~|>=|<=|>|<|=)\s+", r"\1", alternative.strip())
+        tokens = normalized.split()
         if not tokens:
             continue
         results = [_range_token_satisfied(target, token) for token in tokens]
@@ -368,6 +378,8 @@ def unit_scoped_path(payload: Any) -> tuple[str, str]:
     normalized = normalize_unit_path(path) if isinstance(path, str) else None
     if normalized is None:
         raise ValueError(f"unit-scoped path must be a normalized unit-relative POSIX path: {path!r}")
+    if path.strip() != normalized:
+        raise ValueError(f"unit-scoped path is not normalized: {path!r} (expected {normalized!r})")
     return unit, normalized
 
 
@@ -611,8 +623,9 @@ def change_dirs(unit_root: Path) -> list[Path]:
     )
 
 
-def active_workspace_change(unit_root: Path) -> tuple[str | None, dict[str, Any] | None]:
-    """Return ``(change_id, workspace_section)`` for the unit's current change."""
+def workspace_changes(unit_root: Path) -> list[tuple[str, dict[str, Any]]]:
+    """Every local change of ``unit_root`` that declares a workspace section."""
+    found: list[tuple[str, dict[str, Any]]] = []
     for change_dir in change_dirs(unit_root):
         record = read_governance(change_dir)
         if record is None:
@@ -620,8 +633,14 @@ def active_workspace_change(unit_root: Path) -> tuple[str | None, dict[str, Any]
         workspace = record.get("workspace")
         if isinstance(workspace, dict):
             change_id = str(workspace.get("change_id") or change_dir.name)
-            return change_id, workspace
-    return None, None
+            found.append((change_id, workspace))
+    return found
+
+
+def active_workspace_change(unit_root: Path) -> tuple[str | None, dict[str, Any] | None]:
+    """Return ``(change_id, workspace_section)`` for the unit's current change."""
+    found = workspace_changes(unit_root)
+    return found[0] if found else (None, None)
 
 
 def spec_files(change_dir: Path) -> list[Path]:
@@ -678,9 +697,21 @@ def _spec_reference_diagnostics(units: list[Unit]) -> list[Diagnostic]:
     diagnostics: list[Diagnostic] = []
 
     for unit in units:
-        change_id, workspace = active_workspace_change(unit.root)
-        if workspace is None:
+        declared_changes = workspace_changes(unit.root)
+        if not declared_changes:
             continue
+        change_id, workspace = declared_changes[0]
+        for extra_change_id, _ in declared_changes[1:]:
+            # I15: exactly one local change per participating unit.
+            diagnostics.append(
+                Diagnostic(
+                    BLOCKED,
+                    "spec.duplicate",
+                    f"{unit.unit_id} declares a workspace section in more than one change: "
+                    f"{change_id}, {extra_change_id}",
+                    unit.unit_id,
+                )
+            )
         label = f"{unit.unit_id}/{change_id}"
         unknown = sorted(set(workspace) - set(GOVERNANCE_WORKSPACE_KEYS))
         if unknown:
@@ -748,15 +779,13 @@ def _spec_reference_diagnostics(units: list[Unit]) -> list[Diagnostic]:
                 continue
             for spec_index, spec in enumerate(specs):
                 spec_label = f"{entry_label}.specs[{spec_index}]"
-                if not isinstance(spec, dict) or set(spec) != set(SPEC_REFERENCE_KEYS):
-                    diagnostics.append(Diagnostic(BLOCKED, "spec.reference", f"{spec_label} keys must be exactly {list(SPEC_REFERENCE_KEYS)}", unit.unit_id))
+                try:
+                    spec_unit, relative = unit_scoped_path(spec)
+                except ValueError as exc:
+                    diagnostics.append(Diagnostic(BLOCKED, "spec.reference", f"{spec_label}: {exc}", unit.unit_id))
                     continue
-                if spec.get("unit") != member_id:
+                if spec_unit != member_id:
                     diagnostics.append(Diagnostic(BLOCKED, "spec.reference", f"{spec_label}.unit must equal {member_id}", unit.unit_id))
-                relative = normalize_unit_path(spec.get("path"))
-                if relative is None:
-                    diagnostics.append(Diagnostic(BLOCKED, "spec.reference", f"{spec_label}.path is not a normalized unit path", unit.unit_id))
-                    continue
                 resolved = member.root / relative
                 if not resolved.is_file():
                     diagnostics.append(Diagnostic(BLOCKED, "spec.missing", f"{spec_label}.path does not exist: {relative}", unit.unit_id))
@@ -858,6 +887,17 @@ def _contract_diagnostics(units: list[Unit]) -> tuple[list[dict[str, Any]], list
                 continue
             if owner.unit_id != unit.unit_id:
                 edges[unit.unit_id].add(owner.unit_id)
+            else:
+                # A unit that consumes the contract it publishes is a one-node
+                # cycle: the graph is no longer acyclic (I6).
+                diagnostics.append(
+                    Diagnostic(
+                        BLOCKED,
+                        "contract.cycle",
+                        f"{unit.unit_id} consumes its own published contract {contract}",
+                        unit.unit_id,
+                    )
+                )
 
     # Cycle detection over consumer -> provider edges.
     state: dict[str, int] = {}
@@ -878,10 +918,84 @@ def _contract_diagnostics(units: list[Unit]) -> tuple[list[dict[str, Any]], list
     return contracts, diagnostics
 
 
+def _governance_contract_diagnostics(units: list[Unit], contracts: list[dict[str, Any]]) -> list[Diagnostic]:
+    """Align ``governance.workspace.contracts`` with the aggregated projection.
+
+    The unit-local check in ``check_change_workspace.py`` can only prove that the
+    record matches its own identity; only the aggregate sees every unit, so the
+    provider identity and the published version are verified here.
+    """
+    diagnostics: list[Diagnostic] = []
+    by_contract = {str(item["contract"]): item for item in contracts}
+    consumers = {
+        unit.unit_id: {str(item["contract"]): str(item.get("version", "")) for item in unit.consumes}
+        for unit in units
+    }
+    for unit in units:
+        _, workspace = active_workspace_change(unit.root)
+        if not isinstance(workspace, dict):
+            continue
+        entries = workspace.get("contracts")
+        if not isinstance(entries, list):
+            continue
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                continue
+            label = f"{unit.unit_id}: workspace.contracts[{index}]"
+            contract = str(entry.get("contract", ""))
+            provider = str(entry.get("provider", ""))
+            recorded = by_contract.get(contract)
+            if recorded is None:
+                diagnostics.append(
+                    Diagnostic(BLOCKED, "contract.orphan", f"{label} names an unpublished contract: {contract}", unit.unit_id)
+                )
+                continue
+            if recorded["provider"] != provider:
+                diagnostics.append(
+                    Diagnostic(
+                        BLOCKED,
+                        "contract.provider-mismatch",
+                        f"{label} claims provider {provider} but {contract} is published by {recorded['provider']}",
+                        unit.unit_id,
+                    )
+                )
+                continue
+            declared = consumers.get(unit.unit_id, {}).get(contract)
+            to_version = entry.get("to_version")
+            if declared and isinstance(to_version, str):
+                satisfied = version_satisfies(to_version, declared)
+                if satisfied is False:
+                    diagnostics.append(
+                        Diagnostic(
+                            BLOCKED,
+                            "contract.version",
+                            f"{label} moves to {to_version}, outside the declared range {declared}",
+                            unit.unit_id,
+                        )
+                    )
+            published = recorded.get("version")
+            if published and isinstance(to_version, str) and to_version != published:
+                diagnostics.append(
+                    Diagnostic(
+                        WARNING,
+                        "contract.version",
+                        f"{label} records to_version {to_version} but {recorded['provider']} publishes {published}",
+                        unit.unit_id,
+                    )
+                )
+    return diagnostics
+
+
 def discover(roots: list[Path | str], depth: int = 1) -> Projection:
     """Aggregate the federation projection from the given roots."""
     root_paths = [Path(root).resolve() for root in roots] or [Path.cwd().resolve()]
     diagnostics: list[Diagnostic] = []
+
+    missing_roots = [root for root in root_paths if not root.exists()]
+    for root in missing_roots:
+        diagnostics.append(
+            Diagnostic(BLOCKED, "workspace.root", f"workspace root does not exist: {root}")
+        )
 
     candidates: list[tuple[Path, int]] = []
     seen: set[Path] = set()
@@ -891,9 +1005,25 @@ def discover(roots: list[Path | str], depth: int = 1) -> Projection:
                 seen.add(repo)
                 candidates.append((repo, index))
 
-    # Structural nesting (I4) is independent of depth and of identity.
-    nested: set[tuple[Path, Path]] = set()
+    if not candidates and not missing_roots:
+        diagnostics.append(
+            Diagnostic(
+                BLOCKED,
+                "workspace.root",
+                "no Git repository found under: " + ", ".join(str(root) for root in root_paths),
+            )
+        )
+
+    # Structural nesting (I4) is independent of depth and of identity:
+    #  * pairwise over every enumerated candidate (covers `--depth` findings),
+    #  * a walk inside each candidate (covers repositories the enumeration did
+    #    not reach), and
+    #  * the Git superproject fact (covers submodules).
+    nested: set[tuple[Path, Path]] = nesting_pairs(repo for repo, _ in candidates)
     for repo, _ in candidates:
+        superproject = git_superproject(repo)
+        if superproject is not None:
+            nested.add((superproject, repo))
         for inner in nested_repos_inside(repo):
             nested.add((repo, inner))
     for outer, inner in sorted(nested):
@@ -1004,6 +1134,7 @@ def discover(roots: list[Path | str], depth: int = 1) -> Projection:
 
     contracts, contract_diagnostics = _contract_diagnostics(units)
     diagnostics.extend(contract_diagnostics)
+    diagnostics.extend(_governance_contract_diagnostics(units, contracts))
     diagnostics.extend(_spec_reference_diagnostics(units))
     unit_roots = {unit.root for unit in units} | candidate_roots
     for root in root_paths:
@@ -1023,10 +1154,6 @@ def discover(roots: list[Path | str], depth: int = 1) -> Projection:
 def verify(roots: list[Path | str], depth: int = 1) -> tuple[int, Projection]:
     projection = discover(roots, depth)
     return (2 if has_blocked(projection.diagnostics) else 0), projection
-
-
-def aggregation_findings(projection: Projection) -> list[dict[str, Any]]:
-    return [item.as_dict() for item in projection.diagnostics]
 
 
 def graph(projection: Projection) -> dict[str, list[str]]:

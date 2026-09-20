@@ -9,7 +9,9 @@ import re
 import sys
 from pathlib import Path
 
+import layout
 from openspec_common import validate_orchestration, workspace_contract
+from workspace import load_identity, version_satisfies
 
 
 CHANGES_REL = "openspec/changes"
@@ -120,6 +122,7 @@ def validate_workspace_contracts(project_root: Path, workspace: dict) -> list[st
     if not isinstance(entries, list):
         return ["governance.json workspace.contracts must be a list"]
     unit_id = workspace.get("unit_id")
+    published, consumed = identity_contract_edges(project_root)
     breaking = [entry for entry in entries if isinstance(entry, dict) and entry.get("breaking") is True]
     if breaking and not workspace.get("derived_from"):
         errors.append("governance.json workspace.derived_from is required for a breaking contract change")
@@ -162,7 +165,51 @@ def validate_workspace_contracts(project_root: Path, workspace: dict) -> list[st
                     resolved = resolve_project_relative(project_root, relative)
                     if resolved is None or not resolved.is_file():
                         errors.append(f"{label}.verification.path does not exist in this unit: {relative}")
+        # Alignment with the unit's own identity (spec section 3.3): a change
+        # record may only describe a contract this unit actually publishes or
+        # consumes, and the version it moves to must be one it declares it
+        # accepts. Without this the contracts block was free text.
+        contract_id = entry.get("contract")
+        if published or consumed:
+            if contract_id not in published and contract_id not in consumed:
+                errors.append(
+                    f"{label}.contract {contract_id} is not declared in {layout.identity_rel()} "
+                    "(publishes/consumes)"
+                )
+            elif contract_id in consumed:
+                to_version = entry.get("to_version")
+                declared = consumed[contract_id]
+                if isinstance(to_version, str) and SEMVER_PATTERN.match(to_version) and declared:
+                    satisfied = version_satisfies(to_version, declared)
+                    if satisfied is False:
+                        errors.append(
+                            f"{label}.to_version {to_version} is outside the declared consumes range "
+                            f"{declared} in {layout.identity_rel()}"
+                        )
+                    elif satisfied is None:
+                        errors.append(
+                            f"{label}.to_version cannot be checked against the declared range {declared}"
+                        )
     return errors
+
+
+def identity_contract_edges(project_root: Path) -> tuple[set[str], dict[str, str]]:
+    """``(published contracts, consumed contract -> declared range)``.
+
+    Returns empty collections when the unit has no identity, so a change without
+    federation stays valid on the pre-federation path.
+    """
+    if not (project_root / layout.identity_rel()).is_file():
+        return set(), {}
+    try:
+        identity = load_identity(project_root)
+    except (OSError, UnicodeError, ValueError):
+        return set(), {}
+    published = {str(item.get("contract")) for item in identity.get("publishes") or []}
+    consumed = {
+        str(item.get("contract")): str(item.get("version", "")) for item in identity.get("consumes") or []
+    }
+    return published, consumed
 
 
 def validate_governance_workspace(project_root: Path, record: dict) -> list[str]:

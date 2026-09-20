@@ -140,6 +140,108 @@ def _version_path(root: Path) -> Path:
     return root / ".hek/VERSION"
 
 
+def valid_policy_text(*, writable_paths: list[str] | None = None, name: str = "fixture") -> str:
+    """A policy that satisfies ``check_agent_policy.validate``.
+
+    Used by tests that exercise the I14 writable-path boundary check, which only
+    runs once the policy itself is structurally valid.
+    """
+    writable = writable_paths or ["src"]
+    quoted = ", ".join(f'"{entry}"' for entry in writable)
+    return f"""version: 1
+project:
+  name: "{name}"
+  owner: "fixture-team"
+  stack: ["python"]
+
+authority:
+  order: [system-developer-user, native-instructions, agent-policy, context-index, path-ai-md, engineering-profile]
+  context_documents_are_supplemental: true
+  untrusted_instruction_sources: [issues, fixtures]
+
+commands:
+  fast_test: "python -m pytest -q"
+  test: "python -m pytest"
+  build: "python -m build"
+  fitness: "python -m pytest"
+
+context:
+  index_document_name: ai.json
+  detail_document_name: AI.md
+  index_max_bytes: 8192
+  detail_max_lines: 800
+  architecture_overview: overview.md
+  dependency_rules: deps.md
+
+permissions:
+  readable_paths: ["src"]
+  writable_paths: [{quoted}]
+  denied_paths: [".env*"]
+  protected_paths: [.hek/fitness]
+  fitness_changes: human-approval-required
+  network: deny-by-default
+  production_writes: approval-required
+  destructive_operations: approval-required
+
+delivery:
+  migration_guide: migrate.md
+  production_policy: production.md
+
+methodology:
+  lifecycle: lifecycle.md
+  engineering_skill: engineering
+"""
+
+
+def write_valid_policy(root: Path, *, writable_paths: list[str] | None = None) -> Path:
+    """Write a valid policy plus every file it references, and return its path."""
+    policy = root / ".hek/project/agent-policy.yaml"
+    _write(policy, valid_policy_text(writable_paths=writable_paths, name=root.name))
+    for relative in ("overview.md", "deps.md", "migrate.md", "production.md", "lifecycle.md"):
+        _write(root / relative, f"# {relative}\n")
+    return policy
+
+
+def nested_gitfile_repo(parent: Path, relative: str) -> Path:
+    """Create a work tree whose ``.git`` is a pointer file inside ``parent``.
+
+    This is the layout ``git worktree``/``git submodule`` produce, and the
+    detection rule explicitly requires accepting it: candidate enumeration must
+    not only accept ``.git`` directories. ``git submodule add`` itself is not
+    usable in the test sandbox (its shell script needs coreutils on PATH), so the
+    layout is created directly with ``git init --separate-git-dir``.
+    """
+    target = parent / relative
+    git_dir = parent / ".git" / "modules" / relative
+    git_dir.parent.mkdir(parents=True, exist_ok=True)
+    target.mkdir(parents=True, exist_ok=True)
+    completed = subprocess.run(
+        ["git", "init", "-q", f"--separate-git-dir={git_dir}", str(target)],
+        cwd=str(parent),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(f"could not create gitfile work tree: {completed.stderr}")
+    _run_git(target, "config", "user.email", "fixture@example.com")
+    _run_git(target, "config", "user.name", "Workspace Fixture")
+    _run_git(target, "config", "commit.gpgsign", "false")
+    return target
+
+
+def unit_workspace_section(unit_id: str, change_id: str, *, workspace_id: str = "coil-platform") -> dict:
+    """A minimal self-referencing workspace section for standalone units."""
+    return workspace_section(
+        workspace_id=workspace_id,
+        unit_id=unit_id,
+        role="independent",
+        change_id=change_id,
+        related=[related_entry(unit_id, change_id, [spec_path(change_id, "export")])],
+    )
+
+
 def identity_yaml(
     *,
     workspace_id: str,

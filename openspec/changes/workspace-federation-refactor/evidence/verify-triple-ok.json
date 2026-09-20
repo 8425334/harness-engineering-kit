@@ -17,7 +17,7 @@
     {
       "command": "python -m unittest discover -s tests -p \"test_*.py\"",
       "exit_code": 0,
-      "output": "Ran 167 tests ... OK"
+      "output": "Ran 198 tests ... OK"
     },
     {
       "command": "node --test tests/test_cli.js tests/test_package.js tests/test_workspace_cli.js",

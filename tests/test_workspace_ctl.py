@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -23,6 +24,18 @@ def run_workspace(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(SCRIPT), *args],
         cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+
+def run_workspace_stdin(args: list[str], cwd: Path, payload: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), *args],
+        cwd=str(cwd),
+        input=payload,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -197,6 +210,122 @@ class WorkspaceCliTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 2)
         payload = json.loads(completed.stdout)
         self.assertTrue(any(item["code"] == "identity.missing" for item in payload["not_onboarded"]))
+
+    def test_compat_fails_when_range_excludes_the_published_version(self) -> None:
+        """I13: a matching snapshot must not hide an incompatible version."""
+        with fixture("pair-ok") as root:
+            consumer = root / "backend-ui"
+            artifact = (root / "backend-api/contracts/openapi.yaml").read_text(encoding="utf-8")
+            (root / "backend-api/contracts/VERSION").write_text("2.0.0\n", encoding="utf-8")
+            (consumer / ".hek/project/contracts/backend-api-http.snapshot.json").write_text(
+                artifact, encoding="utf-8"
+            )
+            completed = run_workspace(
+                ["compat", "--root", str(root), "--contract", "backend-api-http", "--json"], consumer
+            )
+        self.assertEqual(completed.returncode, 2)
+        payload = json.loads(completed.stdout)
+        self.assertEqual(payload["verdict"], "fail")
+        codes = [finding["code"] for finding in payload["contracts"][0]["findings"]]
+        self.assertIn("contract.version", codes)
+
+    def test_compat_all_covers_every_consumed_contract(self) -> None:
+        with fixture("triple-ok") as root:
+            consumer = root / "client-api"
+            passing = run_workspace(["compat", "--root", str(root), "--all", "--json"], consumer)
+            self.assertEqual(passing.returncode, 0, passing.stdout)
+            payload = json.loads(passing.stdout)
+            self.assertEqual([entry["contract"] for entry in payload["contracts"]], ["backend-api-http"])
+            self.assertTrue((consumer / ".hek/state/compat-backend-api-http.json").is_file())
+
+            (root / "backend-api/contracts/VERSION").write_text("2.0.0\n", encoding="utf-8")
+            failing = run_workspace(["compat", "--root", str(root), "--all", "--json"], consumer)
+        self.assertEqual(failing.returncode, 2)
+        self.assertEqual(json.loads(failing.stdout)["verdict"], "fail")
+
+    def test_compat_requires_a_target(self) -> None:
+        with fixture("pair-ok") as root:
+            completed = run_workspace(["compat", "--root", str(root), "--json"], root / "backend-ui")
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("--contract", completed.stderr)
+
+    def test_exec_is_blocked_by_a_blocked_projection(self) -> None:
+        with fixture("nested") as root:
+            completed = run_workspace(
+                ["exec", "--root", str(root), "backend-api", "--", sys.executable, "-c", "print('ran')"],
+                root,
+            )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("unit.nested", completed.stderr)
+        self.assertNotIn("ran", completed.stdout)
+
+    def test_verify_nonexistent_root_is_blocked(self) -> None:
+        with fixture("pair-ok") as root:
+            missing = root / "not-cloned"
+            completed = run_workspace(["verify", "--root", str(missing), "--json"], root)
+        self.assertEqual(completed.returncode, 2)
+        payload = json.loads(completed.stdout)
+        self.assertEqual([item["code"] for item in payload["diagnostics"]], ["workspace.root"])
+
+    def test_guard_stdin_hook_payload(self) -> None:
+        """The hook layer: a host payload on stdin decides the verdict."""
+        with fixture("nested") as root:
+            target = root / "backend-api/backend-ui/src/x.ts"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("export {}\n", encoding="utf-8")
+            blocked = run_workspace_stdin(
+                ["guard", "--stdin", "--json"],
+                root / "backend-api",
+                json.dumps({"tool_input": {"file_path": str(target)}}),
+            )
+            self.assertEqual(blocked.returncode, 2)
+            self.assertEqual(json.loads(blocked.stdout)["diagnostics"][0]["code"], "nested.detected")
+            # Without a usable session root the hook fails closed, not open.
+            unknown = run_workspace_stdin(
+                ["guard", "--stdin", "--json"],
+                root,
+                json.dumps({"tool_input": {"file_path": str(target)}}),
+            )
+            self.assertEqual(unknown.returncode, 2)
+            self.assertEqual(json.loads(unknown.stdout)["diagnostics"][0]["code"], "harness.mismatch")
+        with fixture("pair-ok") as root:
+            own = root / "backend-api/src/x.java"
+            own.parent.mkdir(parents=True, exist_ok=True)
+            own.write_text("class X {}\n", encoding="utf-8")
+            allowed = run_workspace_stdin(
+                ["guard", "--stdin", "--json"],
+                root / "backend-api",
+                json.dumps({"tool_input": {"file_path": str(own)}}),
+            )
+            self.assertEqual(allowed.returncode, 0, allowed.stdout)
+            unparseable = run_workspace_stdin(["guard", "--stdin", "--json"], root, "")
+            self.assertEqual(unparseable.returncode, 0)
+            self.assertEqual(json.loads(unparseable.stdout)["diagnostics"][0]["level"], "info")
+
+    def test_contract_pin_template_checks_the_declared_range(self) -> None:
+        import shutil as shutil_module
+
+        repo = Path(__file__).resolve().parents[1]
+        template = repo / "templates/fitness/check_contract_pin.py.template"
+        with fixture("pair-ok") as root:
+            unit = root / "backend-ui"
+            script = unit / ".hek/fitness/scripts/check_contract_pin.py"
+            script.parent.mkdir(parents=True, exist_ok=True)
+            shutil_module.copyfile(template, script)
+            matching = subprocess.run(
+                [sys.executable, str(script)], capture_output=True, text=True, encoding="utf-8", errors="replace"
+            )
+            self.assertEqual(matching.returncode, 0, matching.stdout + matching.stderr)
+            identity = unit / ".hek/project/identity.yaml"
+            identity.write_text(
+                identity.read_text(encoding="utf-8").replace('version: "^1.5.0"', 'version: "^2.0.0"'),
+                encoding="utf-8",
+            )
+            mismatched = subprocess.run(
+                [sys.executable, str(script)], capture_output=True, text=True, encoding="utf-8", errors="replace"
+            )
+        self.assertEqual(mismatched.returncode, 2)
+        self.assertIn("does not satisfy", mismatched.stdout)
 
     def test_context_budget_exceeded_is_blocked(self) -> None:
         with fixture("pair-ok") as root:

@@ -44,7 +44,9 @@ unit 指一个可独立构建、独立验证、独立交付的 Git 仓；federat
 | `hek workspace context <path> [--json]` | 回答路径归属、应加载上下文与 `input_bytes` |
 | `hek workspace exec <unit> -- <cmd...>` | 在 unit 根启动命令并注入 `HEK_UNIT`/`HEK_WORKSPACE` |
 | `hek workspace guard --path <path> [--session-root <dir>] [--json]` | 写入前门禁，退出码 2 即禁止编码 |
+| `hek workspace guard --stdin [--json]` | 供宿主 hook 使用：从 stdin 读取工具调用负载 |
 | `hek workspace compat --contract <id> [--json]` | 消费者侧兼容证据 |
+| `hek workspace compat --all [--json]` | 校验本 unit 消费的全部契约 |
 | `hek workspace graph [--json]` | 契约图邻接表 |
 | `hek workspace run <unit>\|all <fast_test\|test\|build\|fitness>` | 本地聚合执行 |
 | `hek workspace pin [--version X]` | 记录并校验 Kit 版本 pin |
@@ -56,13 +58,17 @@ unit 指一个可独立构建、独立验证、独立交付的 Git 仓；federat
 
 - 每个 unit 仓根开一个 Agent 会话。需要用 `--add-dir` 或等价只读范围时，只用于读契约，
   不用于改其他 unit。
+- 投影 blocked 时 `exec` 拒绝启动会话：嵌套、混合 workspace 或 Kit 版本不一致的环境
+  不应成为 Agent 的会话根。
 - 责任方向等于依赖方向：消费者负责验证它依赖的契约，因此不需要中心仓或注册中心。
 - 跨 unit 的契约、证据、派发路径一律使用
   `{"unit": "<unit_id>", "path": "<unit 仓相对路径>"}`；`identity.yaml` 内的路径天然
   以自身 unit 为作用域。
 - 跨 unit 任务的常驻上下文是 coordinator 的根上下文加契约 snapshot，不得挂载其他
   unit 的 `AI.md` 链。
-- 结构嵌套在任何写入前被阻断。唯一例外是绑定变更摘要与截止时间、经外部人工审批的
+- 结构嵌套在任何写入前被阻断，且不受目录深度限制：既对枚举出的候选仓两两比对，也在
+  每个候选仓内递归查找嵌套工作树（`.git` 目录或指针文件都接受），还查询每个候选仓的
+  Git superproject。唯一例外是绑定变更摘要与截止时间、经外部人工审批的
   一次性豁免，位于 `.hek/state/waivers/nested-<id>.json`。豁免期内 guard 返回
   `nesting.waived` 放行迁移，但 `verify` 仍报 blocked，直到结构真正拆分。
 - 目录名（`docs/methodology`、`docs/sdd`）不能证明安装归属。只有 `.hek/VERSION`，或同时
@@ -76,5 +82,9 @@ unit 指一个可独立构建、独立验证、独立交付的 Git 仓；federat
 （provider 未 clone 为 `warning`，可见但未发布为 `blocked`）、
 `contract.provider-mismatch`、`contract.duplicate-provider`、`contract.cycle`、
 `kit.version-mismatch`、`spec.missing`、`spec.reference`、`spec.duplicate`。
+在两处刻意的扩展之外：`workspace.root`（显式传入的 root 不存在或不含任何 Git 仓——
+错误的路径绝不能被当作"空 workspace 通过"）与 `contract.version`（声明范围不接受
+已发布版本；消费者侧 `compat` 报 blocked，聚合 `verify` 对记录的 `to_version` 漂移报
+warning）。命令级另有 `context.budget`、`context.missing`，仅属于 `context` 命令。
 guard 另产出 `nested.detected`、`boundary.cross-repo`、`harness.mismatch`、
 `legacy.unverified`（warning）、`nesting.waived`（info）。

@@ -51,7 +51,9 @@ cross-unit change; it only stores references.
 | `hek workspace context <path> [--json]` | Answer path ownership, context to load and `input_bytes` |
 | `hek workspace exec <unit> -- <cmd...>` | Run a command in a unit root with `HEK_UNIT`/`HEK_WORKSPACE` |
 | `hek workspace guard --path <path> [--session-root <dir>] [--json]` | Pre-write boundary guard; exit 2 blocks coding |
+| `hek workspace guard --stdin [--json]` | Same guard for host-agent hooks: read the tool payload from stdin |
 | `hek workspace compat --contract <id> [--json]` | Consumer-side compatibility evidence |
+| `hek workspace compat --all [--json]` | Check every consumed contract of the current unit |
 | `hek workspace graph [--json]` | Contract adjacency list |
 | `hek workspace run <unit>\|all <fast_test\|test\|build\|fitness>` | Checkout-local aggregated run |
 | `hek workspace pin [--version X]` | Record and verify the Kit version pin |
@@ -63,6 +65,8 @@ Exit codes match the rest of the Kit: `0` pass, `2` blocked.
 
 - Start one agent session per unit root. Use `--add-dir` (or an equivalent read
   scope) for contracts you need to read, not for units you need to change.
+- `exec` refuses to launch when the projection is blocked: a nested, mixed or
+  version-mismatched workspace is not a place to start an agent session.
 - The responsibility direction equals the dependency direction: the consumer
   verifies the provider contract it depends on, so no central repository and no
   registry are needed.
@@ -71,7 +75,10 @@ Exit codes match the rest of the Kit: `0` pass, `2` blocked.
   `identity.yaml` are implicitly scoped to their own unit.
 - A cross-unit task loads the coordinator's root context plus contract
   snapshots; never mount another unit's `AI.md` chain.
-- Structural nesting is blocked before any write. The only exception is a
+- Structural nesting is blocked before any write, at any depth: the check pairs
+  every enumerated candidate, walks each candidate for nested work trees
+  (accepting a `.git` pointer file as well as a directory), and consults the Git
+  superproject of every candidate. The only exception is a
   one-off, externally approved waiver bound to a change digest and an expiry,
   stored at `.hek/state/waivers/nested-<id>.json`. A waiver lets the guard say
   `nesting.waived` so a migration can proceed; `verify` still reports blocked
@@ -88,5 +95,12 @@ Exit codes match the rest of the Kit: `0` pass, `2` blocked.
 (`warning` when the provider is not cloned, `blocked` when it is visible but does
 not publish), `contract.provider-mismatch`, `contract.duplicate-provider`,
 `contract.cycle`, `kit.version-mismatch`, `spec.missing`, `spec.reference`,
-`spec.duplicate`. The guard adds `nested.detected`, `boundary.cross-repo`,
-`harness.mismatch`, `legacy.unverified` (warning) and `nesting.waived` (info).
+`spec.duplicate`, plus two deliberate extensions beyond the proposal's list:
+`workspace.root` (an explicitly named root does not exist, or holds no Git
+repository — a bad path must never look like a passing empty workspace) and
+`contract.version` (a declared range does not accept the published version; the
+consumer `compat` command reports it as `blocked`, the aggregate `verify` reports
+a recorded `to_version` drift as `warning`). The guard adds `nested.detected`,
+`boundary.cross-repo`, `harness.mismatch`, `legacy.unverified` (warning) and
+`nesting.waived` (info), and the `context` command uses the command-local codes
+`context.budget` and `context.missing`.

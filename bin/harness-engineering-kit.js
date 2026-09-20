@@ -174,6 +174,9 @@ function parseArgs(argv) {
     else if (token === '--direct') result.options.direct = true;
     else if (token === '--list-agents') result.options.listAgents = true;
     else if (token === '--keep-project-facts') result.options.keepProjectFacts = true;
+    else if (token === '--refresh') result.options.refresh = true;
+    else if (token === '--all') result.options.all = true;
+    else if (token === '--stdin') result.options.stdin = true;
     else if (VALUE_OPTIONS.has(token)) {
       applyOption(result, token, args.shift());
     } else if (result.command === 'workspace' && !token.startsWith('-')) {
@@ -507,13 +510,15 @@ function workspaceArgs(options) {
     args.push(...options.rest);
   }
   if (subcommand === 'guard') {
-    if (!options.path) throw new Error('workspace guard requires --path <path>');
-    args.push('--path', path.resolve(options.path));
+    if (options.stdin) args.push('--stdin');
+    else if (options.path) args.push('--path', path.resolve(options.path));
+    else throw new Error('workspace guard requires --path <path> or --stdin');
     if (options.sessionRoot) args.push('--session-root', path.resolve(options.sessionRoot));
   }
   if (subcommand === 'compat') {
-    if (!options.contract) throw new Error('workspace compat requires --contract <id>');
-    args.push('--contract', options.contract);
+    if (options.all) args.push('--all');
+    else if (options.contract) args.push('--contract', options.contract);
+    else throw new Error('workspace compat requires --contract <id> or --all');
   }
   if (subcommand === 'run') {
     if (positionals.length < 2) throw new Error('workspace run requires <unit>|all and a stage');

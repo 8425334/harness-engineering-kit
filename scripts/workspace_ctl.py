@@ -152,8 +152,7 @@ def cmd_context(args: argparse.Namespace) -> int:
                 "target belongs to another unit; open a session in that unit or file a workspace change",
             )
         )
-
-    if target_harness is not None:
+    elif target_harness is not None:
         try:
             import resolve_context as resolve_context_module
 
@@ -210,6 +209,15 @@ def cmd_exec(args: argparse.Namespace) -> int:
         raise UsageError("usage: workspace exec <unit> -- <cmd...>")
     roots = _roots(args.root)
     projection, unit = _load_unit(args.unit, roots, args.depth)
+    # A blocked projection means the structure itself is unsafe (nested unit,
+    # mixed workspace, kit version mismatch, missing member). Launching a session
+    # anyway would hand the agent a repository the gates have already rejected.
+    if has_blocked(projection.diagnostics):
+        blocked = [item for item in projection.diagnostics if item.level == BLOCKED]
+        print("WORKSPACE EXEC BLOCKED", file=sys.stderr)
+        for item in blocked:
+            print(f"- {item.code}: {item.message}", file=sys.stderr)
+        return 2
     if unit is None:
         print(f"WORKSPACE EXEC BLOCKED: unknown unit {args.unit}", file=sys.stderr)
         return 2
@@ -221,13 +229,73 @@ def cmd_exec(args: argparse.Namespace) -> int:
     return completed.returncode
 
 
+STDIN_PATH_KEYS = ("file_path", "filePath", "path", "target", "notebook_path", "notebookPath")
+
+
+def hook_target(payload: object) -> Path | None:
+    """Extract the write target from a host-agent hook payload.
+
+    Hook runtimes differ in shape, so the common spellings are accepted and the
+    nested ``tool_input`` object is searched as well. No path means "cannot
+    verify", which is reported as information rather than as a violation: a
+    payload this process does not understand must not block every write.
+    """
+    if not isinstance(payload, dict):
+        return None
+    for key in STDIN_PATH_KEYS:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return Path(value)
+    tool_input = payload.get("tool_input")
+    if isinstance(tool_input, dict):
+        for key in STDIN_PATH_KEYS:
+            value = tool_input.get(key)
+            if isinstance(value, str) and value.strip():
+                return Path(value)
+    return None
+
+
 def cmd_guard(args: argparse.Namespace) -> int:
-    session_root = args.session_root or os.environ.get("HEK_SESSION_ROOT") or Path.cwd()
-    diagnostics = run_guard(args.path, session_root)
+    session_root = (
+        args.session_root
+        or os.environ.get("HEK_SESSION_ROOT")
+        or os.environ.get("CLAUDE_PROJECT_DIR")
+        or Path.cwd()
+    )
+    target = args.path
+    if getattr(args, "stdin", False):
+        raw = sys.stdin.read()
+        try:
+            payload = json.loads(raw) if raw.strip() else None
+        except json.JSONDecodeError:
+            payload = None
+        target = hook_target(payload)
+        if target is None:
+            result = {
+                "schema_version": 1,
+                "kind": "workspace-guard",
+                "session_root": str(session_root),
+                "status": "pass",
+                "diagnostics": [
+                    {
+                        "level": "info",
+                        "code": "harness.mismatch",
+                        "message": "hook payload carried no recognizable target path; nothing was verified",
+                    }
+                ],
+            }
+            if args.as_json:
+                _print_json(result)
+            else:
+                print("WORKSPACE GUARD PASS (no target in hook payload)")
+            return 0
+    if target is None:
+        raise UsageError("workspace guard requires --path <path> or --stdin")
+    diagnostics = run_guard(target, session_root)
     payload = {
         "schema_version": 1,
         "kind": "workspace-guard",
-        "path": str(args.path),
+        "path": str(target),
         "session_root": str(session_root),
         "status": "blocked" if has_blocked(diagnostics) else "pass",
         "diagnostics": [item.as_dict() for item in diagnostics],
@@ -246,7 +314,86 @@ def _sha256(path: Path) -> str | None:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _compat_entry(consumer, contract: str, projection) -> tuple[dict, list[dict[str, str]]]:
+    """Evidence for one consumed contract, including the declared version range."""
+    entry = next((item for item in consumer.consumes if item["contract"] == contract), None)
+    findings: list[dict[str, str]] = []
+    if entry is None:
+        findings.append(
+            {
+                "level": "blocked",
+                "code": "contract.orphan",
+                "message": f"{contract} is not consumed by {consumer.unit_id}",
+            }
+        )
+    provider = next((item for item in projection.contracts if item["contract"] == contract), None)
+    snapshot_rel = (entry or {}).get("snapshot")
+    snapshot_path = consumer.root / snapshot_rel if snapshot_rel else None
+    snapshot_digest = _sha256(snapshot_path) if snapshot_path else None
+    provider_digest = None
+    published = provider["version"] if provider else None
+    declared = str((entry or {}).get("version", ""))
+    if provider is not None:
+        provider_unit = next(unit for unit in projection.units if unit.unit_id == provider["provider"])
+        provider_digest = _sha256(provider_unit.root / str(provider["artifact"]))
+    if snapshot_digest and provider_digest and snapshot_digest != provider_digest:
+        findings.append(
+            {
+                "level": "blocked",
+                "code": "contract.compat",
+                "message": f"{contract} artifact differs from the consumer snapshot",
+            }
+        )
+    # Invariant I13: the version the consumer declares it accepts must actually
+    # accept the version the provider published. Comparing bytes alone would let
+    # a consumer pass CI while its declared range excludes the provider release.
+    if provider is not None and published is not None and declared:
+        satisfied = version_satisfies(str(published), declared)
+        if satisfied is False:
+            findings.append(
+                {
+                    "level": "blocked",
+                    "code": "contract.version",
+                    "message": (
+                        f"{contract}: declared range {declared} does not accept the published "
+                        f"version {published}"
+                    ),
+                }
+            )
+        elif satisfied is None:
+            findings.append(
+                {
+                    "level": "warning",
+                    "code": "contract.version",
+                    "message": f"{contract}: declared range {declared} is not decidable locally",
+                }
+            )
+    if provider is None:
+        findings.append(
+            {
+                "level": "warning",
+                "code": "contract.orphan",
+                "message": f"{contract} has no visible provider; compat cannot be verified locally",
+            }
+        )
+    return {
+        "unit_id": consumer.unit_id,
+        "contract": contract,
+        "provider": provider["provider"] if provider else None,
+        "provider_version": published,
+        "declared_version": declared or None,
+        "artifact": provider["artifact"] if provider else None,
+        "artifact_sha256": provider_digest,
+        "snapshot": snapshot_rel,
+        "snapshot_sha256": snapshot_digest,
+        "verdict": "fail" if any(item["level"] == BLOCKED for item in findings) else "pass",
+        "findings": findings,
+    }, findings
+
+
 def cmd_compat(args: argparse.Namespace) -> int:
+    if not args.contract and not args.all_contracts:
+        raise UsageError("workspace compat requires --contract <id> or --all")
     roots = _roots(args.root)
     projection = discover(roots, args.depth)
     cwd = Path.cwd().resolve()
@@ -261,51 +408,49 @@ def cmd_compat(args: argparse.Namespace) -> int:
         print("WORKSPACE COMPAT BLOCKED: current directory is not a workspace unit", file=sys.stderr)
         return 2
 
-    entry = next((item for item in consumer.consumes if item["contract"] == args.contract), None)
-    findings: list[dict[str, str]] = []
-    if entry is None:
-        findings.append({"level": "blocked", "code": "contract.orphan", "message": f"{args.contract} is not consumed by {consumer.unit_id}"})
-    provider = next((item for item in projection.contracts if item["contract"] == args.contract), None)
-    snapshot_rel = (entry or {}).get("snapshot")
-    snapshot_path = consumer.root / snapshot_rel if snapshot_rel else None
-    snapshot_digest = _sha256(snapshot_path) if snapshot_path else None
-    provider_digest = None
-    if provider is not None:
-        provider_unit = next(unit for unit in projection.units if unit.unit_id == provider["provider"])
-        provider_digest = _sha256(provider_unit.root / str(provider["artifact"]))
-    if snapshot_digest and provider_digest and snapshot_digest != provider_digest:
-        findings.append({"level": "blocked", "code": "contract.compat", "message": f"{args.contract} artifact differs from the consumer snapshot"})
-    if provider is None:
-        findings.append({"level": "warning", "code": "contract.orphan", "message": f"{args.contract} has no visible provider; compat cannot be verified locally"})
+    contracts = [args.contract] if args.contract else [str(item["contract"]) for item in consumer.consumes]
+    if not contracts:
+        print("WORKSPACE COMPAT BLOCKED: this unit consumes no contract", file=sys.stderr)
+        return 2
+    evidence = []
+    failed = False
+    for contract in contracts:
+        entry, findings = _compat_entry(consumer, contract, projection)
+        evidence.append(entry)
+        failed = failed or entry["verdict"] == "fail"
 
-    verdict = "fail" if any(item["level"] == BLOCKED for item in findings) else "pass"
     payload = {
         "schema_version": 1,
         "kind": "workspace-compat-evidence",
         "unit_id": consumer.unit_id,
-        "contract": args.contract,
-        "provider": provider["provider"] if provider else None,
-        "provider_version": provider["version"] if provider else None,
-        "declared_version": (entry or {}).get("version"),
-        "artifact": provider["artifact"] if provider else None,
-        "artifact_sha256": provider_digest,
-        "snapshot": snapshot_rel,
-        "snapshot_sha256": snapshot_digest,
-        "verdict": verdict,
-        "findings": findings,
+        "verdict": "fail" if failed else "pass",
+        "contracts": evidence,
     }
     evidence_dir = consumer.root / ".hek/state"
     evidence_dir.mkdir(parents=True, exist_ok=True)
-    (evidence_dir / f"compat-{args.contract}.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    for entry in evidence:
+        (evidence_dir / f"compat-{entry['contract']}.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "kind": "workspace-compat-evidence",
+                    **{key: value for key, value in entry.items()},
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     if args.as_json:
         _print_json(payload)
     else:
-        print(f"WORKSPACE COMPAT {'FAIL' if verdict == 'fail' else 'PASS'}: {args.contract}")
-        for finding in findings:
-            print(f"  - {finding['level']}: {finding['code']}: {finding['message']}")
-    return 2 if verdict == "fail" else 0
+        print(f"WORKSPACE COMPAT {'FAIL' if failed else 'PASS'}: {consumer.unit_id}")
+        for entry in evidence:
+            print(f"  - {entry['contract']}: {entry['verdict']}")
+            for finding in entry["findings"]:
+                print(f"      {finding['level']}: {finding['code']}: {finding['message']}")
+    return 2 if failed else 0
 
 
 def cmd_graph(args: argparse.Namespace) -> int:
@@ -511,14 +656,16 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     exec_parser.set_defaults(handler=cmd_exec)
 
     guard_parser = subparsers.add_parser("guard", help="Pre-write boundary guard")
-    guard_parser.add_argument("--path", type=Path, required=True)
+    guard_parser.add_argument("--path", type=Path)
     guard_parser.add_argument("--session-root", type=Path)
+    guard_parser.add_argument("--stdin", action="store_true", help="Read the host-agent hook payload from stdin")
     guard_parser.add_argument("--json", action="store_true", dest="as_json")
     guard_parser.set_defaults(handler=cmd_guard)
 
     compat_parser = subparsers.add_parser("compat", help="Consumer-side contract compatibility")
     _common(compat_parser)
-    compat_parser.add_argument("--contract", required=True)
+    compat_parser.add_argument("--contract", help="One consumed contract id; repeat the command for others")
+    compat_parser.add_argument("--all", action="store_true", dest="all_contracts", help="Check every consumed contract")
     compat_parser.set_defaults(handler=cmd_compat)
 
     graph_parser = subparsers.add_parser("graph", help="Print the contract graph")

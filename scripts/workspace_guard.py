@@ -21,6 +21,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterable
 
 
 BLOCKED = "blocked"
@@ -31,6 +32,13 @@ LEVEL_RANK = {BLOCKED: 0, WARNING: 1, INFO: 2}
 HARNESS_VERSION_REL = ".hek/VERSION"
 POLICY_REL = ".hek/project/agent-policy.yaml"
 WAIVERS_REL = ".hek/state/waivers"
+
+#: Safety bound for the unbounded-style nesting walk. Real projects nest a unit
+#: one or two levels deep; anything beyond this is pathological, but the walk is
+#: still bounded so a runaway tree cannot hang a required check. The bound is
+#: deliberately far above the previous fixed value of 3, which silently let a
+#: unit nested four levels down pass verification.
+NESTING_SCAN_LIMIT = 64
 
 #: Directory names that never hold a unit repository worth enumerating.
 PRUNE_DIRS = frozenset(
@@ -184,16 +192,18 @@ def find_repos(root: Path | str, depth: int = 1) -> list[Path]:
     return unique
 
 
-def nested_repos_inside(repo: Path, depth: int = 3) -> list[Path]:
+def nested_repos_inside(repo: Path, depth: int | None = None) -> list[Path]:
     """Git work tree roots nested inside ``repo`` (``repo`` excluded).
 
-    This is deliberately independent of candidate enumeration depth: a nested
-    repository is a structural violation no matter how deep ``--depth`` reached.
+    Deliberately independent of candidate enumeration depth: a nested repository
+    is a structural violation no matter how deep ``--depth`` reached. Descent
+    stops at a found repository because that already proves the violation.
     """
+    limit = NESTING_SCAN_LIMIT if depth is None else depth
     nested: list[Path] = []
 
     def walk(directory: Path, level: int) -> None:
-        if level > depth:
+        if level > limit:
             return
         try:
             children = sorted(directory.iterdir())
@@ -206,29 +216,32 @@ def nested_repos_inside(repo: Path, depth: int = 3) -> list[Path]:
                 continue
             if is_git_repo(child):
                 nested.append(child.resolve())
+                # Deeper repositories add no new information: ``repo`` already
+                # contains a unit, which is the violation being reported.
+                continue
             walk(child, level + 1)
 
     walk(repo, 1)
     return nested
 
 
-def detect_nesting(repos: list[Path]) -> list[Diagnostic]:
-    """Pairwise nesting detection over an explicit repository list."""
-    resolved = sorted({repo.resolve() for repo in repos})
-    diagnostics: list[Diagnostic] = []
+def nesting_pairs(repos: Iterable[Path]) -> set[tuple[Path, Path]]:
+    """``(outer, inner)`` pairs where one repository contains the other."""
+    resolved = sorted({Path(repo).resolve() for repo in repos})
+    pairs: set[tuple[Path, Path]] = set()
     for outer in resolved:
         for inner in resolved:
-            if inner == outer:
-                continue
-            if inner.is_relative_to(outer):
-                diagnostics.append(
-                    Diagnostic(
-                        BLOCKED,
-                        "unit.nested",
-                        f"unit repository {inner} is nested inside {outer}",
-                    )
-                )
-    return diagnostics
+            if inner != outer and inner.is_relative_to(outer):
+                pairs.add((outer, inner))
+    return pairs
+
+
+def detect_nesting(repos: Iterable[Path]) -> list[Diagnostic]:
+    """Pairwise nesting detection over an explicit repository list."""
+    return [
+        Diagnostic(BLOCKED, "unit.nested", f"unit repository {inner} is nested inside {outer}")
+        for outer, inner in sorted(nesting_pairs(repos))
+    ]
 
 
 def _waiver_for(harness_root: Path) -> dict | None:

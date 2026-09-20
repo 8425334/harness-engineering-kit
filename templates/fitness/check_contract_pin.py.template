@@ -1,43 +1,146 @@
 #!/usr/bin/env python3
-"""Verify consumed contract snapshots against the declared provider version.
+"""Verify consumed contract snapshots against the declared version range.
 
-Local half of invariant I13: the snapshot a consumer commits must match the
-provider artifact it claims to depend on. The remote half (tag addressability)
-runs in consumer CI once the provider version is fetched.
+Local half of invariant I13: every `consumes` entry that ships a snapshot must
+contain a version the declared range accepts. The remote half (the provider tag
+is addressable) runs in consumer CI once the provider version is fetched.
+
+The snapshot version is read from JSON (`info.version`, then `version`) or from
+the first semver-looking line of a text snapshot. A snapshot whose version cannot
+be read is reported and skipped rather than treated as a pass or a failure.
 """
 
 from __future__ import annotations
 
-import hashlib
+import json
+import re
 import sys
 from pathlib import Path
 
 IDENTITY = ".hek/project/identity.yaml"
+SEMVER = re.compile(r"\b(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.\-]+)?)\b")
+
+
+def parse_consumes(text: str) -> list[dict[str, str]]:
+    entries: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+    inside = False
+    for line in text.splitlines():
+        if re.match(r"^consumes:\s*$", line):
+            inside = True
+            continue
+        if inside and re.match(r"^[A-Za-z_][A-Za-z0-9_]*:", line):
+            inside = False
+        if not inside:
+            continue
+        start = re.match(r"^\s*-\s*contract:\s*(\S+)", line)
+        if start:
+            current = {"contract": start.group(1).strip("'\"")}
+            entries.append(current)
+            continue
+        if current is None:
+            continue
+        for key in ("version", "snapshot"):
+            match = re.match(rf"^\s+{key}:\s*(.+?)\s*$", line)
+            if match:
+                current[key] = match.group(1).strip().strip("'\"")
+    return entries
+
+
+def snapshot_version(path: Path) -> str | None:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        payload = None
+    if isinstance(payload, dict):
+        info = payload.get("info")
+        if isinstance(info, dict) and isinstance(info.get("version"), str):
+            return info["version"]
+        if isinstance(payload.get("version"), str):
+            return payload["version"]
+    match = SEMVER.search(text)
+    return match.group(1) if match else None
+
+
+def satisfies(version: str, expression: str) -> bool | None:
+    target = tuple(int(part) for part in version.split("-")[0].split("+")[0].split(".")[:3])
+    for alternative in expression.split("||"):
+        tokens = re.sub(r"(\^|~|>=|<=|>|<|=)\s+", r"\1", alternative.strip()).split()
+        if not tokens:
+            continue
+        results: list[bool | None] = []
+        for token in tokens:
+            match = re.fullmatch(r"(\^|~|>=|<=|>|<|=)?(\d+(?:\.\d+){0,2}|\d+(?:\.\d+)*\.[xX*]|[xX*])", token)
+            if not match:
+                results.append(None)
+                continue
+            operator = match.group(1) or "="
+            raw = match.group(2)
+            if raw in {"*", "x", "X"} or raw.endswith((".x", ".*")):
+                results.append(True)
+                continue
+            parts = [int(part) for part in raw.split(".")]
+            bound = (*parts, 0, 0, 0)[:3]
+            if operator == "^":
+                results.append(target[0] == bound[0] and target >= bound)
+            elif operator == "~":
+                results.append(target[:2] == bound[:2] and target >= bound)
+            elif operator == ">=":
+                results.append(target >= bound)
+            elif operator == "<=":
+                results.append(target <= bound)
+            elif operator == ">":
+                results.append(target > bound)
+            elif operator == "<":
+                results.append(target < bound)
+            else:
+                results.append(target[: len(parts)] == tuple(parts))
+        if results and all(result is True for result in results):
+            return True
+    return False
 
 
 def main() -> int:
     root = Path(__file__).resolve().parents[3]
-    if not (root / IDENTITY).is_file():
+    identity = root / IDENTITY
+    if not identity.is_file():
         # No identity: this repository has not opted into federation.
         print("contract pin: federation disabled (no identity)")
         return 0
     problems: list[str] = []
-    text = (root / IDENTITY).read_text(encoding="utf-8")
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("snapshot:"):
+    checked = 0
+    for entry in parse_consumes(identity.read_text(encoding="utf-8")):
+        contract = entry.get("contract", "?")
+        snapshot = entry.get("snapshot")
+        declared = entry.get("version")
+        if not snapshot:
+            print(f"contract pin: {contract} has no snapshot; nothing to compare")
             continue
-        relative = stripped.split(":", 1)[1].strip().strip("'\"")
-        snapshot = root / relative
-        if not snapshot.is_file():
-            problems.append(f"declared snapshot does not exist: {relative}")
+        path = root / snapshot
+        if not path.is_file():
+            problems.append(f"{contract}: declared snapshot does not exist: {snapshot}")
             continue
-        digest = hashlib.sha256(snapshot.read_bytes()).hexdigest()
-        print(f"contract pin: {relative} sha256={digest[:12]}")
+        version = snapshot_version(path)
+        if version is None or not declared:
+            print(f"contract pin: {contract} snapshot carries no readable version; skipped")
+            continue
+        checked += 1
+        verdict = satisfies(version, declared)
+        if verdict is True:
+            print(f"contract pin: {contract} snapshot {version} satisfies {declared}")
+        elif verdict is False:
+            problems.append(f"{contract}: snapshot version {version} does not satisfy {declared}")
+        else:
+            print(f"contract pin: {contract} range {declared} is not decidable; skipped")
     if problems:
         for problem in problems:
             print(f"- {problem}")
         return 2
+    print(f"contract pin: {checked} snapshot version(s) verified")
     return 0
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -16,9 +17,20 @@ sys.path.insert(0, str(REPO / "tests"))
 import workspace  # noqa: E402
 import workspace_guard  # noqa: E402
 import onboard  # noqa: E402
+from check_agent_policy import validate as validate_policy  # noqa: E402
 from check_change_workspace import check_workspace  # noqa: E402
 from check_identity import validate as validate_identity_file  # noqa: E402
-from fixtures.workspace import build, fixture  # noqa: E402
+from fixtures.workspace import (  # noqa: E402
+    build,
+    build_unit,
+    commit,
+    fixture,
+    init_repo,
+    nested_gitfile_repo,
+    unit_workspace_section,
+    write_valid_policy,
+)
+from fixtures.workspace import add_change, _run_git  # noqa: E402
 from openspec_common import orchestration_contract  # noqa: E402
 
 
@@ -510,6 +522,316 @@ class OnboardIdentityTests(unittest.TestCase):
                 (unit / ".git").mkdir(parents=True)
             self.assertTrue(onboard.looks_like_workspace_root(root))
             self.assertFalse(onboard.looks_like_workspace_root(root / "unit-a"))
+
+    def test_project_root_refuses_a_workspace_root(self) -> None:
+        """`project_root()` must raise instead of silently adopting a container."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("unit-a", "unit-b"):
+                (root / name / ".git").mkdir(parents=True)
+            probe = subprocess.run(
+                [
+                    sys.executable, "-c",
+                    "import sys; sys.path.insert(0, sys.argv[1]); import onboard;"
+                    "onboard.project_root(None)",
+                    str(REPO / "scripts"),
+                ],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+        self.assertNotEqual(probe.returncode, 0)
+        self.assertIn("WorkspaceRootError", probe.stderr)
+
+
+@unittest.skipUnless(GIT, "git is required to materialize workspace fixtures")
+class NestingDetectionTests(unittest.TestCase):
+    """I4 must hold regardless of how deep the nested unit sits (review H2)."""
+
+    def _outer_with_inner(self, root: Path, relative: str) -> Path:
+        outer = root / "outer"
+        build_unit(
+            outer,
+            workspace_id="ws-one",
+            unit_id="outer",
+            repo_url="ssh://git@example.com/outer.git",
+            change_id="outer-change",
+            workspace=unit_workspace_section("outer", "outer-change", workspace_id="ws-one"),
+        )
+        inner = outer / relative
+        build_unit(
+            inner,
+            workspace_id="ws-one",
+            unit_id="inner",
+            repo_url="ssh://git@example.com/inner.git",
+            change_id="inner-change",
+            workspace=unit_workspace_section("inner", "inner-change", workspace_id="ws-one"),
+        )
+        return outer
+
+    def test_deep_nesting_is_detected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._outer_with_inner(root, "l1/l2/l3/l4/inner")
+            code, projection = workspace.verify([root])
+        self.assertEqual(code, 2)
+        self.assertTrue(any(item.code == "unit.nested" for item in projection.diagnostics))
+
+    def test_nesting_detected_when_both_units_are_enumerated(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._outer_with_inner(root, "l1/l2/l3/l4/inner")
+            code, projection = workspace.verify([root], depth=6)
+        self.assertEqual(code, 2)
+        self.assertEqual([unit.unit_id for unit in projection.units], ["inner", "outer"])
+        self.assertTrue(any(item.code == "unit.nested" for item in projection.diagnostics))
+
+    def test_gitfile_nested_repository_is_detected(self) -> None:
+        """A `.git` pointer file (worktree/submodule layout) still counts."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            outer = root / "outer"
+            build_unit(
+                outer,
+                workspace_id="ws-one",
+                unit_id="outer",
+                repo_url="ssh://git@example.com/outer.git",
+                change_id="outer-change",
+                workspace=unit_workspace_section("outer", "outer-change", workspace_id="ws-one"),
+            )
+            target = nested_gitfile_repo(outer, "vendor/inner")
+            build_unit(
+                target,
+                workspace_id="ws-one",
+                unit_id="inner",
+                repo_url="ssh://git@example.com/inner.git",
+                change_id="inner-change",
+                workspace=unit_workspace_section("inner", "inner-change", workspace_id="ws-one"),
+                commit_repo=False,
+            )
+            self.assertTrue((target / ".git").is_file())
+            code, projection = workspace.verify([root])
+        self.assertEqual(code, 2)
+        self.assertTrue(any(item.code == "unit.nested" for item in projection.diagnostics))
+
+    def test_superproject_fact_is_reported_as_nested(self) -> None:
+        """The Git superproject fact is wired in even without a gitlink fixture."""
+        with fixture("pair-ok") as root:
+            original = workspace.git_superproject
+            workspace.git_superproject = lambda path: (root / "super").resolve()  # type: ignore[assignment]
+            try:
+                code, projection = workspace.verify([root])
+            finally:
+                workspace.git_superproject = original  # type: ignore[assignment]
+        self.assertEqual(code, 2)
+        self.assertTrue(any(item.code == "unit.nested" for item in projection.diagnostics))
+
+
+class RootValidationTests(unittest.TestCase):
+    """A bad root must fail closed instead of reporting an empty, passing run."""
+
+    def test_nonexistent_root_is_blocked(self) -> None:
+        missing = Path(tempfile.gettempdir()) / "hek-does-not-exist-1a2b3c"
+        code, projection = workspace.verify([missing])
+        self.assertEqual(code, 2)
+        self.assertEqual([item.code for item in projection.diagnostics], ["workspace.root"])
+
+    def test_root_without_repository_is_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            code, projection = workspace.verify([directory])
+        self.assertEqual(code, 2)
+        self.assertEqual([item.code for item in projection.diagnostics], ["workspace.root"])
+
+
+class ContractAlignmentTests(unittest.TestCase):
+    """`governance.workspace.contracts` must line up with what the units declare."""
+
+    def _request(self, unit: str, contract: str = "backend-ui-static") -> dict:
+        return {
+            "unit": unit,
+            "change_id": "backend-ui-update-export",
+            "specs": [{"unit": unit, "path": "openspec/changes/backend-ui-update-export/specs/export.md"}],
+        }
+
+    def _write_contracts(self, unit_root: Path, change_id: str, entries: list[dict]) -> None:
+        governance = unit_root / "openspec/changes" / change_id / "governance.json"
+        record = json.loads(governance.read_text(encoding="utf-8"))
+        record["workspace"]["contracts"] = entries
+        governance.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+
+    def test_contract_must_be_declared_in_identity(self) -> None:
+        with fixture("pair-ok") as root:
+            self._write_contracts(
+                root / "backend-ui",
+                "backend-ui-update-export",
+                [
+                    {
+                        "contract": "not-declared-anywhere",
+                        "provider": "backend-api",
+                        "from_version": "1.4.0",
+                        "to_version": "1.5.0",
+                        "breaking": False,
+                    }
+                ],
+            )
+            errors = check_workspace(root / "backend-ui")
+        self.assertTrue(any("is not declared in .hek/project/identity.yaml" in error for error in errors))
+
+    def test_to_version_must_be_inside_the_consumed_range(self) -> None:
+        with fixture("pair-ok") as root:
+            self._write_contracts(
+                root / "backend-ui",
+                "backend-ui-update-export",
+                [
+                    {
+                        "contract": "backend-api-http",
+                        "provider": "backend-api",
+                        "from_version": "1.5.0",
+                        "to_version": "2.0.0",
+                        "breaking": False,
+                    }
+                ],
+            )
+            errors = check_workspace(root / "backend-ui")
+        self.assertTrue(any("outside the declared consumes range" in error for error in errors))
+
+    def test_aggregate_verify_checks_provider_alignment(self) -> None:
+        with fixture("pair-ok") as root:
+            self._write_contracts(
+                root / "backend-ui",
+                "backend-ui-update-export",
+                [
+                    {
+                        "contract": "backend-api-http",
+                        "provider": "backend-ui",
+                        "from_version": "1.5.0",
+                        "to_version": "1.5.0",
+                        "breaking": False,
+                    }
+                ],
+            )
+            code, projection = workspace.verify([root])
+        self.assertEqual(code, 2)
+        self.assertTrue(any(item.code == "contract.provider-mismatch" for item in projection.diagnostics))
+
+    def test_aggregate_verify_reports_unpublished_contract(self) -> None:
+        with fixture("pair-ok") as root:
+            self._write_contracts(
+                root / "backend-ui",
+                "backend-ui-update-export",
+                [
+                    {
+                        "contract": "ghost-contract",
+                        "provider": "backend-api",
+                        "from_version": "1.0.0",
+                        "to_version": "1.0.0",
+                        "breaking": False,
+                    }
+                ],
+            )
+            code, projection = workspace.verify([root])
+        self.assertEqual(code, 2)
+        self.assertTrue(any(item.code == "contract.orphan" for item in projection.diagnostics))
+
+    def test_aggregate_verify_warns_when_recorded_version_drifts(self) -> None:
+        """Recorded `to_version` differing from the published one warns, never blocks."""
+        with fixture("pair-ok") as root:
+            self._write_contracts(
+                root / "backend-api",
+                "backend-api-add-export",
+                [
+                    {
+                        "contract": "backend-api-http",
+                        "provider": "backend-api",
+                        "from_version": "1.4.0",
+                        "to_version": "1.6.0",
+                        "breaking": False,
+                    }
+                ],
+            )
+            code, projection = workspace.verify([root])
+        self.assertEqual(code, 0, [item.as_dict() for item in projection.diagnostics])
+        drift = [item for item in projection.diagnostics if item.code == "contract.version"]
+        self.assertEqual([item.level for item in drift], ["warning"])
+
+
+class GraphEdgeCaseTests(unittest.TestCase):
+    def test_self_consumed_contract_is_a_cycle(self) -> None:
+        with fixture("pair-ok") as root:
+            identity = root / "backend-api/.hek/project/identity.yaml"
+            text = identity.read_text(encoding="utf-8")
+            text = text.replace(
+                "consumes: []",
+                "consumes:\n  - contract: backend-api-http\n"
+                "    provider_repo: ssh://git@example.com/coil/backend-api.git\n"
+                '    version: "^1.5.0"',
+            )
+            identity.write_text(text, encoding="utf-8")
+            commit(root / "backend-api")
+            code, projection = workspace.verify([root])
+        self.assertEqual(code, 2)
+        self.assertTrue(any(item.code == "contract.cycle" for item in projection.diagnostics))
+
+    def test_two_workspace_changes_in_one_unit_is_duplicate(self) -> None:
+        with fixture("pair-ok") as root:
+            unit = root / "backend-api"
+            add_change(
+                unit,
+                change_id="backend-api-second",
+                capability="second",
+                workspace=unit_workspace_section("backend-api", "backend-api-second"),
+            )
+            code, projection = workspace.verify([root])
+        self.assertEqual(code, 2)
+        self.assertTrue(any(item.code == "spec.duplicate" for item in projection.diagnostics))
+
+
+class SemverConsistencyTests(unittest.TestCase):
+    def test_range_rejects_leading_zero(self) -> None:
+        self.assertFalse(workspace.is_semver_range("01.2.3"))
+        self.assertTrue(workspace.is_semver_range("1.2.3"))
+
+    def test_operator_spacing_is_normalized(self) -> None:
+        self.assertEqual(workspace.version_satisfies("1.5.0", ">= 1.0"), True)
+        self.assertEqual(workspace.version_satisfies("0.9.0", ">= 1.0"), False)
+
+    def test_unit_scoped_path_rejects_unnormalized_input(self) -> None:
+        for raw in ("a//b.md", "./a/b.md", "a/./b.md"):
+            with self.subTest(path=raw):
+                with self.assertRaises(ValueError):
+                    workspace.unit_scoped_path({"unit": "backend-ui", "path": raw})
+
+    def test_digest_changes_when_identity_tracking_changes(self) -> None:
+        with fixture("pair-ok") as root:
+            baseline = workspace.discover([root]).digest
+            repo = root / "backend-ui"
+            _run_git(repo, "rm", "--cached", "-q", "--", ".hek/project/identity.yaml")
+            _run_git(repo, "commit", "-q", "-m", "untrack identity", "--no-verify")
+            changed = workspace.discover([root]).digest
+        self.assertNotEqual(baseline, changed)
+
+
+class AgentPolicyBoundaryTests(unittest.TestCase):
+    def test_writable_path_into_a_nested_repository_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory) / "parent"
+            init_repo(parent)
+            init_repo(parent / "nested-unit")
+            write_valid_policy(parent, writable_paths=["src", "nested-unit"])
+            (parent / "src").mkdir(exist_ok=True)
+            errors = validate_policy(parent / ".hek/project/agent-policy.yaml")
+        self.assertTrue(any("writable path leaves this harness" in error for error in errors))
+
+    def test_writable_paths_inside_the_harness_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory) / "parent"
+            init_repo(parent)
+            (parent / "src").mkdir()
+            write_valid_policy(parent, writable_paths=["src"])
+            errors = validate_policy(parent / ".hek/project/agent-policy.yaml")
+        self.assertEqual(errors, [])
 
 
 if __name__ == "__main__":

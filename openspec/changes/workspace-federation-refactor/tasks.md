@@ -39,3 +39,11 @@
 - [x] 6.1 构造 `single`、`pair-ok`、`triple-ok`、nested、orphan、cycle、version-mismatch 和 untracked fixtures；运行 Python/Node 全量测试。
 - [x] 6.2 在 `triple-ok` 执行 `hek workspace verify --json`，确认三个本地 change、三份 spec、完整 related_changes 和无 workspace spec；记录 JSON 结果作为验证证据。
 - [x] 6.3 执行 `openspec validate workspace-federation-refactor --strict`、现有 `npm test` 和文档 diff 检查；未通过项必须在 Apply 前解决。
+
+## 7. Strict Review Follow-up
+
+- [x] 7.1 严格检查发现并修复 3 个 fail-open 缺陷：`compat` 不校验声明版本范围（I13）、嵌套检测固定 3 层且不比对已枚举候选仓（I4）、不存在或无 Git 仓的 `--root` 静默通过。每条均先复现再修复，并留下回归用例。
+- [x] 7.2 修复部分实现：`governance.workspace.contracts` 与 identity/投影对齐校验（unit-local + 聚合两层）、子模块 superproject 事实接入 `discover`、`exec` 对 blocked 投影 fail-closed、四处缺测门禁补齐用例。
+- [x] 7.3 修复交付物与一致性：hook 模板改为可用的 `guard --stdin`、consumer CI 模板改为真实 `compat --all`、`check_contract_pin` 模板真正比对版本范围；semver 校验器/求值器一致化、`unit_scoped_path` 严格化并接入引用校验、自消费契约报环、单 unit 两个 workspace change 报重复、`context` 不再加载他仓上下文。
+
+> 证据见 `evidence/strict-review-fixes.md`。

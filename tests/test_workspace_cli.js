@@ -56,6 +56,18 @@ test('parses workspace subcommands, repeated --root, and the exec separator', ()
   const status = cliModule.parseArgs(['workspace', 'status', '--root', 'a', '--json']);
   assert.equal(status.options.subcommand, 'status');
   assert.deepEqual(cliModule.workspaceArgs(status.options).slice(0, 4), ['status', '--root', path.resolve('a'), '--json']);
+
+  const refresh = cliModule.parseArgs(['workspace', 'discover', '--root', 'a', '--refresh', '--json']);
+  assert.equal(refresh.options.refresh, true);
+  assert.ok(cliModule.workspaceArgs(refresh.options).includes('--refresh'));
+
+  const compatAll = cliModule.parseArgs(['workspace', 'compat', '--root', 'a', '--all', '--json']);
+  assert.equal(compatAll.options.all, true);
+  assert.ok(cliModule.workspaceArgs(compatAll.options).includes('--all'));
+
+  const hook = cliModule.parseArgs(['workspace', 'guard', '--stdin', '--json']);
+  assert.ok(cliModule.workspaceArgs(hook.options).includes('--stdin'));
+  assert.throws(() => cliModule.workspaceArgs({ subcommand: 'guard' }), /--path <path> or --stdin/);
 });
 
 test('forwards workspace arguments to the Python entry point', () => {
