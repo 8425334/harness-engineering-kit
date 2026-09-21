@@ -306,6 +306,29 @@ class GuardTests(unittest.TestCase):
             diagnostics = workspace_guard.guard(target, root / "backend-api")
         self.assertEqual([item.code for item in diagnostics], ["boundary.cross-repo"])
 
+    def test_guard_passes_in_a_repository_without_any_harness(self) -> None:
+        """Not being onboarded is not a boundary violation (found while installing
+        the packaged Kit into a project that has no `.hek/` yet)."""
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "product"
+            init_repo(repo)
+            target = repo / "src/app.ts"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("export {}\n", encoding="utf-8")
+            diagnostics = workspace_guard.guard(target, repo)
+        self.assertFalse(workspace_guard.has_blocked(diagnostics))
+        self.assertEqual([item.code for item in diagnostics], ["harness.absent"])
+        self.assertEqual([item.level for item in diagnostics], ["info"])
+
+    def test_guard_still_blocks_nesting_without_any_harness(self) -> None:
+        with fixture("nested-no-identity") as root:
+            target = root / "backend-api/backend-ui/src/x.ts"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("export {}\n", encoding="utf-8")
+            diagnostics = workspace_guard.guard(target, root / "backend-api")
+        self.assertEqual([item.code for item in diagnostics], ["nested.detected"])
+        self.assertTrue(workspace_guard.has_blocked(diagnostics))
+
     def test_nested_and_cross_are_distinguished(self) -> None:
         """`nested-cross` carries both violations; the guard names the right one."""
         with fixture("nested-cross") as root:

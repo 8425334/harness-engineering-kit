@@ -304,6 +304,23 @@ def guard(target: Path | str, session_root: Path | str) -> list[Diagnostic]:
     if target_toplevel == session_toplevel:
         target_harness = locate_harness_root(target_path)
         session_harness = locate_harness_root(session)
+        if target_harness is None and session_harness is None:
+            # Nothing is onboarded here: there are no two harness roots to
+            # disagree. The boundary question is still answered by the Git top
+            # level above, and nesting/cross-repository targets were already
+            # rejected, so this is reported as information rather than as a
+            # violation. Requiring onboarding is the Skill gate's job, not
+            # the boundary guard's.
+            return [
+                Diagnostic(
+                    INFO,
+                    "harness.absent",
+                    (
+                        "no harness root above the session or the target; the boundary was "
+                        "verified from the Git top level only"
+                    ),
+                )
+            ]
         if target_harness is None or session_harness is None or target_harness != session_harness:
             return [
                 Diagnostic(
@@ -311,7 +328,7 @@ def guard(target: Path | str, session_root: Path | str) -> list[Diagnostic]:
                     "harness.mismatch",
                     (
                         "target and session root must share one harness root "
-                        f"(target={target_harness}, session={session_harness})"
+                        f"(target harness={target_harness}, session harness={session_harness})"
                     ),
                 )
             ]

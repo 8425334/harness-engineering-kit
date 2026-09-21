@@ -39,6 +39,13 @@ fixed and covered by a regression test that fails against the previous behaviour
 - New diagnostic codes `workspace.root` and `contract.version` extend the proposal's
   §3.2 list; they are documented in `core/workspace-federation.md` as deliberate
   extensions, together with the command-local `context.budget` / `context.missing`.
+- Found while packaging the Kit and installing it as a Node dependency into a
+  project without `.hek/`: `guard` blocked every write with `harness.mismatch`
+  simply because no harness root existed. A repository with no harness root on
+  either side is now reported as information (`harness.absent`, a third extension
+  code) while nesting and cross-repository targets are still rejected from the Git
+  top level alone. Regression tests: `test_guard_passes_in_a_repository_without_any_harness`
+  and `test_guard_still_blocks_nesting_without_any_harness`.
 
 ## Verification after the fixes
 

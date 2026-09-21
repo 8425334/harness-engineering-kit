@@ -87,4 +87,6 @@ unit 指一个可独立构建、独立验证、独立交付的 Git 仓；federat
 已发布版本；消费者侧 `compat` 报 blocked，聚合 `verify` 对记录的 `to_version` 漂移报
 warning）。命令级另有 `context.budget`、`context.missing`，仅属于 `context` 命令。
 guard 另产出 `nested.detected`、`boundary.cross-repo`、`harness.mismatch`、
-`legacy.unverified`（warning）、`nesting.waived`（info）。
+`legacy.unverified`（warning）、`nesting.waived`（info）与 `harness.absent`（info：
+整个仓都没有 harness 根不构成越界——嵌套与跨仓目标仍仅凭 Git 仓根被拒绝，是否必须
+接入由 Skill 门禁负责）。

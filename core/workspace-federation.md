@@ -101,6 +101,9 @@ repository — a bad path must never look like a passing empty workspace) and
 `contract.version` (a declared range does not accept the published version; the
 consumer `compat` command reports it as `blocked`, the aggregate `verify` reports
 a recorded `to_version` drift as `warning`). The guard adds `nested.detected`,
-`boundary.cross-repo`, `harness.mismatch`, `legacy.unverified` (warning) and
-`nesting.waived` (info), and the `context` command uses the command-local codes
+`boundary.cross-repo`, `harness.mismatch`, `legacy.unverified` (warning),
+`nesting.waived` (info) and `harness.absent` (info: a repository with no harness
+root anywhere is not a boundary violation — nesting and cross-repository targets
+are still rejected from the Git top level alone, and requiring onboarding is the
+Skill gate's job), and the `context` command uses the command-local codes
 `context.budget` and `context.missing`.

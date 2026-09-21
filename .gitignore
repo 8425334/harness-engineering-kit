@@ -19,6 +19,10 @@ __pycache__/
 *.tmp
 *.bak
 
+# Node packaging artifacts
+node_modules/
+*.tgz
+
 # Harness local caches (never commit; receipts and evidence stay tracked)
 .hek/state/workspace-projection.json
 .hek/state/*.cache.json
