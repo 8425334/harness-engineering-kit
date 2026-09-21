@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from typing import Any
 
@@ -60,6 +61,27 @@ def openspec_executable() -> str:
     installs. ``shutil.which`` honours ``PATHEXT`` and returns the real launcher.
     """
     return shutil.which("openspec") or "openspec"
+
+
+def openspec_environment(home: str | None = None) -> dict[str, str]:
+    """Environment for an OpenSpec CLI invocation, optionally fully isolated.
+
+    The CLI keeps its global config under ``HOME``/``USERPROFILE`` on POSIX and
+    under ``APPDATA``/``LOCALAPPDATA`` on Windows, and honours a pre-set
+    ``XDG_CONFIG_HOME`` wherever it runs. Redirecting only the home variables
+    still let ``config set`` rewrite the developer's own config on Windows, so
+    every global location has to move together.
+    """
+    environment = dict(os.environ)
+    environment["OPENSPEC_TELEMETRY"] = "0"
+    if home is None:
+        return environment
+    environment["HOME"] = home
+    environment["USERPROFILE"] = home
+    environment["APPDATA"] = home
+    environment["LOCALAPPDATA"] = home
+    environment["XDG_CONFIG_HOME"] = os.path.join(home, ".config")
+    return environment
 
 
 def orchestration_contract(change_id: str) -> dict[str, Any]:

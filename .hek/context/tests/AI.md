@@ -8,8 +8,9 @@ Prove the control plane's contracts: installed layout and depth parity, onboardi
 and uninstall receipts, relayout migration, repair, script-level guards, CLI
 behaviour, and workspace federation. `tests/fixtures/workspace/` builds federation
 scenarios (`single`, `pair-ok`, `triple-ok`, `pair-orphan`, `pair-uncloned`,
-`nested`, `nested-no-identity`, `foreign-methodology`, `version-mismatch`,
-`untracked-identity`, `cycle`) with `git init` in a temporary directory.
+`nested`, `nested-no-identity`, `nested-cross`, `foreign-methodology`,
+`version-mismatch`, `untracked-identity`, `cycle`) with `git init` in a temporary
+directory.
 
 ## Boundaries
 

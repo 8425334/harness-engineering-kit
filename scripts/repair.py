@@ -39,13 +39,17 @@ try:
         Action,
         agent_target,
         apply_actions,
+        content_drift,
         detect_status,
+        drift_examples,
         load_receipt,
         project_root,
+        read_kit_identity,
+        recorded_fingerprint,
         sha256,
         source_actions,
     )
-    from .versioning import classify_versions, read_version
+    from .versioning import classify_versions, read_version, source_fingerprint
 except ImportError:  # pragma: no cover - direct script execution
     import layout
     from onboard import (
@@ -57,13 +61,17 @@ except ImportError:  # pragma: no cover - direct script execution
         Action,
         agent_target,
         apply_actions,
+        content_drift,
         detect_status,
+        drift_examples,
         load_receipt,
         project_root,
+        read_kit_identity,
+        recorded_fingerprint,
         sha256,
         source_actions,
     )
-    from versioning import classify_versions, read_version
+    from versioning import classify_versions, read_version, source_fingerprint
 
 
 REPAIR_RECEIPT = layout.relative("repair_receipt")
@@ -434,6 +442,49 @@ def diagnose(root: Path, source: Path, agent: str | None, tier: int) -> dict[str
     fitness_baseline = layout.path("fitness", root).is_dir()
 
     actions = source_actions(source, root, tier, status, agent)
+    identity_actions = [action for action in actions if action.kind == "record-identity"]
+    drift = content_drift(source, root, actions)
+    source_digest = source_fingerprint(source)
+    installed_digest = recorded_fingerprint(root)
+    if read_kit_identity(root) is None:
+        identity_state = "unknown"
+    elif installed_digest != source_digest or drift["missing"] or drift["modified"]:
+        identity_state = "drift"
+    else:
+        identity_state = "match"
+    result["source_fingerprint"] = source_digest
+    result["installed_fingerprint"] = installed_digest
+    result["identity_relation"] = identity_state
+    if identity_state == "unknown":
+        record(
+            findings,
+            "kit-identity-missing",
+            "control-plane",
+            "repairable",
+            layout.relative("kit_identity"),
+            remedy=(
+                "The installation does not record which Kit content it came from. Repair records it from the "
+                "current Kit checkout, so run it from the checkout this project is meant to run."
+            ),
+        )
+        for action in identity_actions:
+            add_repair(repairs, action)
+    elif identity_state == "drift":
+        examples = drift_examples(drift)
+        record(
+            findings,
+            "kit-identity-drift",
+            "version",
+            "repairable",
+            examples or layout.relative("kit_identity"),
+            remedy=(
+                "The installed content does not match this Kit checkout even though the version may be equal. "
+                "Repair re-syncs the canonical resources and re-records the identity; bump VERSION if the Kit "
+                "content changed as part of a release."
+            ),
+        )
+        for action in identity_actions:
+            add_repair(repairs, action)
     cache_dir = Path(tempfile.mkdtemp(prefix="hek-repair-compile-"))
     try:
         for action in actions:
@@ -655,6 +706,12 @@ def run(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
             "findings": verification["findings"],
         }
         payload["findings"] = verification["findings"]
+        # The receipt records the state the repair left behind, exactly as it
+        # does for findings; a pre-repair identity would describe a file the
+        # repair just replaced.
+        for field in ("source_fingerprint", "installed_fingerprint", "identity_relation"):
+            if field in verification:
+                payload[field] = verification[field]
     payload["status"] = status_label(payload, applied=True)
     if layout.path("control_plane", root).is_dir():
         receipt = root / REPAIR_RECEIPT

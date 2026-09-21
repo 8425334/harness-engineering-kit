@@ -6,7 +6,7 @@ Self-Repair keeps the Harness control plane usable *during* a user conversation.
 |---|---|---|
 | `engineering` Skill not loaded | The Agent cannot find or select the Skill, or its files are missing or stale | Canonical Skill tree re-sync from the Kit |
 | Python environment or dependency problem | No usable Python 3, interpreter below the supported minimum, or an installed control script that no longer compiles | Host action for the interpreter; canonical re-sync for scripts |
-| Harness incomplete | Canonical core documents, control scripts, workflow templates, OpenSpec schema files, workspace directories, or `.hek/VERSION` are missing; the installed version drifted | Canonical resource sync from the Kit |
+| Harness incomplete | Canonical core documents, control scripts, workflow templates, OpenSpec schema files, workspace directories, or `.hek/VERSION` are missing; the installed version drifted, or the installed content no longer matches the Kit identity recorded in `.hek/state/kit-identity.json` | Canonical resource sync from the Kit |
 
 Repair is implemented once, in `scripts/repair.py`, and reached through `hek repair` (apply) and `hek doctor` (read-only). The installed copy is `.hek/kit/scripts/repair.py`.
 
@@ -29,7 +29,7 @@ Each finding has a stable `id`, an `area`, a `severity`, a bounded example list,
 | `manual` | The engine will not act automatically | Report the remedy and stop that path |
 | `informational` | Context only | Mention only if relevant; it never blocks |
 
-Representative ids include `skill-missing`, `skill-stale`, `skill-scope-unknown`, `skill-user-root-stale`, `control-plane-missing`, `control-plane-drift`, `control-script-broken`, `project-fact-missing`, `workspace-dir-missing`, `fitness-ledger-missing`, `fitness-change-requires-approval`, `openspec-skills-missing`, `python-unusable`, `version-downgrade`, `version-invalid`, and `not-installed`.
+Representative ids include `skill-missing`, `skill-stale`, `skill-scope-unknown`, `skill-user-root-stale`, `control-plane-missing`, `control-plane-drift`, `control-script-broken`, `project-fact-missing`, `workspace-dir-missing`, `fitness-ledger-missing`, `fitness-change-requires-approval`, `openspec-skills-missing`, `python-unusable`, `version-downgrade`, `version-invalid`, `kit-identity-drift`, `kit-identity-missing`, and `not-installed`.
 
 ## Scope selection
 

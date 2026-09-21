@@ -263,7 +263,7 @@ def validate_context_updates(change_dir: Path, record: dict[str, Any], review: d
         required_paths = set(decision.get("paths", [])) if isinstance(decision, dict) else set()
         if decision.get("required") is True and not required_paths.issubset(reviewed_paths):
             errors.append(f"required {document} updates are missing from review file digests")
-    changed_index = "ai.json" in reviewed_paths
+    changed_index = layout.relative("context_index") in reviewed_paths
     changed_details = {path for path in reviewed_paths if path == "AI.md" or path.endswith("/AI.md")}
     if changed_index and impact.get("ai_json", {}).get("required") is not True:
         errors.append("ai.json changed without an approved context impact decision")

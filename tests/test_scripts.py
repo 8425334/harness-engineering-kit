@@ -11,10 +11,13 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "tests"))
 
 from check_agent_policy import validate as validate_agent_policy  # noqa: E402
-from check_phase import check, is_exit_code  # noqa: E402
+from check_context_docs import validate_context_impact  # noqa: E402
+from check_phase import check, is_exit_code, validate_context_updates  # noqa: E402
 from check_production_readiness import rollout_cycles, validate as validate_production  # noqa: E402
+from fixtures.workspace import write_context_skeleton  # noqa: E402
 from lessons_common import load_lessons, validate_lesson  # noqa: E402
 from methodology_common import meaningful, write_json  # noqa: E402
 from check_change_workspace import check_workspace  # noqa: E402
@@ -27,6 +30,12 @@ LESSONS = layout_relative("lessons")
 PRODUCTION_CHANGES = layout_relative("production_changes")
 PRODUCTION_AUDIT = layout_relative("production_audit")
 POLICY_REL = policy_rel()
+CONTEXT_INDEX = layout_relative("context_index")
+CONTEXT_DETAIL = layout_relative("context_doc", module_path=".")
+
+
+def impact_decision(required: bool, paths: list[str]) -> dict[str, object]:
+    return {"required": required, "paths": paths, "reason": "Declared during design confirmation"}
 
 
 def run_script(name: str, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -268,6 +277,107 @@ class GateAndLifecycleTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 2)
             self.assertIn("does not contain", completed.stdout + completed.stderr)
             self.assertFalse((project / f"{LESSONS}/demo-lesson.json").exists())
+
+
+class ContextImpactGateTests(unittest.TestCase):
+    """Review must reject a context file that changed without a declared decision.
+
+    ``validate_context_updates`` is the function ``check_phase.check`` calls for
+    REVIEW, so these cases pin the exact gate rather than a copy of its logic.
+    """
+
+    def project(self, root: Path) -> Path:
+        root.mkdir(parents=True, exist_ok=True)
+        write_context_skeleton(root, unit_id="demo")
+        return root
+
+    def change(self, root: Path) -> Path:
+        change_dir = root / "openspec/changes/demo-1"
+        change_dir.mkdir(parents=True, exist_ok=True)
+        return change_dir
+
+    def run_gate(self, change_dir: Path, root: Path, impact: dict[str, object], reviewed: list[str]) -> list[str]:
+        write_json(change_dir / "context-impact.json", impact)
+        errors: list[str] = []
+        _, impact_errors = validate_context_impact(change_dir / "context-impact.json", root)
+        errors.extend(impact_errors)
+        if impact_errors:
+            return errors
+        review = {"files": {path: "0" * 64 for path in reviewed}}
+        validate_context_updates(change_dir, {"project_root": str(root)}, review, errors)
+        return errors
+
+    def test_edited_index_needs_a_declared_decision(self) -> None:
+        """Regression: the guard compared a bare ``ai.json`` and never fired."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.project(Path(directory) / "project")
+            change_dir = self.change(root)
+            impact = {
+                "schema_version": 1,
+                "analyzed_paths": ["src/app.py", CONTEXT_INDEX],
+                "signals": ["none"],
+                "ai_json": impact_decision(False, []),
+                "ai_md": impact_decision(False, []),
+            }
+            errors = self.run_gate(change_dir, root, impact, ["src/app.py", CONTEXT_INDEX])
+            self.assertIn("ai.json changed without an approved context impact decision", errors)
+
+    def test_edited_detail_needs_a_declared_decision(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.project(Path(directory) / "project")
+            change_dir = self.change(root)
+            impact = {
+                "schema_version": 1,
+                "analyzed_paths": ["src/app.py", CONTEXT_DETAIL],
+                "signals": ["none"],
+                "ai_json": impact_decision(False, []),
+                "ai_md": impact_decision(False, []),
+            }
+            errors = self.run_gate(change_dir, root, impact, ["src/app.py", CONTEXT_DETAIL])
+            self.assertIn("AI.md changed without an approved context impact decision", errors)
+
+    def test_declared_index_update_must_be_delivered(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.project(Path(directory) / "project")
+            change_dir = self.change(root)
+            impact = {
+                "schema_version": 1,
+                "analyzed_paths": ["src/app.py", CONTEXT_INDEX],
+                "signals": ["module-topology"],
+                "ai_json": impact_decision(True, [CONTEXT_INDEX]),
+                "ai_md": impact_decision(False, []),
+            }
+            errors = self.run_gate(change_dir, root, impact, ["src/app.py"])
+            self.assertIn("required ai_json updates are missing from review file digests", errors)
+            self.assertEqual(self.run_gate(change_dir, root, impact, ["src/app.py", CONTEXT_INDEX]), [])
+
+    def test_signal_without_its_document_is_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.project(Path(directory) / "project")
+            change_dir = self.change(root)
+            impact = {
+                "schema_version": 1,
+                "analyzed_paths": ["src/app.py"],
+                "signals": ["responsibility"],
+                "ai_json": impact_decision(False, []),
+                "ai_md": impact_decision(False, []),
+            }
+            errors = self.run_gate(change_dir, root, impact, ["src/app.py"])
+            self.assertIn("context-impact.json signals require ai_md update", errors)
+
+    def test_code_only_change_declared_none_passes(self) -> None:
+        """The gate audits the declaration, it never infers context impact."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.project(Path(directory) / "project")
+            change_dir = self.change(root)
+            impact = {
+                "schema_version": 1,
+                "analyzed_paths": ["src/app.py"],
+                "signals": ["none"],
+                "ai_json": impact_decision(False, []),
+                "ai_md": impact_decision(False, []),
+            }
+            self.assertEqual(self.run_gate(change_dir, root, impact, ["src/app.py"]), [])
 
 
 class MetricsTests(unittest.TestCase):

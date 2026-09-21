@@ -25,12 +25,32 @@ from typing import Any
 
 try:
     from . import layout
-    from .openspec_common import openspec_executable
-    from .versioning import classify_versions, compare_versions, parse_version, read_version
+    from .openspec_common import openspec_environment, openspec_executable
+    from .versioning import (
+        KIT_DEV_ONLY_SCRIPTS,
+        KIT_FINGERPRINT_ALGORITHM,
+        classify_versions,
+        compare_versions,
+        kit_manifest,
+        manifest_fingerprint,
+        parse_version,
+        read_version,
+        source_fingerprint,
+    )
 except ImportError:
     import layout
-    from openspec_common import openspec_executable
-    from versioning import classify_versions, compare_versions, parse_version, read_version
+    from openspec_common import openspec_environment, openspec_executable
+    from versioning import (
+        KIT_DEV_ONLY_SCRIPTS,
+        KIT_FINGERPRINT_ALGORITHM,
+        classify_versions,
+        compare_versions,
+        kit_manifest,
+        manifest_fingerprint,
+        parse_version,
+        read_version,
+        source_fingerprint,
+    )
 
 
 ROOT_FILES = {
@@ -127,7 +147,6 @@ JAVA_SCANNER = "templates/fitness/JavaParameterScanner.java.template"
 
 # Kit-development scripts that must not be installed into target projects:
 # they validate the kit's own checkout and would fail in the installed layout.
-KIT_DEV_ONLY_SCRIPTS = frozenset({"smoke_test_skills.py"})
 RELEASE_MIGRATIONS = "migrations/releases.json"
 
 ONBOARDING_RECEIPT = layout.relative("onboarding_receipt")
@@ -704,6 +723,10 @@ def source_actions(
     else:
         actions.append(Action("report", None, "OpenSpec native Skills", "selected Agent has no OpenSpec Skill adapter; use OpenSpec CLI operations directly"))
 
+    # Recorded last, so the identity always describes the content this run
+    # installed rather than the content the show began with.
+    actions.append(Action("record-identity", None, layout.relative("kit_identity"), "Kit version consistency record"))
+
     if status == "legacy":
         actions.append(Action("report", None, "legacy architecture", "preserve legacy files; route future work to engineering Skill"))
     if (root / "docs/sdd").exists():
@@ -786,6 +809,98 @@ def validate_release_manifest(source: Path) -> list[str]:
     return errors
 
 
+def read_kit_identity(root: Path) -> dict[str, object] | None:
+    """Read the Kit identity recorded by the last successful installation."""
+    path = root / layout.relative("kit_identity")
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def kit_identity_record(source: Path) -> dict[str, object]:
+    """Describe which Kit content this installation came from.
+
+    A version number is a release name; the fingerprint is the content behind
+    it. Recording both is what lets a later run tell "same release, same bytes"
+    apart from "same release, different bytes".
+    """
+    manifest = kit_manifest(source)
+    return {
+        "schema_version": 1,
+        "version": read_version(source / "VERSION") or "unknown",
+        "algorithm": KIT_FINGERPRINT_ALGORITHM,
+        "fingerprint": manifest_fingerprint(manifest),
+        "files": len(manifest),
+        "installed_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def recorded_fingerprint(root: Path) -> str:
+    """Fingerprint recorded by the last install, or ``unknown``."""
+    identity = read_kit_identity(root)
+    if isinstance(identity, dict) and isinstance(identity.get("fingerprint"), str):
+        return str(identity["fingerprint"])
+    return "unknown"
+
+
+def content_drift(source: Path, root: Path, actions: list[Action]) -> dict[str, list[str]]:
+    """Compare every canonical resource the plan syncs with what is installed.
+
+    Only ``sync`` actions count: those are the Harness-owned files an upgrade
+    replaces wholesale. Project-owned facts are created or preserved, never
+    synchronized, so a project differing from the Kit there is not drift.
+    """
+    missing: list[str] = []
+    modified: list[str] = []
+    expected: set[str] = set()
+    for action in actions:
+        if action.kind != "sync":
+            continue
+        expected.add(action.target)
+        source_file = source / str(action.source)
+        target = root / action.target
+        if not target.is_file():
+            missing.append(action.target)
+        elif not source_file.is_file() or sha256(source_file) != sha256(target):
+            modified.append(action.target)
+    # Files the Kit used to ship and no longer does. Reported, never deleted:
+    # only an uninstall is allowed to remove Harness content.
+    stale: list[str] = []
+    for directory in sorted({str(Path(action.target).parent) for action in actions if action.kind == "sync"}):
+        base = root / directory
+        if not base.is_dir():
+            continue
+        for path in sorted(base.iterdir()):
+            if not path.is_file() or path.is_symlink():
+                continue
+            relative = path.relative_to(root).as_posix()
+            if relative not in expected:
+                stale.append(relative)
+    return {"missing": sorted(missing), "modified": sorted(modified), "stale": sorted(stale)}
+
+
+def identity_relation(source_digest: str, root: Path, drift: dict[str, list[str]]) -> str:
+    """``match``, ``drift``, or ``unknown`` for the installed Kit identity."""
+    if read_kit_identity(root) is None:
+        return "unknown"
+    if recorded_fingerprint(root) != source_digest:
+        return "drift"
+    return "drift" if drift["missing"] or drift["modified"] else "match"
+
+
+def drift_examples(drift: dict[str, list[str]], limit: int = 5) -> str:
+    """One human-readable list of the files that actually differ."""
+    files = [*drift["missing"], *drift["modified"]]
+    if not files:
+        return ""
+    shown = ", ".join(files[:limit])
+    return shown + (f" (+{len(files) - limit} more)" if len(files) > limit else "")
+
+
 def render_plan(
     root: Path,
     source: Path,
@@ -814,6 +929,29 @@ def render_plan(
     version_relation = classify_versions(installed_version, target_version)
     if installed_version is None and status != "fresh":
         version_relation = "unversioned"
+    source_digest = source_fingerprint(source)
+    drift = content_drift(source, root, actions)
+    identity = identity_relation(source_digest, root, drift)
+    if identity == "drift":
+        code = "version.same-content-drift" if version_relation == "same" else "identity.content-drift"
+        examples = drift_examples(drift)
+        warnings.append({
+            "code": code,
+            "message": (
+                f"installed {installed_version or 'unknown'} does not match the content of Kit "
+                f"{target_version or 'unknown'}; a release number does not prove byte-identical files"
+                + (f" (differing: {examples})" if examples else "")
+                + ". Re-run the plan with --apply to synchronize, and bump VERSION if this content change is a release."
+            ),
+        })
+    elif identity == "unknown" and status != "fresh":
+        warnings.append({
+            "code": "identity.missing",
+            "message": (
+                f"{layout.relative('kit_identity')} is missing, so this installation cannot prove which Kit "
+                "content it came from. The next apply records it."
+            ),
+        })
     return {
         "schema_version": 1,
         "status": status,
@@ -827,6 +965,10 @@ def render_plan(
             "to": target_version,
             "relation": version_relation,
         },
+        "source_fingerprint": source_digest,
+        "installed_fingerprint": recorded_fingerprint(root),
+        "identity_relation": identity,
+        "content_drift": drift,
         "migration_manifest_errors": validate_release_manifest(source),
         "release_migrations": release_migrations(source, installed_version, target_version, version_relation),
         "tier": tier,
@@ -1121,10 +1263,7 @@ def apply_actions(
             if action.kind == "openspec-init":
                 with tempfile.TemporaryDirectory(prefix="hek-openspec-home-") as isolated_home:
                     staging = Path(isolated_home) / "project"
-                    environment = dict(os.environ)
-                    environment["HOME"] = isolated_home
-                    environment["USERPROFILE"] = isolated_home
-                    environment["OPENSPEC_TELEMETRY"] = "0"
+                    environment = openspec_environment(isolated_home)
                     openspec = openspec_executable()
                     commands = (
                         [openspec, "config", "set", "profile", "custom"],
@@ -1175,16 +1314,17 @@ def apply_actions(
                                     changed += 1
                                 shutil.copy2(item, destination)
                                 tree[item.relative_to(source_dir).as_posix()] = sha256(destination)
-                schema_check = subprocess.run(
-                    [openspec_executable(), "schema", "validate", "harness-engineering", "--json"],
-                    cwd=root,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    capture_output=True,
-                    env={**os.environ, "OPENSPEC_TELEMETRY": "0"},
-                    check=False,
-                )
+                with tempfile.TemporaryDirectory(prefix="hek-openspec-schema-home-") as schema_home:
+                    schema_check = subprocess.run(
+                        [openspec_executable(), "schema", "validate", "harness-engineering", "--json"],
+                        cwd=root,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        capture_output=True,
+                        env=openspec_environment(schema_home),
+                        check=False,
+                    )
                 if schema_check.returncode:
                     raise OSError(schema_check.stderr.strip() or schema_check.stdout.strip() or "OpenSpec schema validation failed")
                 try:
@@ -1204,6 +1344,19 @@ def apply_actions(
                         "trees": trees,
                     }
                 )
+                continue
+            if action.kind == "record-identity":
+                # Written last, so the identity always describes the content this
+                # run installed rather than the content the run began with.
+                target = root / action.target
+                ensure_safe_target(root, target)
+                snapshot(target)
+                ensure_dir(target.parent)
+                target.write_text(
+                    json.dumps(kit_identity_record(source), ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                results.append({"target": action.target, "result": "recorded", "sha256": sha256(target)})
                 continue
             if not action.source:
                 continue
@@ -1434,6 +1587,11 @@ def uninstall_removals(
     receipt_path = root / ONBOARDING_RECEIPT
     if receipt_path.is_file():
         add(Removal("remove", ONBOARDING_RECEIPT, "Harness onboarding receipt", expected_sha256=sha256(receipt_path)))
+
+    identity_path = root / layout.relative("kit_identity")
+    if identity_path.is_file():
+        # A generated state record, like the receipt: Harness owns it outright.
+        add(Removal("remove", layout.relative("kit_identity"), "Harness Kit identity record", expected_sha256=sha256(identity_path)))
 
     if keep_project_facts:
         removals = [
@@ -1749,9 +1907,46 @@ def run_uninstall(
     return 0
 
 
-def run_check(root: Path, source: Path, agent: str | None = None) -> tuple[int, list[str]]:
-    context_files = ("AGENTS.md", "CLAUDE.md", "GEMINI.md") if agent is None else (str(agent_target(agent)["root_file"]),)
+def check_kit_identity(root: Path, source: Path) -> list[str]:
+    """Fail closed when the installation cannot prove which Kit it came from.
+
+    Equal version numbers are not evidence. The documented upgrade rule is that
+    a same-version run still checks for drift, and this is that check: it
+    compares the recorded Kit fingerprint with the checkout being run and the
+    recorded digest of every canonical resource with the installed bytes.
+    """
+    identity = read_kit_identity(root)
+    if identity is None:
+        return [
+            f"kit identity missing: {layout.relative('kit_identity')} does not record the installed Kit content; "
+            "run `hek init --apply` from the Kit checkout you intend to run"
+        ]
+    actions = source_actions(source, root, 1, detect_status(root), None)
+    drift = content_drift(source, root, actions)
+    digest = source_fingerprint(source)
+    recorded = recorded_fingerprint(root)
     failures: list[str] = []
+    if recorded != digest or drift["missing"] or drift["modified"]:
+        examples = drift_examples(drift)
+        failures.append(
+            f"kit content drift: installed {recorded[:12]} does not match Kit {digest[:12]}"
+            + (f" (differing: {examples})" if examples else "")
+            + "; run `hek init --apply` from the Kit checkout you intend to run"
+        )
+    recorded_version = identity.get("version")
+    installed_version = read_version(installed_version_path(root))
+    if isinstance(recorded_version, str) and recorded_version != installed_version:
+        failures.append(
+            f"kit identity records version {recorded_version} but {layout.relative('version')} says "
+            f"{installed_version or 'unknown'}"
+        )
+    return failures
+
+
+def run_check(root: Path, source: Path, agent: str | None = None) -> tuple[int, list[str]]:
+    """Prove the installation matches the Kit it claims to be running."""
+    context_files = ("AGENTS.md", "CLAUDE.md", "GEMINI.md") if agent is None else (str(agent_target(agent)["root_file"]),)
+    failures: list[str] = check_kit_identity(root, source)
     checks = [
         ("check_root_context.py", ["check_root_context.py", str(root), "--context-file", *context_files]),
         ("check_context_docs.py", ["check_context_docs.py", str(root)]),

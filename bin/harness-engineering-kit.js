@@ -616,6 +616,17 @@ function summarizePlan(output) {
     console.log(`迁移清单错误: ${plan.migration_manifest_errors.join('；')}`);
   }
   console.log(`计划: ${actions || '无动作'}`);
+  if (plan.identity_relation === 'drift') {
+    const drift = plan.content_drift || {};
+    const differing = [...(drift.missing || []), ...(drift.modified || [])];
+    console.log(`一致性: ${plan.identity_relation}（已记录 ${String(plan.installed_fingerprint).slice(0, 12)} / Kit ${String(plan.source_fingerprint).slice(0, 12)}）`);
+    if (differing.length) {
+      const shown = differing.slice(0, 5).join(', ');
+      console.log(`  内容不一致: ${shown}${differing.length > 5 ? ` (+${differing.length - 5})` : ''}`);
+    }
+  } else if (plan.identity_relation === 'unknown' && plan.status !== 'fresh') {
+    console.log('一致性: unknown（未记录安装时的 Kit 内容，下次 apply 会记录）');
+  }
   if (plan.migration_required) {
     const moves = plan.actions.filter((action) => action.kind === 'move' || action.kind === 'move-tree').length;
     const removals = plan.actions.filter((action) => action.kind === 'remove').length;
@@ -645,6 +656,12 @@ function askForConfirmation(prompt = '按 y 应用以上计划，其他键取消
 function printPlaceholderHint(output) {
   if (/placeholder|占位/.test(output || '')) {
     console.error('全新安装的占位符需由 Agent 或人工按项目事实填写后再通过检查；填写后重新运行 hek check。');
+  }
+}
+
+function printIdentityHint(output) {
+  if (/kit content drift|kit identity missing/.test(output || '')) {
+    console.error('Kit 内容与安装记录不一致：版本号相同不代表内容一致。请用目标 Kit 重新运行 `hek init --apply`，让安装与记录重新对齐。');
   }
 }
 
@@ -741,6 +758,7 @@ async function runInit(options) {
     process.stdout.write(receipt.stdout || '');
     process.stderr.write(receipt.stderr || '');
     if (receipt.status !== 0) printPlaceholderHint(receipt.stdout);
+    if (receipt.status !== 0) printIdentityHint(receipt.stdout);
     return typeof receipt.status === 'number' ? receipt.status : 2;
   }
 
@@ -753,6 +771,7 @@ async function runInit(options) {
     process.stderr.write(checked.stderr || '');
     checkStatus = checked.status || 0;
     if (checkStatus !== 0) printPlaceholderHint(checked.stdout);
+    if (checkStatus !== 0) printIdentityHint(checked.stdout);
   }
   if (deferredAgent && !options.noOpen) {
     const agentStatus = openAgent(deferredAgent, projectRoot, buildAgentPrompt(projectRoot, options));
@@ -764,6 +783,7 @@ async function runInit(options) {
     process.stderr.write(rechecked.stderr || '');
     const finalStatus = typeof rechecked.status === 'number' ? rechecked.status : 2;
     if (finalStatus !== 0) printPlaceholderHint(rechecked.stdout);
+    if (finalStatus !== 0) printIdentityHint(rechecked.stdout);
     return finalStatus !== 0 ? finalStatus : agentStatus;
   }
   return checkStatus;
@@ -878,6 +898,9 @@ function summarizeDiagnosis(output) {
     + ` | node=${(environment.node || {}).version || '缺失'}`
     + ` | openspec=${(environment.openspec || {}).version || '缺失'}`,
   );
+  if (diagnosis.identity_relation === 'drift') {
+    console.log(`一致性: ${diagnosis.identity_relation}（已记录 ${String(diagnosis.installed_fingerprint).slice(0, 12)} / Kit ${String(diagnosis.source_fingerprint).slice(0, 12)}）`);
+  }
   const findings = Array.isArray(diagnosis.findings) ? diagnosis.findings : [];
   const counts = findings.reduce((all, finding) => {
     all[finding.severity] = (all[finding.severity] || 0) + 1;

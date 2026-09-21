@@ -137,7 +137,7 @@ npx --yes --package github:8425334/harness-engineering-kit hek workspace status 
 
 `hek init` 采用 Agent 驱动：先选择安装范围与已安装的 Agent，在解析出的项目根目录打开该 Agent 的 CLI，并传入 Kit 路径、接入契约和所选 Agent 目标。由 Agent 读取项目事实、生成只读计划、请求确认、填写项目专属配置、执行 canonical 脚本并运行确定性检查；所选 Agent 只初始化对应的原生上下文入口与项目 Skill。Tier 1（轻量接入）安装核心控制面和生命周期门禁所需的最小 Fitness 执行器及 SDD 同步规则；默认 Tier 2（完整接入）额外安装完整 Fitness 规则和经验记忆。每次接入都会写入 `.hek/state/onboarding.json`，记录版本、文件摘要、创建/更新/保留的文件和校验结果。只有明确需要无 Agent 的兼容性确定性安装时才使用 `--direct`；它会忽略 `--agent` 和 `HEK_AGENT` 并安装全部兼容入口。
 
-版本化升级会比较项目已安装版本与 Kit 版本：低版本到高版本同步全部规范资源，同版本仍检查漂移，高版本降级直接阻断，并报告该目标版本声明的特殊迁移事项。详见 [版本化管理](docs/versioning.md)。
+版本化升级会比较项目已安装版本与 Kit 版本：低版本到高版本同步全部规范资源，高版本降级直接阻断，并报告该目标版本声明的特殊迁移事项。同版本不等于同内容：每份 Kit 都有基于随包资产的 `source_fingerprint`，每次安装把它记入 `.hek/state/kit-identity.json`，计划、`hek check` 与 `hek doctor` 用 `identity_relation`（`match` / `drift` / `unknown`）并列出具体漂移文件，而不是默认同版本就已同步。详见 [版本化管理](docs/versioning.md)。
 
 `hek uninstall` 用于撤销接入。默认只读，必须用 `--yes`（或 `--apply`）确认后才删除；它读取 `.hek/state/onboarding.json` 回执，只删除 Harness 安装且内容仍与回执摘要一致的资源。安装时保留、属于项目事实、安装后被修改的文件以及符号链接目标都会原地保留并在回执中列出，清空后的目录会被裁剪。每次执行都会写入 `.hek/state/uninstall.json`。`--keep-project-facts` 额外保留 `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`、`ai.json`、`AI.md`、`agent-policy.yaml`、`profile.yaml` 和 `openspec/config.yaml`；`--json` 输出机器可读计划（不带 `--yes` 时退出码 2）或回执。没有回执时退化为"只删除仍与 Kit 源文件逐字节一致的文件"，无法校验的一律保留。
 

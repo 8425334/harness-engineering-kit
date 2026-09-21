@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -13,7 +12,7 @@ from pathlib import Path
 
 from check_change_workspace import check_workspace
 from check_execution import validate_execution
-from openspec_common import openspec_executable, orchestration_contract
+from openspec_common import openspec_environment, openspec_executable, orchestration_contract
 from verify_skill import verify
 
 
@@ -68,7 +67,7 @@ def smoke() -> None:
             result = verify("engineering", project, platform, source_root=repository)
             if result.get("status") != "PASS":
                 raise RuntimeError(f"engineering Skill verification failed for {platform}: {result}")
-        environment = {**os.environ, "HOME": str(home), "USERPROFILE": str(home), "OPENSPEC_TELEMETRY": "0"}
+        environment = openspec_environment(str(home))
         configured = (
             run([OPENSPEC, "config", "set", "profile", "custom"], repository, environment),
             run([

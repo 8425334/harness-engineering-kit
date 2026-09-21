@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -9,11 +11,19 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scripts import layout, onboard
-from scripts.versioning import classify_versions, compare_versions, parse_version
+from scripts.versioning import (
+    KIT_FINGERPRINT_ALGORITHM,
+    KIT_DEV_ONLY_SCRIPTS,
+    classify_versions,
+    compare_versions,
+    parse_version,
+    source_fingerprint,
+)
 
 
 # Layout-derived paths so these tests follow the active layout instead of
 # restating it. The concrete values are pinned once, in test_layout.py.
+REPO = Path(__file__).resolve().parents[1]
 METHODOLOGY = layout.relative("methodology")
 CORE = layout.relative("core")
 SCRIPTS = layout.relative("scripts")
@@ -89,6 +99,105 @@ def apply_with_receipt(root: Path, source: Path, actions: list[onboard.Action], 
     receipt = layout.receipt_path(root)
     receipt.parent.mkdir(parents=True, exist_ok=True)
     receipt.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+class KitIdentityTests(unittest.TestCase):
+    """A release number is a name; only content proves consistency."""
+
+    def kit_checkout(self, destination: Path) -> Path:
+        """A real Kit checkout the test is allowed to edit."""
+        destination.mkdir(parents=True, exist_ok=True)
+        for name in ("bin", "core", "migrations", "scripts", "templates"):
+            shutil.copytree(REPO / name, destination / name)
+        shutil.copy2(REPO / "VERSION", destination / "VERSION")
+        return destination
+
+    def mirror_install(self, source: Path, root: Path, *, identity: bool = True) -> None:
+        """Install every canonical resource without invoking the OpenSpec CLI."""
+        actions = [action for action in onboard.source_actions(source, root, 1, "current") if action.kind == "sync"]
+        if identity:
+            actions.append(onboard.Action("record-identity", None, layout.relative("kit_identity"), "test"))
+        onboard.apply_actions(root, source, actions)
+
+    def test_fingerprint_tracks_content_not_the_version(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            kit = self.kit_checkout(Path(directory) / "kit")
+            baseline = source_fingerprint(kit)
+            # Development-only and documentation edits change no installed file.
+            (kit / "scripts" / sorted(KIT_DEV_ONLY_SCRIPTS)[0]).write_text("# dev only\n", encoding="utf-8")
+            (kit / "docs").mkdir()
+            (kit / "docs/versioning.md").write_text("docs only\n", encoding="utf-8")
+            self.assertEqual(source_fingerprint(kit), baseline)
+            (kit / "core/harness-engineering.md").write_text("# changed\n", encoding="utf-8")
+            self.assertNotEqual(source_fingerprint(kit), baseline)
+
+    def test_identity_record_describes_the_installed_content(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            kit = self.kit_checkout(Path(directory) / "kit")
+            record = onboard.kit_identity_record(kit)
+            self.assertEqual(record["schema_version"], 1)
+            self.assertEqual(record["algorithm"], KIT_FINGERPRINT_ALGORITHM)
+            self.assertEqual(record["version"], (kit / "VERSION").read_text(encoding="utf-8").strip())
+            self.assertEqual(record["fingerprint"], source_fingerprint(kit))
+            self.assertGreater(record["files"], 0)  # type: ignore[arg-type]
+
+    def test_same_version_content_change_is_reported(self) -> None:
+        """The reported defect: equal versions were treated as proof of equality."""
+        with tempfile.TemporaryDirectory() as directory:
+            kit = self.kit_checkout(Path(directory) / "kit")
+            root = Path(directory) / "project"
+            root.mkdir()
+            self.mirror_install(kit, root)
+            actions = onboard.source_actions(kit, root, 1, "current")
+
+            unchanged = onboard.render_plan(root, kit, 1, "current", actions)
+            self.assertEqual(unchanged["version_relation"], "same")
+            self.assertEqual(unchanged["identity_relation"], "match")
+            self.assertEqual(unchanged["warnings"], [])
+            self.assertEqual(onboard.check_kit_identity(root, kit), [])
+
+            (kit / "core/harness-engineering.md").write_text("# edited, version untouched\n", encoding="utf-8")
+            drifted = onboard.render_plan(root, kit, 1, "current", actions)
+            self.assertEqual(drifted["version_relation"], "same")
+            self.assertEqual(drifted["identity_relation"], "drift")
+            self.assertIn(
+                f"{layout.relative('core')}/harness-engineering.md",
+                drifted["content_drift"]["modified"],
+            )
+            self.assertEqual(
+                [warning["code"] for warning in drifted["warnings"]],
+                ["version.same-content-drift"],
+            )
+            failures = onboard.check_kit_identity(root, kit)
+            self.assertTrue(any("kit content drift" in failure for failure in failures))
+            self.assertTrue(any("harness-engineering.md" in failure for failure in failures))
+
+            # Re-applying the same Kit converges and re-records the identity.
+            self.mirror_install(kit, root)
+            self.assertEqual(onboard.check_kit_identity(root, kit), [])
+            self.assertEqual(onboard.render_plan(root, kit, 1, "current", actions)["identity_relation"], "match")
+
+    def test_edited_installed_resource_is_detected(self) -> None:
+        """A partial or failed upgrade must not pass the check silently."""
+        with tempfile.TemporaryDirectory() as directory:
+            kit = self.kit_checkout(Path(directory) / "kit")
+            root = Path(directory) / "project"
+            root.mkdir()
+            self.mirror_install(kit, root)
+            stale = root / layout.relative("scripts") / "check_phase.py"
+            stale.write_text("# stale control script\n", encoding="utf-8")
+            failures = onboard.check_kit_identity(root, kit)
+            self.assertTrue(any("kit content drift" in failure for failure in failures))
+            self.assertTrue(any("check_phase.py" in failure for failure in failures))
+
+    def test_identity_record_is_required_for_the_check(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            kit = self.kit_checkout(Path(directory) / "kit")
+            root = Path(directory) / "project"
+            root.mkdir()
+            self.mirror_install(kit, root, identity=False)
+            failures = onboard.check_kit_identity(root, kit)
+            self.assertTrue(any("kit identity missing" in failure for failure in failures))
 
 
 class OnboardTests(unittest.TestCase):
@@ -326,6 +435,48 @@ class OnboardTests(unittest.TestCase):
                 with self.assertRaises(OSError):
                     onboard.apply_actions(root, self.source, actions)
             self.assertFalse((root / "docs").exists())
+
+    def test_openspec_init_never_touches_the_developer_config(self) -> None:
+        """The CLI reads global config from APPDATA on Windows, not from HOME."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            action = onboard.Action("openspec-init", None, "codex", "test")
+            environments: list[dict[str, str]] = []
+
+            class Completed:
+                returncode = 0
+                stdout = '{"valid": true}'
+                stderr = ""
+
+            def fake_run(command, **kwargs):
+                environments.append(kwargs["env"])
+                if command[1] == "init":
+                    staging = Path(command[2])
+                    for skill in onboard.REQUIRED_OPENSPEC_SKILLS:
+                        skill_file = staging / onboard.OPENSPEC_SKILL_ROOTS["codex"] / skill / "SKILL.md"
+                        skill_file.parent.mkdir(parents=True, exist_ok=True)
+                        skill_file.write_text(f"# {skill}\n", encoding="utf-8")
+                return Completed()
+
+            with patch.object(onboard, "openspec_executable", return_value="openspec"), patch.object(
+                onboard.subprocess, "run", side_effect=fake_run
+            ):
+                onboard.apply_actions(root, self.source, [action])
+
+            self.assertTrue(environments)
+            for environment in environments:
+                isolated = environment["HOME"]
+                # Every global location the CLI consults has to move together, or
+                # the run mutates config outside the project it was asked to touch.
+                self.assertEqual(environment["USERPROFILE"], isolated)
+                self.assertEqual(environment["APPDATA"], isolated)
+                self.assertEqual(environment["LOCALAPPDATA"], isolated)
+                self.assertEqual(environment["XDG_CONFIG_HOME"], str(Path(isolated) / ".config"))
+                for variable in ("HOME", "APPDATA", "LOCALAPPDATA"):
+                    self.assertNotEqual(os.environ.get(variable), isolated)
+            self.assertTrue(
+                (root / onboard.OPENSPEC_SKILL_ROOTS["codex"] / "openspec-explore/SKILL.md").is_file()
+            )
 
     def test_apply_is_idempotent_and_preserves_existing_config(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

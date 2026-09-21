@@ -47,6 +47,7 @@ class Layout:
     onboarding_receipt: str
     uninstall_receipt: str
     repair_receipt: str
+    kit_identity: str
     lessons: str
     core: str
     scripts: str
@@ -75,6 +76,7 @@ LEGACY = Layout(
     onboarding_receipt="docs/methodology/onboarding.json",
     uninstall_receipt="docs/methodology/uninstall.json",
     repair_receipt="docs/methodology/repair.json",
+    kit_identity="docs/methodology/kit-identity.json",
     lessons="docs/methodology/lessons",
     core="docs/methodology/core",
     scripts="docs/methodology/scripts",
@@ -101,6 +103,7 @@ HEK = Layout(
     onboarding_receipt=".hek/state/onboarding.json",
     uninstall_receipt=".hek/state/uninstall.json",
     repair_receipt=".hek/state/repair.json",
+    kit_identity=".hek/state/kit-identity.json",
     lessons=".hek/state/lessons",
     core=".hek/kit/core",
     scripts=".hek/kit/scripts",
@@ -243,6 +246,11 @@ def fitness_script_rel(*, layout: Layout | None = None) -> str:
 
 def receipt_path(root: Path | str | None = None, *, layout: Layout | None = None) -> Path:
     return path("onboarding_receipt", root, layout=layout)
+
+
+def kit_identity_path(root: Path | str | None = None, *, layout: Layout | None = None) -> Path:
+    """Path of the record that says which Kit content this project installed."""
+    return path("kit_identity", root, layout=layout)
 
 
 def context_doc_path(root: Path | str | None, module_path: str | None = None,

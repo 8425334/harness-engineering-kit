@@ -29,7 +29,7 @@ Read the findings, not just the exit code:
 - `manual` — the engine will not act, for example a missing interpreter or a downgrade. Report the stated remedy and stop that path.
 - `informational` — context only; it never blocks.
 
-Every finding carries a stable `id` (`skill-missing`, `skill-stale`, `control-plane-missing`, `control-plane-drift`, `control-script-broken`, `python-unusable`, `openspec-skills-missing`, `fitness-change-requires-approval`, `version-downgrade`, `not-installed`, ...), an `area`, a `severity`, at most a dozen examples, and a `remedy` for anything the engine will not fix alone.
+Every finding carries a stable `id` (`skill-missing`, `skill-stale`, `control-plane-missing`, `control-plane-drift`, `control-script-broken`, `python-unusable`, `openspec-skills-missing`, `fitness-change-requires-approval`, `version-downgrade`, `kit-identity-drift`, `kit-identity-missing`, `not-installed`, ...), an `area`, a `severity`, at most a dozen examples, and a `remedy` for anything the engine will not fix alone.
 
 ## Repair
 

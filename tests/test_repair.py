@@ -126,6 +126,36 @@ class RepairTests(unittest.TestCase):
         self.assertEqual(before, after)
         self.assertFalse((self.root / REPAIR_REL).exists())
 
+    def test_same_version_content_drift_is_reported(self) -> None:
+        """Doctor names the drifting files instead of trusting the version."""
+        install(self.root)
+        edited = self.root / f"{CORE}/harness-engineering.md"
+        edited.write_text("# edited after install\n", encoding="utf-8")
+        code, payload = repair.run(self.options())
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["version_relation"], "same")
+        self.assertEqual(payload["identity_relation"], "drift")
+        self.assertIn("kit-identity-drift", finding_ids(payload))
+        self.assertIn("record-identity", {entry["kind"] for entry in payload["repairs"]})
+        drift = [finding for finding in payload["findings"] if finding["id"] == "kit-identity-drift"][0]
+        self.assertIn("harness-engineering.md", str(drift["detail"]))
+
+        code, payload = repair.run(self.options(apply=True))
+        self.assertEqual(code, 0, payload)
+        self.assertEqual(payload["identity_relation"], "match")
+        code, payload = repair.run(self.options())
+        self.assertEqual(code, 0)
+        self.assertNotIn("kit-identity-drift", finding_ids(payload))
+
+    def test_missing_identity_record_is_reported(self) -> None:
+        """An installation that cannot say which Kit it came from is repairable."""
+        install(self.root)
+        (self.root / layout.relative("kit_identity")).unlink()
+        code, payload = repair.run(self.options())
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["identity_relation"], "unknown")
+        self.assertIn("kit-identity-missing", finding_ids(payload))
+
     # -- repair ------------------------------------------------------------
 
     def test_repairs_missing_engineering_skill(self) -> None:

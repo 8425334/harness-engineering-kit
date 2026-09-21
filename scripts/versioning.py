@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -95,3 +97,57 @@ def classify_versions(installed: str | None, target: str | None) -> str:
     if comparison > 0:
         return "downgrade"
     return "same"
+
+
+#: Recorded next to every fingerprint so a future change to the manifest rules
+#: is visible in the installed record instead of silently reshaping digests.
+KIT_FINGERPRINT_ALGORITHM = "sha256-kit-manifest-v1"
+
+#: Kit sources that exist only for development. They are never installed, so
+#: they must not make two installations of the same release look different.
+KIT_DEV_ONLY_SCRIPTS = frozenset({"smoke_test_skills.py"})
+
+#: Shipped trees whose bytes decide install and upgrade behaviour. Documentation,
+#: examples, and tests are deliberately excluded: editing them changes no
+#: installed file and must not make a Kit look like a different release.
+KIT_ASSET_TREES = ("bin", "core", "migrations", "scripts", "templates")
+KIT_ASSET_FILES = ("VERSION",)
+MANIFEST_EXCLUDED_PARTS = frozenset({"__pycache__", ".pytest_cache", ".mypy_cache", "node_modules"})
+
+
+def kit_manifest(source: Path) -> dict[str, str]:
+    """Map every shipped Kit asset to its SHA-256 digest.
+
+    A version number states what a release is called; this manifest states what
+    it contains. Equal versions with different bytes produce different
+    manifests, which is the fact a same-version upgrade has to act on.
+    """
+    manifest: dict[str, str] = {}
+    for relative in KIT_ASSET_FILES:
+        path = source / relative
+        if path.is_file() and not path.is_symlink():
+            manifest[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+    for tree in KIT_ASSET_TREES:
+        base = source / tree
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob("*")):
+            if not path.is_file() or path.is_symlink():
+                continue
+            if any(part in MANIFEST_EXCLUDED_PARTS for part in path.relative_to(base).parts):
+                continue
+            if tree == "scripts" and path.parent == base and path.name in KIT_DEV_ONLY_SCRIPTS:
+                continue
+            manifest[path.relative_to(source).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return manifest
+
+
+def manifest_fingerprint(manifest: dict[str, str]) -> str:
+    """Collapse a manifest into one stable digest."""
+    payload = json.dumps(sorted(manifest.items()), ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def source_fingerprint(source: Path) -> str:
+    """Content identity of a Kit checkout, independent of its version number."""
+    return manifest_fingerprint(kit_manifest(source))
